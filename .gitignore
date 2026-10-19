@@ -7,3 +7,4 @@ release/
 __pycache__/
 *.pyc
 Thumbs.db
+app/runtime/

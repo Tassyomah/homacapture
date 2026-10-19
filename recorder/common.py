@@ -222,7 +222,9 @@ def analyze(args):
 
 # ---------------------------------------------------------------- audio enhancement (spec §16)
 def enhance(args):
-    """mic.wav → mic.clean.wav: gentle high-pass, FFT noise reduction, two-pass EBU loudness to -16 LUFS. Same length, same start."""
+    """mic.wav → mic.clean.wav, same length and start. Chain (spec §16): rumble high-pass, hum notches (50/60 Hz mains),
+    adaptive FFT noise reduction, gentle de-ess, light speech compression, two-pass EBU loudness to -16 LUFS, true-peak
+    limiter at -1.5 dBTP so nothing clips after AAC encoding."""
     need_ffmpeg()
     outdir = args.out
     ev_path = os.path.join(outdir, "events.json")
@@ -233,7 +235,11 @@ def enhance(args):
         emit(event="error", code="no_mic", message="This recording has no microphone track."); sys.exit(3)
     src = os.path.join(outdir, ev["files"]["mic"]); dst = os.path.join(outdir, "mic.clean.wav"); tmp = dst + ".tmp.wav"
     emit(event="enhancing", step="measure")
-    chain = "highpass=f=80,afftdn=nr=12:nf=-40:tn=1"
+    chain = ("highpass=f=80:poles=2,"
+             "bandreject=f=50:width_type=q:w=30,bandreject=f=60:width_type=q:w=30,"
+             "afftdn=nr=12:nf=-40:tn=1,"
+             "deesser=i=0.4:m=0.5:f=0.5,"
+             "acompressor=threshold=-22dB:ratio=2.5:attack=8:release=120:makeup=2:knee=4")
     lines = ff_lines(["-i", src, "-af", f"{chain},loudnorm=I=-16:TP=-1.5:LRA=11:print_format=json", "-f", "null", "-"], timeout=1800)
     stats = None
     try:
@@ -244,7 +250,7 @@ def enhance(args):
         ln = (f"loudnorm=I=-16:TP=-1.5:LRA=11:measured_I={stats['input_i']}:measured_TP={stats['input_tp']}:measured_LRA={stats['input_lra']}"
               f":measured_thresh={stats['input_thresh']}:offset={stats['target_offset']}:linear=true")
     else: ln = "loudnorm=I=-16:TP=-1.5:LRA=11"
-    r = run([FFMPEG, "-v", "error", "-y", "-i", src, "-af", f"{chain},{ln}", "-ar", "48000", "-c:a", "pcm_s16le", tmp], timeout=1800)
+    r = run([FFMPEG, "-v", "error", "-y", "-i", src, "-af", f"{chain},{ln},alimiter=limit=0.84:level=false", "-ar", "48000", "-c:a", "pcm_s16le", tmp], timeout=1800)
     if r.returncode != 0 or not os.path.exists(tmp):
         emit(event="error", code="enhance_failed", message="Could not clean the voice track.\n" + r.stderr[-300:]); sys.exit(4)
     os.replace(tmp, dst)

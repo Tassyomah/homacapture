@@ -40,6 +40,14 @@ GitHub note (2026-10-07): pushes failed for ~1 h with a GitHub-side Internal Ser
 Also done (evening): aspect presets Screen / 16:9 / 9:16 / 1:1 / 4:5 with content-aware reframing (portrait/square crop and follow the cursor; exports get exact platform sizes), and Smart Director v1 (`analyze` subcommand → analysis.json; card under the timeline; Accept/Reject → cuts, chapters, highlights in project.json). Verified: 9:16 export 720×1280 with camera top-right; analysis on the test clip; editor screenshots (`NARRATE_SCREENSHOT`).
 Test recording used for screenshots: `%USERPROFILE%\Videos\Narrate\zz-smoke-test` (my 12 s capture of her screen; safe to delete).
 
+## State as of 2026-10-19 (Windows laptop)
+- **Self-contained Windows installer:** `npm run dist` now runs `scripts/bundle-runtime.mjs`, which copies a full Python 3.12 and ffmpeg/ffprobe into `app/runtime/` (git-ignored) → `resources/runtime/` in the app. `src/main/recorder.ts` prefers it and exports `NARRATE_FFMPEG`/`NARRATE_FFPROBE` so the recorder and GIF export use the bundled binaries. Speech engine still installs on first transcription (needs internet once).
+- **Voice quality:** `enhance` chain is high-pass 80 Hz → 50/60 Hz hum notches → afftdn → de-ess → gentle compressor → two-pass loudnorm −16 LUFS → limiter (−1.5 dBTP). The editor runs it automatically the first time a recording with a mic opens (voice = clean; raw stays selectable). Export audio is AAC 320k.
+- Tassy's agreed order after this (2026-10-19): installer ✅ → sharing links (needs her to pick + create a hosting account; she cannot have Claude create it) → tune on her real recording → Mac test run. Then she tests.
+
+## Continuing on her Mac / another Claude account
+She works from two Claude accounts; this repo (pushed to GitHub `Tassyomah/homalabs-studio`) is the only shared context. On the Mac: clone the repo, open it in Claude Code, say "continue" — this skill loads via CLAUDE.md. First Mac session: follow `docs/DEVELOPMENT.md` → macOS, run `python3 recorder/narrate.py --list`, tell her before a short test recording, then `npm run dev`, fix what breaks, commit, ask before pushing.
+
 ## Roadmap (SPEC-ADDON, agreed 2026-10-06)
 1. ✅ Aspect presets with content-aware reframing.
 2. ✅ Smart Director v1 (local signals → proposals). Later: SPEED proposals for repetitive navigation, sensitive-info warnings, transcript-based signals.

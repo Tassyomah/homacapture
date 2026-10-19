@@ -9,7 +9,8 @@
     "dev": "electron-vite dev",
     "build": "electron-vite build",
     "bundle:video": "remotion bundle src/video/index.ts --out-dir out/remotion --log error",
-    "dist": "npm run build && npm run bundle:video && electron-builder --win nsis --publish never",
+    "bundle:runtime": "node scripts/bundle-runtime.mjs",
+    "dist": "npm run build && npm run bundle:video && npm run bundle:runtime && electron-builder --win nsis --publish never",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit"
   },
@@ -24,7 +25,8 @@
     "files": ["out/main/**", "out/preload/**", "out/renderer/**", "package.json"],
     "extraResources": [
       { "from": "../recorder", "to": "recorder", "filter": ["**/*.py"] },
-      { "from": "out/remotion", "to": "remotion" }
+      { "from": "out/remotion", "to": "remotion" },
+      { "from": "runtime", "to": "runtime" }
     ],
     "asarUnpack": ["node_modules/@remotion/**"],
     "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "signAndEditExecutable": false },

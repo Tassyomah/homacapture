@@ -10,8 +10,16 @@ type RawEvent = { event: string; [k: string]: unknown }
  * Interpreter for the Python recorders. On Windows, look in the usual per-user install folders before trusting PATH
  * (a fresh install may not have refreshed PATH yet, and the Store stub in WindowsApps is not a real Python).
  */
+/** Python + ffmpeg bundled by scripts/bundle-runtime.mjs (packaged Windows build). Exported through env so the
+ * recorder (common.find_tool) and the GIF exporter pick the same binaries. */
+const RUNTIME = process.resourcesPath ? join(process.resourcesPath, 'runtime') : ''
+if (RUNTIME && existsSync(join(RUNTIME, 'ffmpeg', 'ffmpeg.exe'))) {
+  process.env.NARRATE_FFMPEG ??= join(RUNTIME, 'ffmpeg', 'ffmpeg.exe')
+  process.env.NARRATE_FFPROBE ??= join(RUNTIME, 'ffmpeg', 'ffprobe.exe')
+}
 function findPython(): string {
   if (process.env.NARRATE_PYTHON) return process.env.NARRATE_PYTHON
+  if (RUNTIME && existsSync(join(RUNTIME, 'python', 'python.exe'))) return join(RUNTIME, 'python', 'python.exe')
   if (process.platform !== 'win32') return 'python3'
   const roots = [process.env.LOCALAPPDATA && join(process.env.LOCALAPPDATA, 'Programs', 'Python'), 'C:\\Program Files', 'C:\\'].filter(Boolean) as string[]
   const found: string[] = []

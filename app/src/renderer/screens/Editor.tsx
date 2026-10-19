@@ -122,6 +122,8 @@ export function Editor({ project }: { project: Project }) {
     window.narrate.enhanceAudio(project.dir).then((p) => { setMicClean(p.assets.micClean); project.assets.micClean = p.assets.micClean; setEnhancing('idle'); set('voice', 'clean') })
       .catch((e: Error) => { setEnhancing('idle'); alert(e.message) })
   }
+  // Clean the voice automatically the first time a recording with a mic opens; the raw track stays one click away.
+  useEffect(() => { if (project.assets.mic && !project.assets.micClean) enhance() }, [])
   useEffect(() => window.narrate.onRecorderEvent((e) => { if (e.event === 'enhancing' && e.step !== 'done') setEnhancing(e.step === 'measure' ? 'Measuring…' : 'Cleaning…') }), [])
   // Content (add-on §13): copy from the transcript + chapters; thumbnails rendered from the polished master on request.
   const [thumbs, setThumbs] = useState<{ path: string; url: string }[]>([])
