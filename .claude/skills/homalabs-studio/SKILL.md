@@ -52,6 +52,10 @@ Test recording used for screenshots: `%USERPROFILE%\Videos\Narrate\zz-smoke-test
 - **Export:** all cores, 30/60 fps choice, platform shapes at true platform sizes (1080×1920…). On her Intel N95 laptop 1080p renders ~5 fps, so a 12 s 9:16 teaser takes ~80 s and long 60 fps masters are slow. Next speed idea: lower render DPR or fewer OffthreadVideo decodes.
 - **Landing page:** `site/index.html` (self-contained, brand tokens, Archivo wide/narrow + JetBrains Mono, animated raw→polished demo), also published as a claude.ai artifact. Download button → GitHub Releases latest; v0.2.0 (released 2026-10-19, repo is public) carries the Windows installer. Published artifacts: https://claude.ai/artifact/RUNs6LzDZCMqryrvBeCjqM (her other Claude account, still says Narrate) and https://claude.ai/artifact/L6LxcQfheekmxhxo7efZZK (this account, HomaCapture, 2026-10-20)
 
+## State as of 2026-10-20 (Mac)
+- Renamed to **HomaCapture** (repo `Tassyomah/homacapture`); see DECISIONS for what kept the old name.
+- First Mac build: `npm run dist:mac` → arm64 DMG, ad-hoc signed; installed to /Applications/HomaCapture.app on her MacBook Pro (macOS 15.1). Verified: launches, Home lists the Retina display, mics and cameras, live mic meter runs through `recorder/narrate.py`. NOT yet done: screen-recording permission and a first real recording (she tests it herself). Expect avfoundation/PyObjC fixes on the first recording. Later: bundle Python + ffmpeg for Macs without them, app icon, Swift ScreenCaptureKit recorder (needs full Xcode, not installed).
+
 ## Continuing on her Mac / another Claude account
 She works from two Claude accounts; this repo (pushed to GitHub `Tassyomah/homacapture`) is the only shared context. On the Mac: clone the repo, open it in Claude Code, say "continue" — this skill loads via CLAUDE.md. First Mac session: follow `docs/DEVELOPMENT.md` → macOS, run `python3 recorder/narrate.py --list`, tell her before a short test recording, then `npm run dev`, fix what breaks, commit, ask before pushing.
 

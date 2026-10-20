@@ -12,7 +12,8 @@
     "bundle:runtime": "node scripts/bundle-runtime.mjs",
     "dist": "npm run build && npm run bundle:video && npm run bundle:runtime && electron-builder --win nsis --publish never",
     "start": "electron-vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "dist:mac": "npm run build && npm run bundle:video && electron-builder --mac dmg --arm64 --publish never"
   },
   "keywords": [],
   "author": "Homalabs",
@@ -65,6 +66,28 @@
       "oneClick": true,
       "perMachine": false,
       "artifactName": "HomaCapture-Setup-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.video",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "HomaCapture records your voice with your screen.",
+        "NSCameraUsageDescription": "HomaCapture can record your camera beside your screen.",
+        "NSAppleEventsUsageDescription": "HomaCapture uses this to show your recordings in Finder."
+      }
+    },
+    "dmg": {
+      "artifactName": "HomaCapture-${version}-mac-${arch}.${ext}",
+      "title": "HomaCapture"
     }
   },
   "dependencies": {

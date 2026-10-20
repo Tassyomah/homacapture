@@ -54,6 +54,12 @@ cd app && npm install && npm run dev
 Grant Screen Recording and Microphone to the app on first run, then reopen it; Input Monitoring lets the recorder log keyboard shortcuts for keycaps. Recordings go to `~/Movies/Narrate/`. The Python recorder was ported from the Windows one and has not been run on a Mac yet — run `python3 recorder/narrate.py --list` and a short recording first and fix what breaks.
 With Xcode installed, build the ScreenCaptureKit recorder with `make` in `recorder/swift` and point `RECORDER` at it.
 
+## Installer (macOS)
+```sh
+cd app && npm run dist:mac    # electron-vite build → remotion bundle → electron-builder → app/release/HomaCapture-<version>-mac-arm64.dmg
+```
+Apple-silicon only for now, ad-hoc signed (no Apple Developer account), not notarised, so it is for this Mac and testers who right-click → Open. It does not bundle Python or ffmpeg yet: it uses `/usr/bin/python3` (Xcode command line tools, with the PyObjC packages above) and ffmpeg from `~/bin`, `/opt/homebrew/bin` or `/usr/local/bin`. Install by dragging `HomaCapture.app` from the DMG (or `release/mac-arm64/`) into Applications. Because the signature is ad-hoc, macOS may ask for Screen Recording again after every reinstall: System Settings → Privacy & Security → Screen & System Audio Recording → HomaCapture on → quit and reopen.
+
 ## Installer (Windows)
 ```powershell
 cd app; npm run dist          # electron-vite build → remotion bundle (out/remotion) → electron-builder NSIS → app/release/HomaCapture-Setup-<version>.exe
