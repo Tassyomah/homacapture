@@ -135,6 +135,7 @@ export interface RenderConfig {
   background: Background
   cursorScale: number
   outputHeight: number  // 0 = source size
+  outputFps: 30 | 60    // export frame rate (spec Phase 6); 30 renders about twice as fast
   cameraShape: CameraShape
   cameraSize: number    // fraction of screen width
   cameraCorner: CameraCorner
@@ -146,7 +147,7 @@ export interface RenderConfig {
   keycaps: boolean      // show pressed shortcuts as keycaps (spec §46)
 }
 export const defaultConfig: RenderConfig = {
-  aspect: 'source', zoom: 2, padding: 0.06, radius: 24, background: 'indigo', cursorScale: 1.6, outputHeight: 1080,
+  aspect: 'source', zoom: 2, padding: 0.06, radius: 24, background: 'indigo', cursorScale: 1.6, outputHeight: 1080, outputFps: 60,
   cameraShape: 'circle', cameraSize: 0.2, cameraCorner: 'br', cameraMirror: true,
   micVolume: 1, systemVolume: 0.8, captions: 'off', voice: 'raw', keycaps: true,
 }
@@ -186,11 +187,11 @@ export type ShareSettings = { configured: false } | { configured: true; endpoint
 export type ShareSettingsInput = { endpoint: string; bucket: string; publicUrl: string; accessKeyId: string; secret: string }
 /** Export presets (spec §56): output and safe-area choices only, no platform branding. */
 export const EXPORT_PRESETS: { id: string; label: string; config: Partial<RenderConfig> }[] = [
-  { id: 'youtube', label: 'YouTube', config: { aspect: '16:9', outputHeight: 1080 } },
-  { id: 'shorts', label: 'Shorts / TikTok / Reels', config: { aspect: '9:16', outputHeight: 1080, captions: 'bold', cameraCorner: 'tr', cameraSize: 0.3 } },
-  { id: 'instagram', label: 'Instagram feed', config: { aspect: '1:1', outputHeight: 1080, captions: 'minimal' } },
-  { id: 'linkedin', label: 'LinkedIn', config: { aspect: '4:5', outputHeight: 1080, captions: 'minimal' } },
-  { id: 'web', label: 'Web (compact)', config: { aspect: 'source', outputHeight: 720 } },
+  { id: 'youtube', label: 'YouTube', config: { aspect: '16:9', outputHeight: 1080, outputFps: 60 } },
+  { id: 'shorts', label: 'Shorts / TikTok / Reels', config: { aspect: '9:16', outputHeight: 1080, outputFps: 30, captions: 'bold', cameraCorner: 'tr', cameraSize: 0.3 } },
+  { id: 'instagram', label: 'Instagram feed', config: { aspect: '1:1', outputHeight: 1080, outputFps: 30, captions: 'minimal' } },
+  { id: 'linkedin', label: 'LinkedIn', config: { aspect: '4:5', outputHeight: 1080, outputFps: 30, captions: 'minimal' } },
+  { id: 'web', label: 'Web (compact)', config: { aspect: 'source', outputHeight: 720, outputFps: 30 } },
 ]
 export interface ExportProgress { progress: number; stage: 'bundling' | 'rendering' | 'done' | 'error'; message?: string; output?: string; suffix?: string }
 

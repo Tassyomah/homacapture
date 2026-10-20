@@ -3,7 +3,7 @@ import { renderMedia, renderStill, selectComposition } from '@remotion/renderer'
 import { join } from 'node:path'
 import { existsSync, readdirSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
-import { homedir } from 'node:os'
+import { cpus, homedir } from 'node:os'
 import { createRequire } from 'node:module'
 import type { Cut, ExportFormat, ExportProgress, MasterExtras, Project, RenderConfig, ScreencastProps } from '../shared/types'
 import { outputSize } from '../video/Screencast'
@@ -96,12 +96,17 @@ export async function exportProject(appRoot: string, project: Project, config: R
     const design = await selectComposition({ serveUrl, id: 'Screencast', inputProps, binariesDirectory: binaries })
     // Render at an even integer size; the composition scales its design layout to whatever size it is given.
     // GIFs are capped at 480 on the short side (file size), MP4 follows the quality setting.
-    const composition = { ...design, ...outputSize(design, format === 'gif' ? Math.min(480, config.outputHeight || 480) : config.outputHeight, config.aspect) }
+    // Frame rate: the composition is authored at 60 fps and reads fps from its config, so a 30 fps export simply renders half the frames.
+    const fps = format === 'gif' ? 30 : (config.outputFps ?? 60)
+    const composition = { ...design, ...outputSize(design, format === 'gif' ? Math.min(480, config.outputHeight || 480) : config.outputHeight, config.aspect),
+      fps, durationInFrames: Math.max(1, Math.ceil(design.durationInFrames * fps / design.fps)) }
     const mp4 = join(project.dir, format === 'gif' ? `${project.name}-${safe}.gif.tmp.mp4` : `${project.name}-${safe}.mp4`)
     send({ stage: 'rendering', progress: 0, suffix: safe })
     await renderMedia({
       composition, serveUrl, codec: 'h264', outputLocation: mp4, inputProps, binariesDirectory: binaries,
       crf: 16, pixelFormat: 'yuv420p', audioBitrate: '320k', muted: format === 'gif',
+      // Use every core: frame rendering is the bottleneck, and Remotion defaults to half of them.
+      concurrency: Math.max(1, cpus().length),
       onProgress: ({ progress }) => send({ stage: 'rendering', progress: format === 'gif' ? progress * 0.85 : progress, suffix: safe }),
     })
     let output = mp4

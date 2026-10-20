@@ -5,17 +5,21 @@ import { keptDuration, keptRanges, outToSrc, srcToOut } from '../../video/ranges
 import { ASPECTS, ASSET_LABEL, EXPORT_PRESETS, defaultConfig, type Analysis, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type Transcript, type TranscriptSegment } from '../../shared/types'
 import { smoothCursor } from '../../video/motion'
 import { revealLabel } from '../platform'
-import { Timeline, fmt } from './Timeline'
+import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconDownload, IconLink, IconMicrophone, IconPalette, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconSparkles, IconTrash, IconUserCircle, IconX } from '@tabler/icons-react'
+import { Timeline, fmt, fmtShort, sameItem, type Item, type RangeAction } from './Timeline'
 import { Director, type DirectorState, type DirectorStatus } from './Director'
 import { TranscriptPanel, fillerRanges, type TranscribeStatus } from './TranscriptPanel'
 import { ContentMap } from './ContentMap'
 import { ContentCard } from './ContentCard'
 import { SharePanel } from './SharePanel'
+import { niceName } from './Home'
 import { buildContent, thumbnailTimes } from '../content'
 import { generateAssets } from '../generate'
 
 const FPS = 60
-const fmtShort = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+const RATES = [0.5, 0.75, 1.25, 1.5, 2, 3]
+type Tab = 'style' | 'camera' | 'sound' | 'words' | 'smart' | 'export'
+const newId = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`
 const SHAPE: Record<CameraShape, string> = { off: 'Hidden', circle: 'Circle', rounded: 'Rounded' }
 const BGS: { id: Background; label: string; css: string }[] = [
   { id: 'indigo', label: 'Indigo', css: 'linear-gradient(135deg,#6E71E8,#8B78D6)' },
@@ -52,9 +56,20 @@ export function Editor({ project }: { project: Project }) {
   const [queue, setQueue] = useState<{ total: number; done: number; current: string } | null>(null)
   const [format, setFormat] = useState<'mp4' | 'gif'>('mp4')
   const [playheadSrc, setPlayheadSrc] = useState(0)
-  const [pendingCut, setPendingCut] = useState<number | null>(null)
+  const [tab, setTab] = useState<Tab>('style')
+  const [range, setRange] = useState<[number, number] | null>(null)
+  const [sel, setSel] = useState<Item | null>(null)
+  const [playing, setPlaying] = useState(false)
   const playerRef = useRef<PlayerRef>(null)
   useEffect(() => window.narrate.onExportProgress(setProg), [])
+  // Time left while rendering, from the pace so far (shown once there is enough to go on).
+  const renderStart = useRef<number | null>(null)
+  useEffect(() => { if (prog?.stage === 'rendering' && prog.progress === 0) renderStart.current = Date.now(); if (prog?.stage !== 'rendering') renderStart.current = null }, [prog])
+  const eta = (() => {
+    if (prog?.stage !== 'rendering' || !renderStart.current || prog.progress < 0.03) return null
+    const left = ((Date.now() - renderStart.current) / prog.progress) * (1 - prog.progress) / 1000
+    return left < 60 ? 'under a minute left' : `about ${Math.round(left / 60)} min left`
+  })()
 
   /** Apply a change as a new undo step. */
   const apply = useCallback((next: (e: Edits) => Edits) => {
@@ -152,16 +167,6 @@ export function Editor({ project }: { project: Project }) {
   const onReject = (p: Proposal) => apply((e) => ({ ...e, director: { ...e.director, rejected: [...e.director.rejected, p.id], accepted: e.director.accepted.filter((id) => id !== p.id) } }))
   const onDismiss = () => apply((e) => ({ ...e, director: { ...e.director, dismissedAt: new Date().toISOString() } }))
 
-  // Keyboard: Z / Y with Ctrl or ⌘ for undo / redo; space is the player's own.
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return
-      if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
-      if (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey)) { e.preventDefault(); redo() }
-    }
-    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
-  })
-
   const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, micClean }, events: project.events, config, cuts, zooms, speeds, masks, transcript }), [project, micClean, config, cuts, zooms, speeds, masks, transcript])
   const size = compositionSize(props)
   const kept = useMemo(() => keptRanges(project.events, cuts, speeds), [project.events, cuts, speeds])
@@ -184,41 +189,51 @@ export function Editor({ project }: { project: Project }) {
   const dur = project.events.videoDuration
   // Never let a cut remove the whole video (spec §41: never delete without showing); at least half a second must stay.
   const addCut = (a: number, b: number) => {
-    if (Math.abs(b - a) < 0.1) return
+    if (Math.abs(b - a) < 0.1) return false
     const next: Cut[] = [...cuts, [Math.min(a, b), Math.max(a, b)]]
-    if (keptDuration(project.events, next, speeds) < 0.5) { alert('That would remove the whole recording. Move the playhead first.'); return }
-    setCuts(() => next)
+    if (keptDuration(project.events, next, speeds) < 0.5) { alert('That would remove the whole recording. Select a shorter stretch.'); return false }
+    setCuts(() => next); return true
   }
   const trimStart = () => addCut(0, playheadSrc)
   const trimEnd = () => addCut(playheadSrc, dur)
-  const cutHere = () => { if (pendingCut === null) setPendingCut(playheadSrc); else { addCut(pendingCut, playheadSrc); setPendingCut(null) } }
   const restore = (i: number) => setCuts((c) => c.filter((_, k) => k !== i))
-  const sortedCuts = cuts.map((c, i) => ({ c, i })).sort((x, y) => x.c[0] - y.c[0])
 
-  // Manual zoom (spec §26): zoom in at the playhead on wherever the cursor is, hold 2.5 s. Speed (spec §40): mark a range, pick a rate.
-  const [pendingSpeed, setPendingSpeed] = useState<number | null>(null)
-  const [speedRate, setSpeedRate] = useState(1.5)
-  const zoomHere = () => {
-    const pos = smoothCursor(project.events, playheadSrc) ?? [project.events.display.width / 2, project.events.display.height / 2]
-    apply((e) => ({ ...e, zooms: [...e.zooms, { id: `z-${Math.random().toString(36).slice(2, 8)}`, t: playheadSrc, duration: 2.5, x: Math.round(pos[0]), y: Math.round(pos[1]), level: Math.max(1.5, e.config.zoom) }] }))
+  // Manual zoom (spec §26), speed (§40), privacy blur (§49): over a selected stretch, or a default length at the playhead.
+  // Whatever is created becomes the selection, so its settings open in the inspector straight away.
+  const W = project.events.display.width, H = project.events.display.height
+  const zoomAt = (t: number, duration: number) => {
+    const pos = smoothCursor(project.events, t) ?? [W / 2, H / 2]
+    const id = newId('z')
+    apply((e) => ({ ...e, zooms: [...e.zooms, { id, t, duration, x: Math.round(pos[0]), y: Math.round(pos[1]), level: Math.max(1.5, e.config.zoom) }] }))
+    setSel({ kind: 'zoom', id })
+  }
+  const maskAt = (start: number, end: number) => {
+    const pos = smoothCursor(project.events, start) ?? [W / 2, H / 2]
+    const w = Math.round(W * 0.2), h = Math.round(H * 0.1), id = newId('m')
+    apply((e) => ({ ...e, masks: [...e.masks, { id, start, end, kind: 'blur',
+      x: Math.round(Math.max(0, Math.min(W - w, pos[0] - w / 2))), y: Math.round(Math.max(0, Math.min(H - h, pos[1] - h / 2))), w, h }] }))
+    setSel({ kind: 'mask', id })
+  }
+  const speedOver = (a: number, b: number) => {
+    if (b - a < 0.5) { alert('Select at least half a second to change its speed.'); return }
+    const next = [...speeds.filter((x) => x.end <= a || x.start >= b), { start: a, end: b, rate: 1.5 }]
+    apply((e) => ({ ...e, speeds: next }))
+    setSel({ kind: 'speed', i: next.length - 1 })
+  }
+  const zoomHere = () => zoomAt(playheadSrc, 2.5)
+  const maskHere = () => maskAt(playheadSrc, Math.min(dur, playheadSrc + 5))
+  const rangeAction = (act: RangeAction) => {
+    if (!range) return
+    const [a, b] = range
+    if (act === 'cut') { const i = cuts.length; if (addCut(a, b)) setSel({ kind: 'cut', i }) }
+    if (act === 'zoom') zoomAt(a, Math.max(0.5, b - a))
+    if (act === 'speed') speedOver(a, b)
+    if (act === 'mask') maskAt(a, Math.max(a + 0.5, b))
+    setRange(null)
   }
   const editZoom = (id: string, patch: Partial<ManualZoom>) => apply((e) => ({ ...e, zooms: e.zooms.map((z) => z.id === id ? { ...z, ...patch } : z) }))
   const removeZoom = (id: string) => apply((e) => ({ ...e, zooms: e.zooms.filter((z) => z.id !== id) }))
-  const speedHere = () => {
-    if (pendingSpeed === null) { setPendingSpeed(playheadSrc); return }
-    const a = Math.min(pendingSpeed, playheadSrc), b = Math.max(pendingSpeed, playheadSrc)
-    if (b - a >= 0.5) apply((e) => ({ ...e, speeds: [...e.speeds.filter((s) => s.end <= a || s.start >= b), { start: a, end: b, rate: speedRate }] }))
-    setPendingSpeed(null)
-  }
   const removeSpeed = (i: number) => apply((e) => ({ ...e, speeds: e.speeds.filter((_, k) => k !== i) }))
-  // Privacy mask (spec §49): a blurred box around the cursor at the playhead for 5 s; position and size are adjusted below.
-  const W = project.events.display.width, H = project.events.display.height
-  const maskHere = () => {
-    const pos = smoothCursor(project.events, playheadSrc) ?? [W / 2, H / 2]
-    const w = Math.round(W * 0.2), h = Math.round(H * 0.1)
-    apply((e) => ({ ...e, masks: [...e.masks, { id: `m-${Math.random().toString(36).slice(2, 8)}`, start: playheadSrc, end: Math.min(dur, playheadSrc + 5),
-      x: Math.round(Math.max(0, Math.min(W - w, pos[0] - w / 2))), y: Math.round(Math.max(0, Math.min(H - h, pos[1] - h / 2))), w, h, kind: 'blur' }] }))
-  }
   const editMask = (id: string, patch: Partial<Mask>) => apply((e) => ({ ...e, masks: e.masks.map((m) => m.id === id ? { ...m, ...patch } : m) }))
   const removeMask = (id: string) => apply((e) => ({ ...e, masks: e.masks.filter((m) => m.id !== id) }))
   const setSpeedRateAt = (i: number, rate: number) => apply((e) => ({ ...e, speeds: e.speeds.map((s, k) => k === i ? { ...s, rate } : s) }))
@@ -239,197 +254,249 @@ export function Editor({ project }: { project: Project }) {
     setQueue(null)
   }
 
+
+  // The selection must still exist (undo can take it away).
+  const selItem = !sel ? null
+    : sel.kind === 'cut' ? (cuts[sel.i] ? sel : null)
+    : sel.kind === 'speed' ? (!asset && speeds[sel.i] ? sel : null)
+    : sel.kind === 'zoom' ? (!asset && zooms.some((z) => z.id === sel.id) ? sel : null)
+    : (!asset && masks.some((m) => m.id === sel.id) ? sel : null)
+  const removeItem = (it: Item) => {
+    if (it.kind === 'cut') restore(it.i)
+    if (it.kind === 'zoom') removeZoom(it.id)
+    if (it.kind === 'speed') removeSpeed(it.i)
+    if (it.kind === 'mask') removeMask(it.id)
+    setSel(null)
+  }
+
+  // Player state for the play button (the player's own controls are hidden; the transport below drives it).
+  useEffect(() => {
+    const p = playerRef.current; if (!p) return
+    const on = () => setPlaying(true), off = () => setPlaying(false)
+    p.addEventListener('play', on); p.addEventListener('pause', off); p.addEventListener('ended', off)
+    return () => { p.removeEventListener('play', on); p.removeEventListener('pause', off); p.removeEventListener('ended', off) }
+  }, [])
+
+  // Keyboard (shown in every tooltip): Space play, arrows step, C/Z/S/B act on the selected stretch, Delete removes the
+  // selected block, Esc clears, Ctrl/Cmd+Z / Y undo and redo. Ignored while typing in a field.
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      if ((e.target as HTMLElement).closest?.('input, select, textarea')) return
+      const k = e.key.toLowerCase()
+      if (e.ctrlKey || e.metaKey) {
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
+        if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo() }
+        return
+      }
+      if (k === ' ') { e.preventDefault(); playerRef.current?.toggle() }
+      else if (k === 'escape') { setRange(null); setSel(null) }
+      else if (k === 'arrowleft' || k === 'arrowright') { e.preventDefault(); seekSrc(playheadSrc + (k === 'arrowleft' ? -1 : 1) * (e.shiftKey ? 5 : 1)) }
+      else if ((k === 'delete' || k === 'backspace') && selItem) removeItem(selItem)
+      else if (range && k === 'c') rangeAction('cut')
+      else if (range && !asset && k === 'z') rangeAction('zoom')
+      else if (range && !asset && k === 's') rangeAction('speed')
+      else if (range && !asset && k === 'b') rangeAction('mask')
+      else if (!range && !asset && k === 'z') zoomHere()
+      else if (!range && !asset && k === 'b') maskHere()
+    }
+    window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
+  })
+
+  const pendingCount = analysisWithFillers && !asset
+    ? analysisWithFillers.proposals.filter((p) => p.type !== 'ZOOM' && !director.accepted.includes(p.id) && !director.rejected.includes(p.id)).length : 0
+  const tabs: { id: Tab; label: string; Icon: typeof IconPalette; show: boolean; badge?: number }[] = [
+    { id: 'style', label: 'Style', Icon: IconPalette, show: true },
+    { id: 'camera', label: 'Camera', Icon: IconUserCircle, show: !!project.assets.camera },
+    { id: 'sound', label: 'Sound', Icon: IconMicrophone, show: !!(project.assets.mic || project.assets.system) },
+    { id: 'words', label: 'Transcript', Icon: IconBadgeCc, show: !!project.assets.mic },
+    { id: 'smart', label: 'Smart', Icon: IconSparkles, show: !asset, badge: pendingCount },
+    { id: 'export', label: 'Export', Icon: IconDownload, show: true },
+  ]
+  const shownTab = tabs.find((t) => t.id === tab && t.show) ? tab : 'style'
+  const outLen = keptDuration(project.events, cuts, speeds)
+  const go = (t: Tab) => { setSel(null); setTab(t) }
+  const seg = <T extends string | number | boolean>(value: T, opts: [T, string][], onPick: (v: T) => void) => (
+    <div className="seg">{opts.map(([v, l]) => <button key={String(v)} className={value === v ? 'on' : ''} onClick={() => onPick(v)}>{l}</button>)}</div>)
+  const slider = (label: string, shown: string, min: number, max: number, step: number, value: number, onChange: (v: number) => void, tip?: string) => (
+    <div className="control"><div className="lbl"><span data-tip={tip}>{label}</span><span>{shown}</span></div>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={(e) => onChange(Number(e.target.value))}
+        style={{ '--p': `${((value - min) / (max - min || 1)) * 100}%` } as React.CSSProperties} /></div>)
+  const paneHead = (title: string, sub: string, close?: boolean) => (
+    <div className="pane-head"><div><h3>{title}</h3><p className="note">{sub}</p></div>
+      {close && <button className="icon" aria-label="Close" data-tip="Close · Esc" onClick={() => setSel(null)}><IconX size={16} /></button>}</div>)
+
+  const itemPane = (it: Item) => {
+    const foot = (t: number) => (
+      <div className="pane-foot"><button onClick={() => seekSrc(t)}>Jump to it</button>
+        <button className="danger" onClick={() => removeItem(it)}><IconTrash size={15} />Remove</button></div>)
+    if (it.kind === 'cut') {
+      const [a, b] = [Math.min(...cuts[it.i]), Math.max(...cuts[it.i])]
+      return <>{paneHead('Cut', `${fmt(a)} – ${fmt(b)} (${fmt(b - a)}) is left out of the video. Nothing is deleted from your recording.`, true)}
+        <div className="pane-foot"><button onClick={() => seekSrc(a)}>Jump to it</button>
+          <button className="primary" onClick={() => removeItem(it)}><IconRestore size={15} />Restore this part</button></div></>
+    }
+    if (it.kind === 'zoom') {
+      const z = zooms.find((x) => x.id === it.id)!
+      return <>{paneHead('Zoom', `From ${fmt(z.t)}, centred on where your cursor was.`, true)}
+        {slider('Zoom level', `${z.level.toFixed(1)}×`, 1.2, 4, 0.1, z.level, (v) => editZoom(z.id, { level: v }))}
+        {slider('Hold for', `${z.duration.toFixed(1)} s`, 0.5, 15, 0.5, z.duration, (v) => editZoom(z.id, { duration: v }))}
+        {foot(z.t)}</>
+    }
+    if (it.kind === 'speed') {
+      const sp = speeds[it.i]
+      return <>{paneHead('Speed', `${fmt(sp.start)} – ${fmt(sp.end)} plays at a different speed.`, true)}
+        <div className="control"><div className="lbl"><span>Speed</span></div>
+          {seg(sp.rate, RATES.map((r) => [r, `${r}×`] as [number, string]), (v) => setSpeedRateAt(it.i, v))}</div>
+        {foot(sp.start)}</>
+    }
+    const m = masks.find((x) => x.id === it.id)!
+    return <>{paneHead('Blur', `Hides part of the screen from ${fmt(m.start)} to ${fmt(m.end)}.`, true)}
+      <div className="control"><div className="lbl"><span>Style</span></div>{seg(m.kind, [['blur', 'Blur'], ['solid', 'Solid box']], (v) => editMask(m.id, { kind: v }))}</div>
+      {slider('Left', `${Math.round(m.x / W * 100)}%`, 0, W - m.w, 4, m.x, (v) => editMask(m.id, { x: v }))}
+      {slider('Top', `${Math.round(m.y / H * 100)}%`, 0, H - m.h, 4, m.y, (v) => editMask(m.id, { y: v }))}
+      {slider('Width', `${Math.round(m.w / W * 100)}%`, 40, W, 4, m.w, (v) => editMask(m.id, { w: v, x: Math.min(m.x, W - v) }))}
+      {slider('Height', `${Math.round(m.h / H * 100)}%`, 24, H, 4, m.h, (v) => editMask(m.id, { h: v, y: Math.min(m.y, H - v) }))}
+      {slider('Until', fmt(m.end), m.start + 0.5, dur, 0.1, m.end, (v) => editMask(m.id, { end: v }))}
+      {foot(m.start)}</>
+  }
+
+  const tabPane = () => {
+    if (shownTab === 'style') return <>
+      {paneHead('Style', 'How the recording is framed and dressed.')}
+      <div className="control"><div className="lbl"><span>Shape</span><span>{config.aspect === 'source' ? `${W}×${H}` : config.aspect}</span></div>
+        {seg(config.aspect, ASPECTS.map((a) => [a.id, a.label] as [typeof config.aspect, string]), (v) => set('aspect', v))}
+        {config.aspect !== 'source' && ASPECTS.find((a) => a.id === config.aspect)!.ratio! < 1 &&
+          <span className="note">Vertical and square crops follow your cursor and clicks.</span>}</div>
+      <div className="control"><div className="lbl"><span>Background</span></div>
+        <div className="swatches">{BGS.map((b) => (
+          <button key={b.id} className={config.background === b.id ? 'on' : ''} aria-label={b.label} data-tip={b.label} onClick={() => set('background', b.id)}>
+            <span style={{ background: b.css }} /></button>))}</div></div>
+      {slider('Automatic zoom', config.zoom === 1 ? 'Off' : `${config.zoom.toFixed(1)}×`, 1, 3, 0.1, config.zoom, (v) => set('zoom', v), 'How far it zooms in when you click. 1× turns it off.')}
+      {slider('Padding', `${Math.round(config.padding * 100)}%`, 0, 0.2, 0.01, config.padding, (v) => set('padding', v), 'Space between the screen and the edge')}
+      {slider('Corners', `${config.radius}px`, 0, 64, 2, config.radius, (v) => set('radius', v))}
+      {slider('Cursor size', `${config.cursorScale.toFixed(1)}×`, 1, 3, 0.1, config.cursorScale, (v) => set('cursorScale', v))}
+      {!!project.events.keys?.length && <div className="control"><div className="lbl"><span>Keyboard shortcuts</span><span>{project.events.keys.length} pressed</span></div>
+        {seg(config.keycaps, [[true, 'Show'], [false, 'Hide']], (v) => set('keycaps', v))}</div>}
+    </>
+    if (shownTab === 'camera') return <>
+      {paneHead('Camera', 'Your face in a corner of the video.')}
+      <div className="control"><div className="lbl"><span>Shape</span></div>{seg(config.cameraShape, (['off', 'circle', 'rounded'] as CameraShape[]).map((s) => [s, SHAPE[s]] as [CameraShape, string]), (v) => set('cameraShape', v))}</div>
+      {config.cameraShape !== 'off' && <>
+        {slider('Size', `${Math.round(config.cameraSize * 100)}%`, 0.1, 0.4, 0.01, config.cameraSize, (v) => set('cameraSize', v))}
+        <div className="control"><div className="lbl"><span>Corner</span></div>
+          <div className="corners">{([['tl', 'Top left'], ['tr', 'Top right'], ['bl', 'Bottom left'], ['br', 'Bottom right']] as [CameraCorner, string][]).map(([c, l]) => (
+            <button key={c} className={config.cameraCorner === c ? 'on' : ''} aria-label={l} data-tip={l} onClick={() => set('cameraCorner', c)}><i className={c} /></button>))}</div></div>
+        <div className="control"><div className="lbl"><span>Mirror</span></div>{seg(config.cameraMirror, [[true, 'Mirrored'], [false, 'As others see you']], (v) => set('cameraMirror', v))}</div>
+      </>}
+    </>
+    if (shownTab === 'sound') return <>
+      {paneHead('Sound', 'Your voice and the computer’s sound.')}
+      {project.assets.mic && <div className="control"><div className="lbl"><span>Voice clean-up</span></div>
+        {micClean ? seg(config.voice, [['clean', 'Cleaned'], ['raw', 'As recorded']], (v) => set('voice', v))
+          : <button disabled={enhancing !== 'idle'} onClick={enhance}>{enhancing === 'idle' ? 'Clean up voice' : enhancing}</button>}
+        <span className="note">Removes hum and background noise and evens out loudness. Your original is kept.</span></div>}
+      {project.assets.mic && slider('Voice volume', config.micVolume === 0 ? 'Muted' : `${Math.round(config.micVolume * 100)}%`, 0, 1.5, 0.05, config.micVolume, (v) => set('micVolume', v))}
+      {project.assets.system && slider('Computer sound', config.systemVolume === 0 ? 'Muted' : `${Math.round(config.systemVolume * 100)}%`, 0, 1.5, 0.05, config.systemVolume, (v) => set('systemVolume', v))}
+    </>
+    if (shownTab === 'words') return <>
+      {paneHead('Transcript', 'What you said. Remove a sentence to cut it from the video.')}
+      {transcript && <div className="control"><div className="lbl"><span>Captions</span></div>
+        {seg(config.captions, (['off', 'minimal', 'bold'] as CaptionStyle[]).map((s) => [s, s === 'off' ? 'Off' : s === 'minimal' ? 'Minimal' : 'Bold'] as [CaptionStyle, string]), (v) => set('captions', v))}</div>}
+      <TranscriptPanel transcript={transcript} status={tstatus} cuts={cuts} hasMic={!!project.assets.mic} playhead={playheadSrc}
+        onCreate={transcribe} onSeek={seekSrc} onRemove={removeSentence} onRestore={restoreSentence} />
+    </>
+    if (shownTab === 'smart') return <>
+      {paneHead('Smart', 'Suggestions, chapters, thumbnails and post copy, all from this recording.')}
+      <Director analysis={analysisWithFillers} status={dstatus} state={director} onAccept={onAccept} onReject={onReject} onAcceptAll={onAcceptAll}
+        onDismiss={onDismiss} onSeek={seekSrc} onRerun={() => runAnalysis(true)} />
+      <ContentMap chapters={chapters} transcript={transcript} duration={dur} playhead={playheadSrc} onSeek={seekSrc}
+        onRename={(i, title) => apply((ed) => ({ ...ed, chapters: ed.chapters.map((x, k) => k === i ? { ...x, title } : x) }))}
+        onRemove={(i) => apply((ed) => ({ ...ed, chapters: ed.chapters.filter((_, k) => k !== i) }))}
+        onAddHere={() => apply((ed) => ({ ...ed, chapters: [...ed.chapters.filter((c) => Math.abs(c.t - playheadSrc) > 0.5), { t: playheadSrc, title: `Section ${ed.chapters.length + 2}` }].sort((a, b) => a.t - b.t) }))} />
+      <ContentCard content={buildContent(transcript, chapters, keptDuration(project.events, edits.cuts, speeds))} thumbs={thumbs} thumbStatus={thumbStatus}
+        onMakeThumbs={makeThumbs} onReveal={(p) => window.narrate.reveal(p)} revealLabel={revealLabel} hasTranscript={!!transcript} />
+    </>
+    return <>
+      {paneHead('Export', `${asset ? asset.name : 'Master'} · ${fmtShort(outLen)}${pauses > 0 ? ` · ${pauses} pause${pauses > 1 ? 's' : ''} removed` : ''}`)}
+      <div className="control"><div className="lbl"><span>Made for</span></div>
+        <select value="" onChange={(e) => { const pr = EXPORT_PRESETS.find((x) => x.id === e.target.value); if (pr) apply((ed) => asset
+          ? { ...ed, assets: ed.assets.map((a) => a.id === asset.id ? { ...a, config: { ...a.config, ...pr.config } } : a) }
+          : { ...ed, config: { ...ed.config, ...pr.config } }) }}>
+          <option value="">Choose a platform…</option>
+          {EXPORT_PRESETS.map((pr) => <option key={pr.id} value={pr.id}>{pr.label}</option>)}
+        </select>
+        <span className="note">Sets the shape, size and captions. You can still change them.</span></div>
+      <div className="control"><div className="lbl"><span>File</span></div>{seg(format, [['mp4', 'Video (MP4)'], ['gif', 'GIF']], setFormat)}
+        {format === 'gif' && <span className="note">Silent, 15 fps, small. Best for clips under 15 seconds.</span>}</div>
+      {format === 'mp4' && <div className="control"><div className="lbl"><span>Quality</span></div>
+        {seg(config.outputHeight, [[1080, '1080p'], [1440, '1440p'], [0, 'Original']], (v) => set('outputHeight', v))}</div>}
+      {format === 'mp4' && <div className="control"><div className="lbl"><span>Smoothness</span></div>
+        {seg(config.outputFps ?? 60, [[60, '60 fps'], [30, '30 fps']] as [30 | 60, string][], (v) => set('outputFps', v))}
+        <span className="note">{(config.outputFps ?? 60) === 60 ? 'Smoothest motion. 30 fps exports about twice as fast.' : 'Exports about twice as fast. Fine for most social posts.'}</span></div>}
+      <button className="primary wide" disabled={!!busy || !!queue} onClick={() => { setProg({ stage: 'bundling', progress: 0 }); exportOne(asset).catch(() => {}) }}>
+        <IconDownload size={16} />{busy ? (prog!.stage === 'bundling' ? 'Preparing…' : `Exporting ${Math.round(prog!.progress * 100)}%${eta ? ` · ${eta}` : ''}`) : `Export ${asset ? asset.name : 'master'}`}
+      </button>
+      {assets.length > 0 && <button className="wide" disabled={!!busy || !!queue} onClick={exportAll}>{queue ? `Exporting ${queue.done + 1} of ${queue.total}: ${queue.current}` : `Export all ${assets.length + 1} versions`}</button>}
+      {busy && <div className="progress"><i style={{ width: `${prog!.progress * 100}%` }} /></div>}
+      {prog?.stage === 'done' && prog.output && !queue && <button className="wide" onClick={() => window.narrate.reveal(prog.output!)}>{revealLabel}</button>}
+      {prog?.stage === 'error' && <p className="err">{prog.message}</p>}
+      <SharePanel file={prog?.stage === 'done' && prog.output && /\.mp4$/i.test(prog.output) ? prog.output : null} title={niceName(project.name)} />
+    </>
+  }
+
+  const hint = range ? `${fmt(range[1] - range[0])} selected. Choose what to do with it above.`
+    : `Final length ${fmtShort(outLen)} of ${fmtShort(dur)} recorded`
+
   return (
-    <div className="editor">
-      <div className="work">
-        <div className="assets">
-          <button className={`chip ${selected === 'master' ? 'on' : ''}`} onClick={() => setSelected('master')}><b>Master</b><span>{fmtShort(assetDuration(null))}</span></button>
+    <div className="ed">
+      <header className="ed-head">
+        <div className="versions">
+          <button className={'ver' + (selected === 'master' ? ' on' : '')} onClick={() => { setSelected('master'); setSel(null) }} title="Your full edit. Versions start from it.">
+            <b>Master</b><span>{fmtShort(assetDuration(null))}</span></button>
           {assets.map((a) => (
-            <button key={a.id} className={`chip ${selected === a.id ? 'on' : ''}`} onClick={() => setSelected(a.id)} title={a.note}>
+            <button key={a.id} className={'ver' + (selected === a.id ? ' on' : '')} onClick={() => { setSelected(a.id); setSel(null) }} title={a.note}>
               <b>{a.name}</b><span>{fmtShort(assetDuration(a))}{a.config.aspect ? ` · ${a.config.aspect}` : ''}</span>
-            </button>
-          ))}
-          <span className="gen">
-            <button onClick={generate} disabled={dstatus.kind === 'running'} title="Quick Demo, LinkedIn, Vertical Teaser, 15s Teaser and Clips, built from this recording">
-              {assets.length ? 'Regenerate assets' : 'Generate assets'}
-            </button>
-            {asset && <button onClick={() => removeAsset(asset.id)}>Remove {asset.name}</button>}
-          </span>
+              {selected === a.id && <i className="rm" role="button" aria-label={`Remove ${a.name}`} onClick={(e) => { e.stopPropagation(); removeAsset(a.id) }}><IconX size={12} /></i>}
+            </button>))}
+          <button className="ver add" onClick={generate} disabled={dstatus.kind === 'running'}
+            title="Quick demo, LinkedIn, vertical teaser, 15 s teaser and clips, cut from this recording">
+            <IconPlus size={15} />{assets.length ? 'Remake versions' : 'Make versions'}</button>
         </div>
-        {asset && <p className="note">{ASSET_LABEL[asset.kind]} · {asset.note} Edits here change only this asset; the master is untouched.</p>}
-        <div className="stage">
-          <Player ref={playerRef} component={Screencast} inputProps={props} durationInFrames={frames} fps={FPS}
-            compositionWidth={size.width} compositionHeight={size.height} controls
-            style={{ width: '100%', height: '100%' }} />
-        </div>
-        <div className="tools">
-          <button onClick={trimStart} disabled={playheadSrc < 0.1} title="Remove everything before the playhead">Trim start here</button>
-          <button onClick={trimEnd} disabled={playheadSrc < 0.5 || playheadSrc > dur - 0.1} title="Remove everything after the playhead">Trim end here</button>
-          <button className={pendingCut !== null ? 'primary' : ''} onClick={cutHere}>{pendingCut === null ? 'Cut from here…' : '…to here'}</button>
-          {pendingCut !== null && <button onClick={() => setPendingCut(null)}>Cancel</button>}
-          {!asset && <>
-            <button onClick={zoomHere} title="Zoom in on the cursor at the playhead for 2.5 s">Zoom here</button>
-            <button onClick={maskHere} title="Blur a box around the cursor at the playhead for 5 s; adjust it below">Mask here</button>
-            <button className={pendingSpeed !== null ? 'primary' : ''} onClick={speedHere}>{pendingSpeed === null ? 'Speed from here…' : `…to here at ${speedRate}×`}</button>
-            {pendingSpeed !== null && <>
-              <select value={speedRate} onChange={(e) => setSpeedRate(Number(e.target.value))} style={{ minWidth: 0, padding: '6px 8px' }}>
-                {[0.5, 0.75, 1.25, 1.5, 2, 3].map((r) => <option key={r} value={r}>{r}×</option>)}
-              </select>
-              <button onClick={() => setPendingSpeed(null)}>Cancel</button></>}
-          </>}
-          <span className="spacer" />
-          <span className="hint">{pendingCut !== null ? `Cutting from ${fmt(pendingCut)}. Move the playhead and click “…to here”.`
-            : pendingSpeed !== null ? `Speed change from ${fmt(pendingSpeed)}. Move the playhead and click “…to here”.`
-            : `Output ${fmt(keptDuration(project.events, cuts, speeds))} of ${fmt(dur)} recorded`}</span>
-          <button onClick={undo} disabled={history.current.past.length === 0} title="Undo (Ctrl+Z)">Undo</button>
-          <button onClick={redo} disabled={history.current.future.length === 0} title="Redo (Ctrl+Y)">Redo</button>
-        </div>
-        <Timeline ev={project.events} cuts={cuts} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks}
-          playhead={playheadSrc} pendingCut={pendingCut ?? pendingSpeed} onSeek={seekSrc} />
-        {!asset && <Director analysis={analysisWithFillers} status={dstatus} state={director} onAccept={onAccept} onReject={onReject} onAcceptAll={onAcceptAll}
-          onDismiss={onDismiss} onSeek={seekSrc} onRerun={() => runAnalysis(true)} />}
-        {!asset && <TranscriptPanel transcript={transcript} status={tstatus} cuts={cuts} hasMic={!!project.assets.mic} playhead={playheadSrc}
-          onCreate={transcribe} onSeek={seekSrc} onRemove={removeSentence} onRestore={restoreSentence} />}
-        {(sortedCuts.length > 0 || (!asset && (zooms.length > 0 || speeds.length > 0 || masks.length > 0))) && (
-          <div className="cuts">
-            {sortedCuts.map(({ c, i }) => (
-              <div key={'c' + i}><span>Removed {fmt(c[0])} – {fmt(c[1])}</span><button onClick={() => restore(i)}>Restore</button></div>
-            ))}
-            {!asset && zooms.map((z) => (
-              <div key={z.id}><span>Zoom <button className="when" onClick={() => seekSrc(z.t)}>{fmt(z.t)}</button>
-                {' '}<label className="mini">level <input type="range" min={1.2} max={4} step={0.1} value={z.level} onChange={(e) => editZoom(z.id, { level: Number(e.target.value) })} /> {z.level.toFixed(1)}×</label>
-                {' '}<label className="mini">hold <input type="range" min={0.5} max={10} step={0.5} value={z.duration} onChange={(e) => editZoom(z.id, { duration: Number(e.target.value) })} /> {z.duration.toFixed(1)}s</label></span>
-                <button onClick={() => removeZoom(z.id)}>Remove</button></div>
-            ))}
-            {!asset && masks.map((m) => (
-              <div key={m.id}><span>Mask <button className="when" onClick={() => seekSrc(m.start)}>{fmt(m.start)}</button> – {fmt(m.end)}
-                {' '}<select value={m.kind} onChange={(e) => editMask(m.id, { kind: e.target.value as Mask['kind'] })} style={{ minWidth: 0, padding: '4px 8px' }}><option value="blur">Blur</option><option value="solid">Solid</option></select>
-                {' '}<label className="mini">x <input type="range" min={0} max={W - m.w} step={4} value={m.x} onChange={(e) => editMask(m.id, { x: Number(e.target.value) })} /></label>
-                {' '}<label className="mini">y <input type="range" min={0} max={H - m.h} step={4} value={m.y} onChange={(e) => editMask(m.id, { y: Number(e.target.value) })} /></label>
-                {' '}<label className="mini">width <input type="range" min={40} max={W} step={4} value={m.w} onChange={(e) => editMask(m.id, { w: Number(e.target.value), x: Math.min(m.x, W - Number(e.target.value)) })} /></label>
-                {' '}<label className="mini">height <input type="range" min={24} max={H} step={4} value={m.h} onChange={(e) => editMask(m.id, { h: Number(e.target.value), y: Math.min(m.y, H - Number(e.target.value)) })} /></label>
-                {' '}<label className="mini">until <input type="range" min={m.start + 0.5} max={dur} step={0.5} value={m.end} onChange={(e) => editMask(m.id, { end: Number(e.target.value) })} /> {fmt(m.end)}</label></span>
-                <button onClick={() => removeMask(m.id)}>Remove</button></div>
-            ))}
-            {!asset && speeds.map((s, i) => (
-              <div key={'s' + i}><span>Speed <button className="when" onClick={() => seekSrc(s.start)}>{fmt(s.start)}</button> – {fmt(s.end)}
-                {' '}<select value={s.rate} onChange={(e) => setSpeedRateAt(i, Number(e.target.value))} style={{ minWidth: 0, padding: '4px 8px' }}>
-                  {[0.5, 0.75, 1.25, 1.5, 2, 3].map((r) => <option key={r} value={r}>{r}×</option>)}</select></span>
-                <button onClick={() => removeSpeed(i)}>Remove</button></div>
-            ))}
+        <span className="spacer" />
+        <button className="icon" aria-label="Undo" data-tip="Undo · Ctrl+Z" disabled={history.current.past.length === 0} onClick={undo}><IconArrowBackUp size={18} /></button>
+        <button className="icon" aria-label="Redo" data-tip="Redo · Ctrl+Y" disabled={history.current.future.length === 0} onClick={redo}><IconArrowForwardUp size={18} /></button>
+        <button onClick={() => go('export')} data-tip="Export, then get a link anyone can watch"><IconLink size={16} />Share</button>
+        <button className="primary" onClick={() => go('export')}><IconDownload size={16} />Export</button>
+      </header>
+      {asset && <p className="ed-note">Editing <b>{asset.name}</b> · {ASSET_LABEL[asset.kind]}. {asset.note} Changes here leave the master untouched.</p>}
+      <div className="ed-main">
+        <div className="ed-left">
+          <div className="stage">
+            <Player ref={playerRef} component={Screencast} inputProps={props} durationInFrames={frames} fps={FPS} acknowledgeRemotionLicense
+              compositionWidth={size.width} compositionHeight={size.height} clickToPlay style={{ width: '100%', height: '100%' }} />
           </div>
-        )}
-        {!asset && <ContentCard content={buildContent(transcript, chapters, keptDuration(project.events, edits.cuts, speeds))} thumbs={thumbs} thumbStatus={thumbStatus}
-          onMakeThumbs={makeThumbs} onReveal={(p) => window.narrate.reveal(p)} revealLabel={revealLabel} hasTranscript={!!transcript} />}
-        {!asset && (chapters.length > 0 || transcript) && (
-          <ContentMap chapters={chapters} transcript={transcript} duration={dur} playhead={playheadSrc} onSeek={seekSrc}
-            onRename={(i, title) => apply((ed) => ({ ...ed, chapters: ed.chapters.map((x, k) => k === i ? { ...x, title } : x) }))}
-            onRemove={(i) => apply((ed) => ({ ...ed, chapters: ed.chapters.filter((_, k) => k !== i) }))}
-            onAddHere={() => apply((ed) => ({ ...ed, chapters: [...ed.chapters.filter((c) => Math.abs(c.t - playheadSrc) > 0.5), { t: playheadSrc, title: `Section ${ed.chapters.length + 2}` }].sort((a, b) => a.t - b.t) }))} />
-        )}
-      </div>
-      <div className="panel">
-        <h2>Format</h2>
-        <div className="control"><div className="lbl"><span>Aspect</span><span>{config.aspect === 'source' ? `${project.events.display.width}×${project.events.display.height}` : config.aspect}</span></div>
-          <div className="seg">{ASPECTS.map((a) => (
-            <button key={a.id} className={config.aspect === a.id ? 'on' : ''} onClick={() => set('aspect', a.id)}>{a.label}</button>))}</div>
-          {config.aspect !== 'source' && ASPECTS.find((a) => a.id === config.aspect)!.ratio! < 1 &&
-            <span className="note">Vertical and square formats crop the screen and follow the cursor and clicks.</span>}</div>
-
-        <h2>Look</h2>
-        <div className="control"><div className="lbl"><span>Auto-zoom</span><span>{config.zoom === 1 ? 'off' : config.zoom.toFixed(1) + '×'}</span></div>
-          <input type="range" min={1} max={3} step={0.1} value={config.zoom} onChange={(e) => set('zoom', Number(e.target.value))} /></div>
-        <div className="control"><div className="lbl"><span>Padding</span><span>{Math.round(config.padding * 100)}%</span></div>
-          <input type="range" min={0} max={0.2} step={0.01} value={config.padding} onChange={(e) => set('padding', Number(e.target.value))} /></div>
-        <div className="control"><div className="lbl"><span>Corner radius</span><span>{config.radius}px</span></div>
-          <input type="range" min={0} max={64} step={2} value={config.radius} onChange={(e) => set('radius', Number(e.target.value))} /></div>
-        <div className="control"><div className="lbl"><span>Cursor size</span><span>{config.cursorScale.toFixed(1)}×</span></div>
-          <input type="range" min={1} max={3} step={0.1} value={config.cursorScale} onChange={(e) => set('cursorScale', Number(e.target.value))} /></div>
-        {!!project.events.keys?.length && <div className="control"><div className="lbl"><span>Keyboard shortcuts</span><span>{project.events.keys.length} pressed</span></div>
-          <div className="seg">
-            <button className={config.keycaps ? 'on' : ''} onClick={() => set('keycaps', true)}>Show keycaps</button>
-            <button className={!config.keycaps ? 'on' : ''} onClick={() => set('keycaps', false)}>Hide</button>
-          </div></div>}
-        <div className="control"><div className="lbl"><span>Background</span></div>
-          <div className="seg">{BGS.map((b) => (
-            <button key={b.id} className={config.background === b.id ? 'on' : ''} onClick={() => set('background', b.id)}>
-              <span className="swatch" style={{ background: b.css }} /></button>))}</div></div>
-
-        {project.assets.camera && (<>
-          <h2>Camera</h2>
-          <div className="control"><div className="lbl"><span>Shape</span></div>
-            <div className="seg">{(['off', 'circle', 'rounded'] as CameraShape[]).map((s) => (
-              <button key={s} className={config.cameraShape === s ? 'on' : ''} onClick={() => set('cameraShape', s)}>{SHAPE[s]}</button>))}</div></div>
-          {config.cameraShape !== 'off' && (<>
-            <div className="control"><div className="lbl"><span>Size</span><span>{Math.round(config.cameraSize * 100)}%</span></div>
-              <input type="range" min={0.1} max={0.4} step={0.01} value={config.cameraSize} onChange={(e) => set('cameraSize', Number(e.target.value))} /></div>
-            <div className="control"><div className="lbl"><span>Corner</span></div>
-              <select value={config.cameraCorner} onChange={(e) => set('cameraCorner', e.target.value as CameraCorner)}>
-                <option value="br">Bottom right</option><option value="bl">Bottom left</option>
-                <option value="tr">Top right</option><option value="tl">Top left</option>
-              </select></div>
-            <div className="control"><div className="lbl"><span>Mirror</span></div>
-              <div className="seg">
-                <button className={config.cameraMirror ? 'on' : ''} onClick={() => set('cameraMirror', true)}>Mirrored</button>
-                <button className={!config.cameraMirror ? 'on' : ''} onClick={() => set('cameraMirror', false)}>As seen by others</button>
-              </div></div>
-          </>)}
-        </>)}
-
-        {transcript && (<>
-          <h2>Captions</h2>
-          <div className="control"><div className="lbl"><span>Style</span></div>
-            <div className="seg">{(['off', 'minimal', 'bold'] as CaptionStyle[]).map((s) => (
-              <button key={s} className={config.captions === s ? 'on' : ''} onClick={() => set('captions', s)}>{s === 'off' ? 'Off' : s === 'minimal' ? 'Minimal' : 'Bold'}</button>))}</div>
-            <span className="note">From the transcript; the spoken word is highlighted.</span></div>
-        </>)}
-
-        {(project.assets.mic || project.assets.system) && (<>
-          <h2>Sound</h2>
-          {project.assets.mic && <div className="control"><div className="lbl"><span>Voice</span><span>{config.micVolume === 0 ? 'muted' : Math.round(config.micVolume * 100) + '%'}</span></div>
-            <input type="range" min={0} max={1.5} step={0.05} value={config.micVolume} onChange={(e) => set('micVolume', Number(e.target.value))} /></div>}
-          {project.assets.mic && <div className="control"><div className="lbl"><span>Voice clean-up</span></div>
-            {micClean ? (
-              <div className="seg">
-                <button className={config.voice === 'raw' ? 'on' : ''} onClick={() => set('voice', 'raw')}>As recorded</button>
-                <button className={config.voice === 'clean' ? 'on' : ''} onClick={() => set('voice', 'clean')}>Cleaned</button>
-              </div>
-            ) : (
-              <button disabled={enhancing !== 'idle'} onClick={enhance}>{enhancing === 'idle' ? 'Clean up voice' : enhancing}</button>
-            )}
-            <span className="note">Noise reduction and even loudness. The original recording is kept.</span></div>}
-          {project.assets.system && <div className="control"><div className="lbl"><span>Computer sound</span><span>{config.systemVolume === 0 ? 'muted' : Math.round(config.systemVolume * 100) + '%'}</span></div>
-            <input type="range" min={0} max={1.5} step={0.05} value={config.systemVolume} onChange={(e) => set('systemVolume', Number(e.target.value))} /></div>}
-        </>)}
-
-        <h2>Export</h2>
-        <div className="control"><div className="lbl"><span>Preset</span></div>
-          <select value="" onChange={(e) => { const pr = EXPORT_PRESETS.find((x) => x.id === e.target.value); if (pr) apply((ed) => asset
-            ? { ...ed, assets: ed.assets.map((a) => a.id === asset.id ? { ...a, config: { ...a.config, ...pr.config } } : a) }
-            : { ...ed, config: { ...ed.config, ...pr.config } }) }}>
-            <option value="">Apply a preset…</option>
-            {EXPORT_PRESETS.map((pr) => <option key={pr.id} value={pr.id}>{pr.label}</option>)}
-          </select>
-          <span className="note">Sets aspect, size and captions. Everything stays adjustable.</span></div>
-        <div className="control"><div className="lbl"><span>Format</span></div>
-          <div className="seg">
-            <button className={format === 'mp4' ? 'on' : ''} onClick={() => setFormat('mp4')}>MP4</button>
-            <button className={format === 'gif' ? 'on' : ''} onClick={() => setFormat('gif')}>GIF</button>
+          <div className="transport">
+            <button className="play" aria-label={playing ? 'Pause' : 'Play'} data-tip={`${playing ? 'Pause' : 'Play'} · Space`} onClick={() => playerRef.current?.toggle()}>
+              {playing ? <IconPlayerPause size={18} /> : <IconPlayerPlay size={18} />}</button>
+            <span className="time"><b>{fmt(srcToOut(kept, playheadSrc))}</b> / {fmt(outLen)}</span>
+            <button className="small" onClick={trimStart} disabled={playheadSrc < 0.1} data-tip="Cut everything before the playhead">Trim start</button>
+            <button className="small" onClick={trimEnd} disabled={playheadSrc < 0.5 || playheadSrc > dur - 0.1} data-tip="Cut everything after the playhead">Trim end</button>
+            <span className="spacer" />
+            <span className="hint">{hint}</span>
+            {pendingCount > 0 && <button className="suggest" onClick={() => go('smart')} data-tip="Pauses, filler words and slow stretches worth tidying">
+              <IconSparkles size={15} />{pendingCount} suggestion{pendingCount === 1 ? '' : 's'}</button>}
           </div>
-          {format === 'gif' && <span className="note">Silent, 15 fps, up to 480 px on the short side. Best for clips under 15 seconds.</span>}</div>
-        {format === 'mp4' && <div className="control"><div className="lbl"><span>Size</span></div>
-          <div className="seg">{[1080, 1440, 0].map((h) => (
-            <button key={h} className={config.outputHeight === h ? 'on' : ''} onClick={() => set('outputHeight', h)}>{h ? h + 'p' : 'Source'}</button>))}</div></div>}
-        <button className="primary" disabled={!!busy || !!queue} onClick={() => { setProg({ stage: 'bundling', progress: 0 }); exportOne(asset).catch(() => {}) }}>
-          {busy ? (prog!.stage === 'bundling' ? 'Preparing…' : `Rendering ${Math.round(prog!.progress * 100)}%`) : `Export ${asset ? asset.name : 'master'} ${format.toUpperCase()}`}
-        </button>
-        {assets.length > 0 && <button disabled={!!busy || !!queue} onClick={exportAll}>{queue ? `Exporting ${queue.done + 1}/${queue.total}: ${queue.current}` : `Export all (${assets.length + 1})`}</button>}
-        {busy && <div className="progress"><i style={{ width: `${prog!.progress * 100}%` }} /></div>}
-        {prog?.stage === 'done' && prog.output && !queue && <button onClick={() => window.narrate.reveal(prog.output!)}>{revealLabel}</button>}
-        {prog?.stage === 'error' && <p className="err">{prog.message}</p>}
-        {pauses > 0 && <p className="note">{pauses} pause{pauses > 1 ? "s" : ""} removed automatically.</p>}
-        <SharePanel file={prog?.stage === 'done' && prog.output && /\.mp4$/i.test(prog.output) ? prog.output : null} title={project.name} />
-        <p className="note">Not yet available: narration takes. It is on the roadmap, not hidden behind a button.</p>
+          <Timeline ev={project.events} cuts={cuts} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks}
+            transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset}
+            onSeek={seekSrc} onRange={setRange} onSelect={setSel} onAction={rangeAction} />
+          <p className="tl-help">Click to move the playhead · drag to select a stretch · click a block to edit it · <kbd>Space</kbd> plays · <kbd>←</kbd><kbd>→</kbd> step</p>
+        </div>
+        <aside className="inspector">
+          <nav className="rail">{tabs.filter((t) => t.show).map((t) => (
+            <button key={t.id} className={shownTab === t.id && !selItem ? 'on' : ''} onClick={() => go(t.id)}>
+              <t.Icon size={20} stroke={1.6} /><span>{t.label}</span>{!!t.badge && <i className="badge">{t.badge}</i>}</button>))}</nav>
+          <div className="pane">{selItem ? itemPane(selItem) : tabPane()}</div>
+        </aside>
       </div>
     </div>
   )

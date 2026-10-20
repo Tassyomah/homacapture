@@ -1,7 +1,7 @@
 {
   "name": "narrate",
   "productName": "Narrate",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Record your screen, narrate it afterwards. Open-source Screen Studio / Loom alternative.",
   "main": "out/main/index.js",
   "scripts": {
@@ -21,22 +21,58 @@
   "build": {
     "appId": "com.homalabs.narrate",
     "productName": "Narrate",
-    "directories": { "output": "release" },
-    "files": ["out/main/**", "out/preload/**", "out/renderer/**", "package.json"],
-    "extraResources": [
-      { "from": "../recorder", "to": "recorder", "filter": ["**/*.py"] },
-      { "from": "out/remotion", "to": "remotion" },
-      { "from": "runtime", "to": "runtime" }
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "out/main/**",
+      "out/preload/**",
+      "out/renderer/**",
+      "package.json"
     ],
-    "asarUnpack": ["node_modules/@remotion/**"],
-    "win": { "target": [{ "target": "nsis", "arch": ["x64"] }], "signAndEditExecutable": false },
-    "nsis": { "oneClick": true, "perMachine": false, "artifactName": "Narrate-Setup-${version}.${ext}" }
+    "extraResources": [
+      {
+        "from": "../recorder",
+        "to": "recorder",
+        "filter": [
+          "**/*.py"
+        ]
+      },
+      {
+        "from": "out/remotion",
+        "to": "remotion"
+      },
+      {
+        "from": "runtime",
+        "to": "runtime"
+      }
+    ],
+    "asarUnpack": [
+      "node_modules/@remotion/**"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "artifactName": "Narrate-Setup-${version}.${ext}"
+    }
   },
   "dependencies": {
     "@remotion/bundler": "^4.0.533",
     "@remotion/cli": "^4.0.533",
     "@remotion/player": "^4.0.533",
     "@remotion/renderer": "^4.0.533",
+    "@tabler/icons-react": "^3.31.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
     "remotion": "^4.0.533"

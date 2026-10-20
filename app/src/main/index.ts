@@ -63,6 +63,8 @@ function devScreenshot(w: BrowserWindow) {
       for (let attempt = 1; attempt <= 4; attempt++) {
         try {
           w.focus()
+          // NARRATE_SCREENSHOT_JS: a snippet run in the page first (drive the UI into a state worth checking).
+          if (process.env.NARRATE_SCREENSHOT_JS && attempt === 1) { const r = await w.webContents.executeJavaScript(process.env.NARRATE_SCREENSHOT_JS); if (r) console.log('[dev] js:', r); await new Promise((r) => setTimeout(r, 900)) }
           const img = await w.webContents.capturePage()
           await writeFile(file, img.toPNG())
           console.log('[dev] screenshot written', file)

@@ -189,9 +189,13 @@ export function outputSize(design: { width: number; height: number }, outputHeig
   const even = (n: number) => Math.max(2, Math.round(n / 2) * 2)
   const ratio = ASPECTS.find((a) => a.id === aspect)?.ratio ?? null
   const short = Math.min(design.width, design.height)
+  // Platform shapes get exact platform sizes (1080×1920, 1080×1080, 1080×1350…) at the chosen quality, even when the
+  // cropped screen is smaller: the composition lays itself out at whatever size it is given. "Original" keeps the design's size.
+  if (ratio !== null) {
+    const t = outputHeight || short
+    return ratio >= 1 ? { width: even(t * ratio), height: even(t) } : { width: even(t), height: even(t / ratio) }
+  }
   const target = !outputHeight || outputHeight >= short ? short : outputHeight
-  // Presets get exact platform sizes (1080×1920, 1080×1080, 1080×1350…) rather than the design's rounded ratio.
-  if (ratio !== null) return ratio >= 1 ? { width: even(target * ratio), height: even(target) } : { width: even(target), height: even(target / ratio) }
   const s = target / short
   return { width: even(design.width * s), height: even(design.height * s) }
 }

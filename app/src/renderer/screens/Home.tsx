@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Devices, Permissions, Project, UnfinishedRecording } from '../../shared/types'
+import { IconCamera, IconClock, IconDeviceDesktop, IconMicrophone, IconPlayerPlay, IconTrash, IconVolume } from '@tabler/icons-react'
 import { isWin, keys, machine } from '../platform'
 
 type Phase = { kind: 'idle' } | { kind: 'countdown'; n: number } | { kind: 'starting' }
@@ -89,10 +90,7 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
   const needsScreen = perms && !perms.screen
   const micBlocked = perms?.mic === 'denied'
   return (
-    <>
-      <h1>Record now, talk later.</h1>
-      <p className="lede">Capture the screen on its own. The cursor, zooms and framing are added for you afterwards.</p>
-
+    <div className="home">
       {needsScreen && (
         <div className="permission">
           <b>Narrate needs permission to record the screen.</b>
@@ -127,57 +125,88 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
         </div>
       )}
 
-      <div className="row">
-        <div className="field"><label>Display</label>
-          <select value={screen} onChange={(e) => setScreen(Number(e.target.value))}>
-            {devices?.displays.map((d) => <option key={d.ordinal} value={d.ordinal}>{d.name} · {d.width}×{d.height}</option>)}
-          </select></div>
-        <div className="field"><label>Microphone</label>
-          <select value={mic ?? ''} onChange={(e) => setMic(e.target.value === '' ? null : Number(e.target.value))}>
-            <option value="">No microphone</option>
-            {devices?.mics.map((m) => <option key={m.index} value={m.index}>{m.name}</option>)}
-          </select>
-          {devices && devices.mics.length === 0 && <span className="note">No microphone detected.</span>}
-          {mic !== null && <div className="meter" title="Microphone level"><i style={{ width: `${Math.round(level * 100)}%` }} /></div>}</div>
-        {devices?.cameras && devices.cameras.length > 0 && (
-          <div className="field"><label>Camera</label>
-            <select value={camera ?? ''} onChange={(e) => setCamera(e.target.value === '' ? null : Number(e.target.value))}>
-              <option value="">No camera</option>
-              {devices.cameras.map((c) => <option key={c.index} value={c.index}>{c.name}</option>)}
-            </select>
-            {camera !== null && <video ref={previewRef} className="campreview" autoPlay muted playsInline />}</div>
-        )}
-        {isWin && (
-          <div className="field"><label>Computer sound</label>
-            <div className="seg">
-              <button className={!systemAudio ? 'on' : ''} onClick={() => setSystemAudio(false)}>Off</button>
-              <button className={systemAudio ? 'on' : ''} onClick={() => setSystemAudio(true)}>Record</button>
-            </div></div>
-        )}
-        <div className="field"><label>Countdown</label>
-          <select value={countdown} onChange={(e) => setCountdown(Number(e.target.value))}>
-            <option value={0}>Immediate</option><option value={3}>3 seconds</option><option value={5}>5 seconds</option>
-          </select></div>
-        <div className="field"><label>&nbsp;</label>
-          <button className="record" disabled={!devices || !!needsScreen} onClick={begin}>Record</button></div>
-      </div>
-      <p className="note">While recording: {keys.pause} pause / resume · {keys.stop} stop. A small control bar stays on screen.</p>
-      {error && <p className="err">{error}</p>}
+      <section className="rec-card">
+        <div className="rec-main">
+          <h1>Record now, talk later.</h1>
+          <p className="lede">Capture your screen. Zooms, cursor and framing are added for you afterwards.</p>
+          <div className="opts">
+            <div className="opt"><span className="opt-name"><IconDeviceDesktop size={18} stroke={1.6} />Screen</span>
+              <select value={screen} onChange={(e) => setScreen(Number(e.target.value))} disabled={!devices}>
+                {!devices && <option>Looking for screens…</option>}
+                {devices?.displays.map((d) => <option key={d.ordinal} value={d.ordinal}>{d.name} · {d.width}×{d.height}</option>)}
+              </select></div>
+            <div className="opt"><span className="opt-name"><IconMicrophone size={18} stroke={1.6} />Microphone</span>
+              <div className="opt-ctl">
+                <select value={mic ?? ''} onChange={(e) => setMic(e.target.value === '' ? null : Number(e.target.value))}>
+                  <option value="">No microphone</option>
+                  {devices?.mics.map((m) => <option key={m.index} value={m.index}>{m.name}</option>)}
+                </select>
+                {mic !== null && <div className="meter" data-tip="Speak to test: the bar moves with your voice"><i style={{ width: `${Math.round(level * 100)}%` }} /></div>}
+                {devices && devices.mics.length === 0 && <span className="note">No microphone detected.</span>}
+              </div></div>
+            {devices?.cameras && devices.cameras.length > 0 && (
+              <div className="opt"><span className="opt-name"><IconCamera size={18} stroke={1.6} />Camera</span>
+                <select value={camera ?? ''} onChange={(e) => setCamera(e.target.value === '' ? null : Number(e.target.value))}>
+                  <option value="">No camera</option>
+                  {devices.cameras.map((c) => <option key={c.index} value={c.index}>{c.name}</option>)}
+                </select></div>
+            )}
+            {isWin && (
+              <div className="opt"><span className="opt-name" data-tip="Sound playing on this PC, like a video or app alerts"><IconVolume size={18} stroke={1.6} />Computer sound</span>
+                <div className="seg">
+                  <button className={!systemAudio ? 'on' : ''} onClick={() => setSystemAudio(false)}>Off</button>
+                  <button className={systemAudio ? 'on' : ''} onClick={() => setSystemAudio(true)}>Record it</button>
+                </div></div>
+            )}
+            <div className="opt"><span className="opt-name"><IconClock size={18} stroke={1.6} />Countdown</span>
+              <div className="seg">{[[0, 'None'], [3, '3 s'], [5, '5 s']].map(([v, l]) => (
+                <button key={v} className={countdown === v ? 'on' : ''} onClick={() => setCountdown(v as number)}>{l}</button>))}</div></div>
+          </div>
+          <div className="rec-go">
+            <button className="record" disabled={!devices || !!needsScreen} onClick={begin}>Start recording</button>
+            <span className="note"><kbd>{keys.pause}</kbd> pause · <kbd>{keys.stop}</kbd> stop. A small control bar stays on screen.</span>
+          </div>
+          {error && <p className="err">{error}</p>}
+        </div>
+        <div className="rec-side">
+          {camera !== null
+            ? <video ref={previewRef} className="campreview" autoPlay muted playsInline />
+            : <div className="rec-art" aria-hidden="true"><div className="scr"><i /><i /><i /><b /></div><span className="cam" /></div>}
+          <span className="note">{camera !== null ? 'Camera preview. It is mirrored here like a selfie.' : 'Your screen, polished: background, rounded corners and smooth zooms.'}</span>
+        </div>
+      </section>
 
-      <h2>Recordings</h2>
-      {projects.length === 0 ? <div className="empty">Your recordings will appear here.</div> : (
+      <div className="list-head"><h2>Your recordings</h2>{projects.length > 0 && <span>{projects.length}</span>}</div>
+      {projects.length === 0 ? <div className="empty">Your recordings will appear here. Press Start recording to make the first one.</div> : (
         <div className="cards">
           {projects.map((p) => (
-            <div className="card" key={p.dir} onClick={() => onOpen(p)}>
-              <video className="thumb" src={p.assets.screen + '#t=0.5'} muted preload="metadata" />
-              <div className="meta"><b>{p.name}</b><span>{fmt(p.events.videoDuration)} · {p.events.display.width}×{p.events.display.height}</span>
-                <button onClick={(e) => { e.stopPropagation(); window.narrate.trashProject(p.dir).then(onChanged) }}>Bin</button></div>
+            <div className="card" key={p.dir} onClick={() => onOpen(p)}
+              onMouseEnter={(e) => { const v = e.currentTarget.querySelector('video'); v?.play().catch(() => {}) }}
+              onMouseLeave={(e) => { const v = e.currentTarget.querySelector('video'); if (v) { v.pause(); v.currentTime = 0.5 } }}>
+              <div className="thumbwrap">
+                <video className="thumb" src={p.assets.screen + '#t=0.5'} muted preload="metadata" loop />
+                <span className="dur">{fmt(p.events.videoDuration)}</span>
+                <span className="open"><IconPlayerPlay size={16} />Open</span>
+              </div>
+              <div className="meta">
+                <div><b>{niceName(p.name)}</b><span>{p.events.display.width}×{p.events.display.height}{p.assets.mic ? ' · voice' : ''}{p.assets.camera ? ' · camera' : ''}</span></div>
+                <button className="icon" aria-label="Move to Bin" data-tip="Move to the Bin (you can restore it from there)"
+                  onClick={(e) => { e.stopPropagation(); window.narrate.trashProject(p.dir).then(onChanged) }}><IconTrash size={16} /></button>
+              </div>
             </div>
           ))}
         </div>
       )}
-    </>
+    </div>
   )
+}
+
+/** Recording folders are named by timestamp (2026-10-07-15-02-58); show that as a date people read. Other names stay as they are. */
+export function niceName(name: string) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})$/.exec(name)
+  if (!m) return name
+  const d = new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5])
+  return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
 }
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
@@ -186,7 +215,7 @@ function friendly(msg: string) {
   if (/ffmpeg is not installed|Python 3/i.test(msg)) return msg
   if (/microphone/i.test(msg)) return msg
   if (isWin) {
-    if (/no frames/i.test(msg)) return 'The screen capture produced no frames. Make sure ffmpeg is installed (winget install Gyan.FFmpeg) and try again.\n' + msg
+    if (/no frames/i.test(msg)) return 'The screen capture produced no frames. Try again; if it keeps happening, restart Narrate.\n' + msg
     return msg
   }
   if (/permission/i.test(msg)) return 'macOS is blocking screen recording for this app. Allow it in System Settings → Privacy & Security → Screen Recording, then reopen Narrate.'

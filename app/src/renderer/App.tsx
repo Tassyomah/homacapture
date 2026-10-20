@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import type { Project, RecorderEvent } from '../shared/types'
-import { Home } from './screens/Home'
+import { Home, niceName } from './screens/Home'
 import { Recording } from './screens/Recording'
 import { Editor } from './screens/Editor'
 import { ControlBar } from './screens/ControlBar'
+import { IconChevronLeft } from '@tabler/icons-react'
 import { isWin } from './platform'
 
 type Screen = { name: 'home' } | { name: 'recording' } | { name: 'editor'; project: Project }
@@ -41,10 +42,11 @@ function MainWindow() {
   return (
     <div className="shell">
       <div className="titlebar drag">
-        <span className="brand">Narrate</span>
-        {screen.name === 'editor' && <span className="crumb">/ {screen.project.name}</span>}
+        {screen.name === 'editor'
+          ? <><button className="back no-drag" onClick={() => { refresh(); setScreen({ name: 'home' }) }}><IconChevronLeft size={16} />All recordings</button>
+              <span className="crumb">{niceName(screen.project.name)}</span></>
+          : <span className="brand">Narrate</span>}
         <span className="spacer" />
-        {screen.name === 'editor' && <button className="no-drag" onClick={() => { refresh(); setScreen({ name: 'home' }) }}>All recordings</button>}
       </div>
       <div className="content">
         {screen.name === 'home' && <Home projects={projects} onOpen={(p) => setScreen({ name: 'editor', project: p })} onChanged={refresh}
