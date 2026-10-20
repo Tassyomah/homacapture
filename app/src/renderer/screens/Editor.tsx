@@ -10,6 +10,7 @@ import { Director, type DirectorState, type DirectorStatus } from './Director'
 import { TranscriptPanel, fillerRanges, type TranscribeStatus } from './TranscriptPanel'
 import { ContentMap } from './ContentMap'
 import { ContentCard } from './ContentCard'
+import { SharePanel } from './SharePanel'
 import { buildContent, thumbnailTimes } from '../content'
 import { generateAssets } from '../generate'
 
@@ -427,7 +428,8 @@ export function Editor({ project }: { project: Project }) {
         {prog?.stage === 'done' && prog.output && !queue && <button onClick={() => window.narrate.reveal(prog.output!)}>{revealLabel}</button>}
         {prog?.stage === 'error' && <p className="err">{prog.message}</p>}
         {pauses > 0 && <p className="note">{pauses} pause{pauses > 1 ? "s" : ""} removed automatically.</p>}
-        <p className="note">Not yet available: captions, narration takes, share links. They are on the roadmap, not hidden behind buttons.</p>
+        <SharePanel file={prog?.stage === 'done' && prog.output && /\.mp4$/i.test(prog.output) ? prog.output : null} title={project.name} />
+        <p className="note">Not yet available: narration takes. It is on the roadmap, not hidden behind a button.</p>
       </div>
     </div>
   )

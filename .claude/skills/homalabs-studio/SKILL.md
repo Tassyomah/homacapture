@@ -45,6 +45,8 @@ Test recording used for screenshots: `%USERPROFILE%\Videos\Narrate\zz-smoke-test
 - **Voice quality:** `enhance` chain is high-pass 80 Hz → 50/60 Hz hum notches → afftdn → de-ess → gentle compressor → two-pass loudnorm −16 LUFS → limiter (−1.5 dBTP). The editor runs it automatically the first time a recording with a mic opens (voice = clean; raw stays selectable). Export audio is AAC 320k.
 - Tassy's agreed order after this (2026-10-19): installer ✅ → sharing links (needs her to pick + create a hosting account; she cannot have Claude create it) → tune on her real recording → Mac test run. Then she tests.
 
+- **Share links (Phase 7 v1):** `app/src/main/share.ts` uploads the last MP4 export + a branded player page to her Cloudflare R2 bucket (`<id>/index.html`) with hand-rolled SigV4 (no SDK), returns the public r2.dev link and copies it. Setup form lives in the editor's export column (`SharePanel.tsx`); secret encrypted via safeStorage in userData/sharing.json; Save test-uploads `.narrate-check`. She created the Cloudflare account 2026-10-19; NOT yet tested end-to-end with real keys. Later: custom domain, delete/expire shares, view counts, Mac.
+
 ## Continuing on her Mac / another Claude account
 She works from two Claude accounts; this repo (pushed to GitHub `Tassyomah/homalabs-studio`) is the only shared context. On the Mac: clone the repo, open it in Claude Code, say "continue" — this skill loads via CLAUDE.md. First Mac session: follow `docs/DEVELOPMENT.md` → macOS, run `python3 recorder/narrate.py --list`, tell her before a short test recording, then `npm run dev`, fix what breaks, commit, ask before pushing.
 

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, screen, globalShortcut } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, screen, globalShortcut, clipboard } from 'electron'
 import { join, resolve, basename } from 'node:path'
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
@@ -7,6 +7,7 @@ import type { Analysis, Cut, Devices, ExportFormat, ExportProgress, MasterExtras
 import { Recorder } from './recorder'
 import { AssetServer } from './assetServer'
 import { exportProject, renderThumbnails } from './exporter'
+import { getShareSettings, saveShareSettings, shareFile } from './share'
 
 const IS_WIN = process.platform === 'win32'
 const APP_ROOT = resolve(app.getAppPath())
@@ -41,6 +42,7 @@ function createWindow() {
       : { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 18 } }),
     webPreferences: { preload: join(__dirname, '../preload/index.mjs'), sandbox: false },
   })
+  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//.test(url)) shell.openExternal(url); return { action: 'deny' } })
   win.webContents.on('console-message', (e) => { if (e.level === 'error' || e.level === 'warning') console.log('[renderer]', e.message) })
   load(win)
   win.on('closed', () => (win = null))
@@ -237,6 +239,10 @@ app.whenReady().then(async () => {
       { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [] })
       .then(() => app.quit(), (e) => { console.log('[dev] export failed', e.message); app.quit() })
   }
+  ipcMain.handle('share:settings', () => getShareSettings())
+  ipcMain.handle('share:save', (_e, i) => saveShareSettings(i))
+  ipcMain.handle('share:file', (_e, file: string, title: string) => shareFile(file, title, (p) => win?.webContents.send('share:progress', p)))
+  ipcMain.handle('clipboard:write', (_e, t: string) => clipboard.writeText(t))
   ipcMain.handle('shell:reveal', (_e, p: string) => shell.showItemInFolder(p))
   ipcMain.handle('project:trash', (_e, dir: string) => shell.trashItem(dir))
 

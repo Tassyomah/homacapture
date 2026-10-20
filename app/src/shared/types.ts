@@ -181,6 +181,9 @@ export interface StartOptions { screen: number; mic: number | null; camera?: num
 /** A recording folder whose recorder died before writing events.json (recording.json still present). */
 export interface UnfinishedRecording { dir: string; name: string; startedAt: string; display: DisplayInfo; mic: string | null }
 export type ExportFormat = 'mp4' | 'gif'
+/** Sharing on the owner's Cloudflare R2 bucket; the secret never leaves the main process. */
+export type ShareSettings = { configured: false } | { configured: true; endpoint: string; bucket: string; publicUrl: string; accessKeyId: string }
+export type ShareSettingsInput = { endpoint: string; bucket: string; publicUrl: string; accessKeyId: string; secret: string }
 /** Export presets (spec §56): output and safe-area choices only, no platform branding. */
 export const EXPORT_PRESETS: { id: string; label: string; config: Partial<RenderConfig> }[] = [
   { id: 'youtube', label: 'YouTube', config: { aspect: '16:9', outputHeight: 1080 } },
@@ -221,6 +224,12 @@ export interface NarrateApi {
   /** Cleaned voice track (noise reduction + loudness) → mic.clean.wav; resolves with the reloaded project. */
   enhanceAudio(dir: string): Promise<Project>
   /** Render one asset of the recording; `suffix` names the output file (`<stamp>-<suffix>.mp4`). */
+  getShareSettings(): Promise<ShareSettings>
+  saveShareSettings(s: ShareSettingsInput): Promise<ShareSettings>
+  /** Uploads an exported MP4 + player page; resolves to the public link. Progress arrives on onShareProgress (0–1). */
+  shareFile(file: string, title: string): Promise<string>
+  onShareProgress(cb: (p: number) => void): () => void
+  copyText(text: string): Promise<void>
   exportProject(dir: string, config: RenderConfig, cuts: Cut[], suffix?: string, format?: ExportFormat, extra?: MasterExtras): Promise<string>
   /** Thumbnail candidates at the given output seconds → PNG paths plus http URLs for display. */
   renderThumbnails(dir: string, config: RenderConfig, cuts: Cut[], timesOut: number[], extra?: MasterExtras): Promise<{ path: string; url: string }[]>

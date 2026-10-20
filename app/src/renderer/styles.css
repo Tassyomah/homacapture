@@ -186,3 +186,11 @@ html:has(.bar), body:has(.bar) { background: transparent; }
 /* camera preview under the camera picker: mirrored like a selfie, rounded like the overlay */
 .campreview { position: absolute; top: 100%; margin-top: 10px; left: 0; width: 160px; aspect-ratio: 4/3; object-fit: cover; border-radius: 12px; transform: scaleX(-1); background: var(--ink); }
 .field:has(.campreview) { margin-bottom: 136px; }
+
+/* Share links */
+button.link { background: none; padding: 0; color: var(--ink-60); text-decoration: underline; font-size: 12px; }
+button.link:hover { background: none; color: var(--ink); }
+.share-setup { display: flex; flex-direction: column; gap: 10px; }
+.share-setup .field span { font-size: 12px; color: var(--ink-60); }
+.share-setup input { font: inherit; border: 0; border-radius: 10px; padding: 9px 12px; background: var(--ink-10); color: var(--ink); }
+.share-link a { color: var(--ink); word-break: break-all; }
