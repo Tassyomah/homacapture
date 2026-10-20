@@ -151,13 +151,11 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
                   {devices.cameras.map((c) => <option key={c.index} value={c.index}>{c.name}</option>)}
                 </select></div>
             )}
-            {isWin && (
-              <div className="opt"><span className="opt-name" data-tip="Sound playing on this PC, like a video or app alerts"><IconVolume size={18} stroke={1.6} />Computer sound</span>
-                <div className="seg">
-                  <button className={!systemAudio ? 'on' : ''} onClick={() => setSystemAudio(false)}>Off</button>
-                  <button className={systemAudio ? 'on' : ''} onClick={() => setSystemAudio(true)}>Record it</button>
-                </div></div>
-            )}
+            <div className="opt"><span className="opt-name" data-tip={`Sound playing on ${machine}, like a video or app alerts`}><IconVolume size={18} stroke={1.6} />Computer sound</span>
+              <div className="seg">
+                <button className={!systemAudio ? 'on' : ''} onClick={() => setSystemAudio(false)}>Off</button>
+                <button className={systemAudio ? 'on' : ''} onClick={() => setSystemAudio(true)}>Record it</button>
+              </div></div>
             <div className="opt"><span className="opt-name"><IconClock size={18} stroke={1.6} />Countdown</span>
               <div className="seg">{[[0, 'None'], [3, '3 s'], [5, '5 s']].map(([v, l]) => (
                 <button key={v} className={countdown === v ? 'on' : ''} onClick={() => setCountdown(v as number)}>{l}</button>))}</div></div>

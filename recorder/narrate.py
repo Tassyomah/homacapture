@@ -10,13 +10,14 @@ Same command line and line protocol as recorder/narrate_win.py:
     narrate.py meter [--mic N]        microphone level lines until stdin closes
     narrate.py analyze | transcribe | enhance --out DIR   (shared with Windows: common.py)
 
-Output folder: screen.mp4 (cursor hidden), mic.wav, camera.mp4, events.json, cursors/*.png.
+Output folder: screen.mp4 (cursor hidden), mic.wav, camera.mp4, system.wav (with --system-audio, via the
+ScreenCaptureKit helper in mac/homacapture-sysaudio), events.json, cursors/*.png.
 Time base: the macOS host clock (CLOCK_UPTIME_RAW == CACurrentMediaTime == avfoundation pts), so cursor events and
 media need no offset measurement. Raw captures go to Matroska (crash-tolerant) and are remuxed on finalisation.
-Pauses are metadata, not cuts. System audio needs ScreenCaptureKit (the Swift recorder) and is reported as unavailable.
+Pauses are metadata, not cuts. Computer sound comes from mac/sysaudio.m (ScreenCaptureKit, macOS 13+), same host clock.
 
 Needs ffmpeg/ffprobe (brew install ffmpeg) and `pip3 install --user pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-Quartz`.
-STATUS: ported from the Windows recorder on a Windows machine; the capture paths are untested on macOS until run on a Mac.
+STATUS: ported from the Windows recorder; first run on a Mac 2026-10-20 (devices, meter, computer sound self-test).
 """
 import argparse, hashlib, json, os, re, signal, subprocess, sys, threading, time
 from datetime import datetime
@@ -157,6 +158,33 @@ class KeyLog:
         if self.loop: Quartz.CFRunLoopStop(self.loop)
 
 # ---------------------------------------------------------------- record
+class SysAudio:
+    """Computer sound through mac/homacapture-sysaudio (ScreenCaptureKit). Same shape as win_loopback.Loopback:
+    start(), stop(), .t0 on the host clock once the first buffer arrives, .error if it failed."""
+    BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mac", "homacapture-sysaudio")
+    def __init__(self, path): self.path = path; self.t0 = None; self.error = None; self.ready = threading.Event(); self.p = None
+    def start(self):
+        if not os.path.exists(self.BIN): raise RuntimeError("the computer-sound helper is missing (build it: see recorder/mac/sysaudio.m)")
+        self.p = subprocess.Popen([self.BIN, self.path], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        def read():
+            for line in self.p.stdout:
+                try: e = json.loads(line)
+                except ValueError: continue
+                if e.get("event") == "t0": self.t0 = float(e["t0"])
+                elif e.get("event") == "error": self.error = e.get("message"); log("[system] " + str(self.error))
+                if e.get("event") in ("ready", "error"): self.ready.set()
+        threading.Thread(target=read, daemon=True).start()
+        drain(self.p.stderr, lambda l: log("[system] " + l))
+        if not self.ready.wait(6) or self.error or self.p.poll() is not None:
+            msg = self.error or "it did not start"; self.stop(); raise RuntimeError(msg)
+    def alive(self): return self.p is not None and self.p.poll() is None
+    def stop(self):
+        if not self.p: return
+        try: self.p.stdin.write("stop\n"); self.p.stdin.flush()
+        except Exception: pass
+        try: self.p.wait(timeout=8)
+        except subprocess.TimeoutExpired: kill(self.p)
+
 def record(args):
     need_ffmpeg()
     outdir = os.path.expanduser(args.out or f"~/Movies/Narrate/{datetime.now():%Y-%m-%d-%H-%M-%S}")
@@ -187,7 +215,7 @@ def record(args):
 
     t_launch = now()
     setup = {"version": 1, "display": disp, "fps": args.fps, "tLaunch": t_launch, "encoder": "h264_videotoolbox", "mic": mic_name,
-             "camera": cam["name"] if cam else None, "systemAudio": False, "startedAt": datetime.now().isoformat(timespec="seconds")}
+             "camera": cam["name"] if cam else None, "systemAudio": bool(args.system_audio), "startedAt": datetime.now().isoformat(timespec="seconds")}
     with open(os.path.join(outdir, "recording.json"), "w") as fh: json.dump(setup, fh)
 
     raw_video = os.path.join(outdir, "screen.mkv"); mic_path = os.path.join(outdir, "mic.mka"); cam_path = os.path.join(outdir, "camera.mkv")
@@ -229,15 +257,20 @@ def record(args):
         if camera.poll() is not None or not os.path.exists(cam_path) or os.path.getsize(cam_path) <= 4096:
             kill(camera); camera = None; warning = "The camera could not be started; recording without it. " + "\n".join(cam_err[-2:])
             log("[recorder] " + warning)
+    sysaudio = None
     if args.system_audio:
-        warning = ((warning + "\n") if warning else "") + "Computer sound needs the ScreenCaptureKit recorder, which is not built yet; recording without it."
+        try:
+            sysaudio = SysAudio(os.path.join(outdir, "system.raw.wav")); sysaudio.start(); log("[system] ScreenCaptureKit computer sound started")
+        except Exception as e:
+            sysaudio = None; log(f"[system] unavailable: {e}")
+            warning = ((warning + "\n") if warning else "") + f"Computer sound could not be recorded ({e}); recording without it."
 
     journal = Journal(os.path.join(outdir, "events.partial.jsonl"))
     cl = CursorLog(nsscreen, scale, outdir, journal); th = threading.Thread(target=cl.run, daemon=True); th.start()
     kl = KeyLog(journal); kth = threading.Thread(target=kl.run, daemon=True); kth.start()
     pauses = []
     emit(event="started", out=outdir, display=disp, tLaunch=t_launch, encoder="h264_videotoolbox", capture="avfoundation",
-         mic=mic_name, camera=cam["name"] if camera else None, systemAudio=False, warning=warning)
+         mic=mic_name, camera=cam["name"] if camera else None, systemAudio=bool(sysaudio), warning=warning)
 
     stopped = threading.Event()
     def do_stop(*_): stopped.set()
@@ -262,6 +295,9 @@ def record(args):
             emit(event="error", code="ffmpeg_died", message="Capture stopped unexpectedly.\n" + "\n".join(ff_err[-8:])); stopped.set()
         elif camera and camera.poll() is not None:
             log("[recorder] camera capture ended early"); camera = None
+        if sysaudio and sysaudio.t0 is not None and setup.get("t0System") is None:
+            setup["t0System"] = sysaudio.t0                                   # recording.json carries it for crash recovery
+            with open(os.path.join(outdir, "recording.json"), "w") as fh: json.dump(setup, fh)
         stopped.wait(0.05)
     t_end = now()
     if pauses and pauses[-1][1] is None: pauses[-1][1] = round(t_end, 4)
@@ -272,6 +308,9 @@ def record(args):
         except Exception: pass
         try: p.wait(timeout=15)
         except subprocess.TimeoutExpired: kill(p)
+    if sysaudio:
+        sysaudio.stop()
+        if sysaudio.t0 is not None: setup["t0System"] = sysaudio.t0
     emit(event="stopped", out=outdir, duration=round(t_end - t_launch, 2))
     finalize(outdir, setup, t_end, capture="avfoundation", log_data=(cl.moves, cl.clicks, cl.cursorChanges, cl.cursors, pauses, kl.keys), platform="darwin")
 

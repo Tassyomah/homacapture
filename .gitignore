@@ -8,3 +8,4 @@ __pycache__/
 *.pyc
 Thumbs.db
 app/runtime/
+recorder/mac/homacapture-sysaudio

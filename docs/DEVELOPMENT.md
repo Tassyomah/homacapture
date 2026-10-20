@@ -52,11 +52,12 @@ pip3 install --user pyobjc-core==10.3.2 pyobjc-framework-Cocoa==10.3.2 pyobjc-fr
 cd app && npm install && npm run dev
 ```
 Grant Screen Recording and Microphone to the app on first run, then reopen it; Input Monitoring lets the recorder log keyboard shortcuts for keycaps. Recordings go to `~/Movies/Narrate/`. The Python recorder was ported from the Windows one and has not been run on a Mac yet — run `python3 recorder/narrate.py --list` and a short recording first and fix what breaks.
+Computer sound needs the helper binary: `cd app && npm run build:sysaudio` (clang from the Command Line Tools; no Xcode). Self-test: `recorder/mac/homacapture-sysaudio /tmp/t.wav`, play something, press Return.
 With Xcode installed, build the ScreenCaptureKit recorder with `make` in `recorder/swift` and point `RECORDER` at it.
 
 ## Installer (macOS)
 ```sh
-cd app && npm run dist:mac    # electron-vite build → remotion bundle → electron-builder → app/release/HomaCapture-<version>-mac-arm64.dmg
+cd app && npm run dist:mac    # electron-vite build → remotion bundle → computer-sound helper (clang) → electron-builder → app/release/HomaCapture-<version>-mac-arm64.dmg
 ```
 Apple-silicon only for now, ad-hoc signed (no Apple Developer account), not notarised, so it is for this Mac and testers who right-click → Open. It does not bundle Python or ffmpeg yet: it uses `/usr/bin/python3` (Xcode command line tools, with the PyObjC packages above) and ffmpeg from `~/bin`, `/opt/homebrew/bin` or `/usr/local/bin`. Install by dragging `HomaCapture.app` from the DMG (or `release/mac-arm64/`) into Applications. Because the signature is ad-hoc, macOS may ask for Screen Recording again after every reinstall: System Settings → Privacy & Security → Screen & System Audio Recording → HomaCapture on → quit and reopen.
 
