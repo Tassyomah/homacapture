@@ -1,6 +1,6 @@
-<title>Narrate</title>
+<title>HomaCapture</title>
 <meta name="claude:viewport-fit-sides" content="cover">
-<meta name="description" content="Narrate by Homalabs: record your screen once and let the software make it look good. Open source, for Windows and macOS.">
+<meta name="description" content="HomaCapture by Homalabs: record your screen once and let the software make it look good. Open source, for Windows and macOS.">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&family=JetBrains+Mono:wght@400;500&display=swap">
@@ -179,12 +179,12 @@ footer { padding-block: 70px 50px; display: grid; gap: 24px; }
 
 <div class="wrap">
   <nav>
-    <a class="logo" href="#top" aria-label="Narrate home"><i></i>Narrate</a>
+    <a class="logo" href="#top" aria-label="HomaCapture home"><i></i>HomaCapture</a>
     <span class="sp"></span>
     <a class="l" href="#after-stop">What it does</a>
     <a class="l" href="#versions">Versions</a>
     <a class="l" href="#edit">Editing</a>
-    <a class="btn dark" href="https://github.com/Tassyomah/homalabs-studio">Get Narrate</a>
+    <a class="btn dark" href="https://github.com/Tassyomah/homacapture">Get HomaCapture</a>
   </nav>
 
   <header class="hero" id="top">
@@ -194,10 +194,10 @@ footer { padding-block: 70px 50px; display: grid; gap: 24px; }
         <h1>Record now, <em>talk later.</em></h1>
       </div>
       <div>
-        <p>Record your screen once. Narrate adds the zooms, the smooth cursor, the background and the captions, cleans up your voice, and cuts the long pauses. Then it turns that one recording into every format you post.</p>
+        <p>Record your screen once. HomaCapture adds the zooms, the smooth cursor, the background and the captions, cleans up your voice, and cuts the long pauses. Then it turns that one recording into every format you post.</p>
         <div class="ctas">
-          <a class="btn coral" href="https://github.com/Tassyomah/homalabs-studio/releases/latest">Download for Windows</a>
-          <a class="btn" href="https://github.com/Tassyomah/homalabs-studio">View the code</a>
+          <a class="btn coral" href="https://github.com/Tassyomah/homacapture/releases/latest">Download for Windows</a>
+          <a class="btn" href="https://github.com/Tassyomah/homacapture">View the code</a>
           <small>macOS is next.</small>
         </div>
       </div>
@@ -243,7 +243,7 @@ footer { padding-block: 70px 50px; display: grid; gap: 24px; }
     <p class="lede">You don't edit first and export later. By the time the editor opens, the first pass is already done. Every change can be undone, and the original recording is never touched.</p>
     <div class="log">
       <article><div class="t"><span>Stop + 0 s</span><span>automatic</span></div>
-        <h3>Zooms follow your clicks</h3><p>Narrate reads every click and cursor move and zooms in where the action is, then eases back out. Stray clicks are ignored.</p>
+        <h3>Zooms follow your clicks</h3><p>HomaCapture reads every click and cursor move and zooms in where the action is, then eases back out. Stray clicks are ignored.</p>
         <div class="spec"><span>2.0× default</span><span>smoothed cursor</span><span>click ripples</span></div></article>
       <article><div class="t"><span>Stop + 2 s</span><span>automatic</span></div>
         <h3>Your voice, cleaned</h3><p>Hum, hiss and room noise come out, and your volume is evened out. Switch back to the raw track any time.</p>
@@ -259,7 +259,7 @@ footer { padding-block: 70px 50px; display: grid; gap: 24px; }
 
   <section id="versions">
     <h2>One recording. Every format you post.</h2>
-    <p class="lede">From a single master, Narrate cuts the versions you would otherwise edit by hand. Vertical crops follow your cursor instead of chopping the screen in half. Each version stays editable on its own.</p>
+    <p class="lede">From a single master, HomaCapture cuts the versions you would otherwise edit by hand. Vertical crops follow your cursor instead of chopping the screen in half. Each version stays editable on its own.</p>
     <div class="fan">
       <div class="v master"><div class="shot"><b>1:06</b></div><div class="nm">Master<span>16:9 · the full edit</span></div></div>
       <span class="arrow" aria-hidden="true">→</span>
@@ -324,10 +324,10 @@ footer { padding-block: 70px 50px; display: grid; gap: 24px; }
 
   <footer>
     <div class="end">
-      <h2>Press record.<br>Narrate does the rest.</h2>
-      <div class="ctas"><a class="btn coral" href="https://github.com/Tassyomah/homalabs-studio/releases/latest">Download for Windows</a><a class="btn" href="https://github.com/Tassyomah/homalabs-studio">GitHub</a></div>
+      <h2>Press record.<br>HomaCapture does the rest.</h2>
+      <div class="ctas"><a class="btn coral" href="https://github.com/Tassyomah/homacapture/releases/latest">Download for Windows</a><a class="btn" href="https://github.com/Tassyomah/homacapture">GitHub</a></div>
     </div>
-    <div class="fine"><span>Narrate by Homalabs</span><span>Windows 10 and 11 · macOS coming next</span><span>MIT License</span></div>
+    <div class="fine"><span>HomaCapture by Homalabs</span><span>Windows 10 and 11 · macOS coming next</span><span>MIT License</span></div>
   </footer>
 </div>
 
@@ -339,7 +339,7 @@ footer { padding-block: 70px 50px; display: grid; gap: 24px; }
   const set = (cls) => { stage.className = 'stage ' + cls }
   const mark = (i) => names.forEach((n, k) => n.classList.toggle('on', k === i))
   const LOOP = 10000
-  if (reduce) { set('polish cam-on cap-on'); badge.textContent = 'Narrate'; mark(3); return }
+  if (reduce) { set('polish cam-on cap-on'); badge.textContent = 'HomaCapture'; mark(3); return }
   // Playhead: runs across the lanes once per loop.
   const tl = document.querySelector('.tl')
   const tick = (t0) => { const run = (now) => { const p = ((now - t0) % LOOP) / LOOP; const w = tl.clientWidth - 6 - 64 - 10 - 6; ph.style.transform = `translateX(${p * w}px)`; requestAnimationFrame(run) }; requestAnimationFrame(run) }
@@ -347,7 +347,7 @@ footer { padding-block: 70px 50px; display: grid; gap: 24px; }
   const cycle = () => {
     set(''); badge.textContent = 'Raw recording'; mark(0)
     cursor.style.left = '30%'; cursor.style.top = '30%'
-    at(1400, () => { set('polish'); badge.textContent = 'Narrate'; mark(1) })
+    at(1400, () => { set('polish'); badge.textContent = 'HomaCapture'; mark(1) })
     at(2600, () => { cursor.style.left = '76%'; cursor.style.top = '72%' })
     at(3700, () => { stage.classList.add('zoomed'); mark(2) })
     at(4600, () => { stage.classList.add('click'); cursor.style.transform = 'scale(.85)' })

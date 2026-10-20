@@ -81,7 +81,7 @@ function page(title: string, video: string) {
 main{width:100%;max-width:1100px}h1{font-size:20px;font-weight:600;margin:0 0 14px}video{width:100%;border-radius:14px;background:var(--ink);display:block}
 footer{margin-top:14px;display:flex;justify-content:space-between;gap:12px;font-size:13px;opacity:.7}a{color:inherit}@media (prefers-color-scheme:dark){body{background:var(--ink);color:var(--paper)}}</style></head>
 <body><main><h1>${esc(title)}</h1><video src="${video}" controls playsinline preload="metadata"></video>
-<footer><span>Made with Narrate by Homalabs</span><a href="${video}" download>Download</a></footer></main></body></html>`
+<footer><span>Made with HomaCapture by Homalabs</span><a href="${video}" download>Download</a></footer></main></body></html>`
 }
 
 /** Uploads `file` (an exported MP4) and its player page; returns the page URL. */

@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, shell, screen, globalShortcut, clipboard } from 'electron'
 import { join, resolve, basename } from 'node:path'
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { Analysis, Cut, Devices, ExportFormat, ExportProgress, MasterExtras, Project, ProjectFile, RecorderEvent, RenderConfig, StartOptions, Transcript, UnfinishedRecording } from '../shared/types'
@@ -15,6 +15,14 @@ const APP_ROOT = resolve(app.getAppPath())
 const RESOURCES = app.isPackaged ? process.resourcesPath : resolve(APP_ROOT, '..')
 /** One recorder per platform, same stdin/stdout protocol (docs/ARCHITECTURE.md). */
 const RECORDER = process.env.NARRATE_RECORDER ?? join(RESOURCES, 'recorder', IS_WIN ? 'narrate_win.py' : 'narrate.py')
+// The app was called "Narrate" until 2026-10-20; Electron keys userData by product name, so carry the
+// sharing settings over from the old folder once instead of making her set them up again.
+try {
+  const fresh = app.getPath('userData'), old = join(fresh, '..', 'Narrate')
+  if (!existsSync(join(fresh, 'sharing.json')) && existsSync(join(old, 'sharing.json'))) {
+    mkdirSync(fresh, { recursive: true }); copyFileSync(join(old, 'sharing.json'), join(fresh, 'sharing.json'))
+  }
+} catch { /* nothing to migrate */ }
 // Remotion downloads its headless browser into <cwd>/.remotion; in a packaged app cwd must be somewhere writable.
 if (app.isPackaged) { try { process.chdir(app.getPath('userData')) } catch { /* keep the default */ } }
 const RECORDINGS = join(homedir(), IS_WIN ? 'Videos' : 'Movies', 'Narrate')
@@ -36,7 +44,7 @@ function load(w: BrowserWindow, hash = '') {
 function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 980, minHeight: 640,
-    title: 'Narrate', backgroundColor: '#EFEEE8',
+    title: 'HomaCapture', backgroundColor: '#EFEEE8',
     ...(IS_WIN
       ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#EFEEE8', symbolColor: '#14140F', height: 52 } }
       : { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 18 } }),

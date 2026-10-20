@@ -1,4 +1,4 @@
-# narrate (working name) — Homalabs screen studio
+# HomaCapture — the Homalabs screen studio
 
 Record once. Let the software make it look good. See `docs/SPEC.md` and `docs/SPEC-ADDON.md`.
 
@@ -18,7 +18,7 @@ Pipeline (same shape as Screen Studio's own project files, so those import too):
 ```
 cd app && npm install && npm run dev
 ```
-Opens the Narrate window. Record → control bar appears bottom-right (Pause / Stop, ⌘⇧P / ⌘⇧S on macOS, Ctrl+Shift+P / Ctrl+Shift+S on Windows) → editor opens with the polished preview → Export MP4.
+Opens the HomaCapture window. Record → control bar appears bottom-right (Pause / Stop, ⌘⇧P / ⌘⇧S on macOS, Ctrl+Shift+P / Ctrl+Shift+S on Windows) → editor opens with the polished preview → Export MP4.
 
 - **macOS:** recordings live in `~/Movies/Narrate/`. First run: allow Screen Recording (and Microphone) for the app, then reopen it.
 - **Windows:** `winget install Gyan.FFmpeg Python.Python.3.12`; recordings live in `%USERPROFILE%\Videos\Narrate\`. No screen-recording permission exists on Windows.

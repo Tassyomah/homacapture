@@ -93,7 +93,7 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
     <div className="home">
       {needsScreen && (
         <div className="permission">
-          <b>Narrate needs permission to record the screen.</b>
+          <b>HomaCapture needs permission to record the screen.</b>
           <p>macOS asks once. Nothing is captured until you press Record, and recordings stay on {machine}.
              After allowing it, quit and reopen the app.</p>
           <div className="row">
@@ -106,7 +106,7 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
         <div className="permission" key={u.dir}>
           <b>We recovered an unsaved recording.</b>
           <p>Started {fmtDate(u.startedAt)} · {u.display.width}×{u.display.height}{u.mic ? ` · ${u.mic}` : ''}.
-             Narrate closed before it was saved. Restore it to finish saving and open it in the editor.</p>
+             HomaCapture closed before it was saved. Restore it to finish saving and open it in the editor.</p>
           <div className="row">
             <button className="primary" disabled={!!recovering} onClick={() => recover(u)}>{recovering === u.dir ? 'Restoring…' : 'Restore'}</button>
             <button disabled={!!recovering} onClick={() => discard(u)}>Discard</button>
@@ -117,7 +117,7 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
         <div className="permission">
           <b>Microphone access is turned off for desktop apps.</b>
           <p>{isWin ? 'Turn on "Let desktop apps access your microphone" in Windows Settings, then come back. You can still record without a microphone.'
-                    : 'Allow Narrate under Privacy & Security → Microphone, then reopen the app. You can still record without a microphone.'}</p>
+                    : 'Allow HomaCapture under Privacy & Security → Microphone, then reopen the app. You can still record without a microphone.'}</p>
           <div className="row">
             <button onClick={() => window.narrate.openSettings('mic')}>{isWin ? 'Open Windows Settings' : 'Open System Settings'}</button>
             <button onClick={() => loadPerms()}>Check again</button>
@@ -215,10 +215,10 @@ function friendly(msg: string) {
   if (/ffmpeg is not installed|Python 3/i.test(msg)) return msg
   if (/microphone/i.test(msg)) return msg
   if (isWin) {
-    if (/no frames/i.test(msg)) return 'The screen capture produced no frames. Try again; if it keeps happening, restart Narrate.\n' + msg
+    if (/no frames/i.test(msg)) return 'The screen capture produced no frames. Try again; if it keeps happening, restart HomaCapture.\n' + msg
     return msg
   }
-  if (/permission/i.test(msg)) return 'macOS is blocking screen recording for this app. Allow it in System Settings → Privacy & Security → Screen Recording, then reopen Narrate.'
-  if (/no frames/i.test(msg)) return 'The screen capture produced no frames. This is almost always the Screen Recording permission. Allow it and reopen Narrate.'
+  if (/permission/i.test(msg)) return 'macOS is blocking screen recording for this app. Allow it in System Settings → Privacy & Security → Screen Recording, then reopen HomaCapture.'
+  if (/no frames/i.test(msg)) return 'The screen capture produced no frames. This is almost always the Screen Recording permission. Allow it and reopen HomaCapture.'
   return msg
 }

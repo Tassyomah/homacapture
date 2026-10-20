@@ -1,8 +1,8 @@
 {
-  "name": "narrate",
-  "productName": "Narrate",
+  "name": "homacapture",
+  "productName": "HomaCapture",
   "version": "0.2.0",
-  "description": "Record your screen, narrate it afterwards. Open-source Screen Studio / Loom alternative.",
+  "description": "Record your screen once, let the software make it look good. Open-source Screen Studio / Loom alternative.",
   "main": "out/main/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
@@ -20,7 +20,7 @@
   "type": "module",
   "build": {
     "appId": "com.homalabs.narrate",
-    "productName": "Narrate",
+    "productName": "HomaCapture",
     "directories": {
       "output": "release"
     },
@@ -64,7 +64,7 @@
     "nsis": {
       "oneClick": true,
       "perMachine": false,
-      "artifactName": "Narrate-Setup-${version}.${ext}"
+      "artifactName": "HomaCapture-Setup-${version}.${ext}"
     }
   },
   "dependencies": {

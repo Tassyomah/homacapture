@@ -36,7 +36,7 @@ def run(cmd, timeout=30):
 
 def need_ffmpeg():
     if FFMPEG and FFPROBE: return
-    emit(event="error", code="no_ffmpeg", message=("ffmpeg is not installed. Install it with `winget install Gyan.FFmpeg`, then reopen Narrate." if IS_WIN else "ffmpeg is not installed. Install it with `brew install ffmpeg`, then reopen Narrate."))
+    emit(event="error", code="no_ffmpeg", message=("ffmpeg is not installed. Install it with `winget install Gyan.FFmpeg`, then reopen HomaCapture." if IS_WIN else "ffmpeg is not installed. Install it with `brew install ffmpeg`, then reopen HomaCapture."))
     sys.exit(2)
 
 

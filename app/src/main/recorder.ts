@@ -192,8 +192,8 @@ export class Recorder extends EventEmitter {
 }
 
 const PYTHON_HELP = process.platform === 'win32'
-  ? 'Narrate needs Python 3 to drive the recorder. Install it with `winget install Python.Python.3.12`, then reopen Narrate.'
-  : 'Narrate needs python3 to drive the recorder. Install the Xcode command line tools, then reopen Narrate.'
+  ? 'HomaCapture needs Python 3 to drive the recorder. Install it with `winget install Python.Python.3.12`, then reopen HomaCapture.'
+  : 'HomaCapture needs python3 to drive the recorder. Install the Xcode command line tools, then reopen HomaCapture.'
 function friendlySpawnError(e: NodeJS.ErrnoException) {
   return e.code === 'ENOENT' ? PYTHON_HELP : e.message
 }

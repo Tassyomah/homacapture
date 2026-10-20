@@ -45,7 +45,7 @@ function MainWindow() {
         {screen.name === 'editor'
           ? <><button className="back no-drag" onClick={() => { refresh(); setScreen({ name: 'home' }) }}><IconChevronLeft size={16} />All recordings</button>
               <span className="crumb">{niceName(screen.project.name)}</span></>
-          : <span className="brand">Narrate</span>}
+          : <span className="brand">HomaCapture</span>}
         <span className="spacer" />
       </div>
       <div className="content">

@@ -56,7 +56,7 @@ With Xcode installed, build the ScreenCaptureKit recorder with `make` in `record
 
 ## Installer (Windows)
 ```powershell
-cd app; npm run dist          # electron-vite build → remotion bundle (out/remotion) → electron-builder NSIS → app/release/Narrate-Setup-<version>.exe
+cd app; npm run dist          # electron-vite build → remotion bundle (out/remotion) → electron-builder NSIS → app/release/HomaCapture-Setup-<version>.exe
 ```
 The installer is per-user (no admin) and unsigned for now (`signAndEditExecutable: false`, so no code-signing tooling is needed to build). The installed app ships the recorder scripts and the pre-bundled composition under `resources/`, and Remotion downloads its headless browser into `%APPDATA%\Narrate\.remotion` on the first export. Users still need Python 3 and ffmpeg (both `winget install`, per-user); the app says so in plain words when they are missing.
 A GitHub Actions workflow that builds the installer on every push and attaches it to releases on `v*` tags lives at `.github/workflows/release.yml`. Pushing workflow files needs a GitHub login with the `workflow` scope (`gh auth refresh -h github.com -s workflow`); until that is done on this laptop the file is kept locally and not yet committed.
