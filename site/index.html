@@ -280,7 +280,7 @@ section[id], #take-receipt { scroll-margin-top: calc(var(--hh) + 12px); }
 .ed-ph::before { content: ""; position: absolute; top: 0; left: -5px; width: 12px; height: 12px; border-radius: 3px 3px 6px 6px; background: var(--coral); }
 
 /* below 1600px the inspector is left out, so the preview and timeline render larger */
-@media (max-width: 1599px) {
+@media (max-width: 899px) {
   .ed-scr { aspect-ratio: 984 / 755; }
   .ed { width: 984px; height: 755px; grid-template-rows: 54px minmax(0, 1fr) 176px; }
   .ed-main { grid-template-columns: minmax(0, 1fr); }
@@ -998,6 +998,40 @@ html.rewind .h1 .ln > span, html.rewind .squig path, html.rewind .hero-copy, htm
 }
 .hero :focus-visible, .hd[data-tone="hero"] :focus-visible { outline-color: var(--onhero); }
 .sx-own :focus-visible, .hd[data-tone="coral"] :focus-visible { outline-color: var(--ink); }
+
+/* ---- 2026-10-21: the editor is the hero (Tassy: "where is the actual editor?"), smaller type ---- */
+.hero-low { grid-template-columns: 1fr; gap: 26px; }
+.hero-copy { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 18px 48px; align-items: start; }
+.hero-copy .lede-h { grid-column: 1; grid-row: 1 / span 2; }
+.hero-copy .cta { grid-column: 2; justify-content: flex-end; }
+.hero-copy .ss-note { grid-column: 2; margin: 0; text-align: right; max-width: 46ch; justify-self: end; }
+.hero-copy .hud-low { grid-column: 1 / -1; }
+.ed-eyebrow { margin: 6px 0 4px; padding-inline: 2px 0; padding-left: 64px; display: flex; gap: 10px; align-items: center; color: var(--onhero); font: 600 12px/1.4 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+.ed-eyebrow i { width: 9px; height: 9px; border-radius: 50%; background: var(--coral); flex: none; }
+.hero-shot { margin: 0; }
+.hero-shot .taped.ed-cut { --tilt: 0deg; }
+.hero-ph { width: 12.5%; right: -3.2%; bottom: -15%; }
+.ed-calls li.n span { max-width: 170px; }
+.hero-low { margin-top: 22px; }
+.hero-copy .lede-h { font-size: clamp(16px, 1.2vw, 18px); max-width: 52ch; }
+.hero-copy { gap: 12px 48px; }
+.hero-copy .hud-low { display: none; }
+.h1 { margin-top: 12px; }
+.ed-calls { list-style: none; margin: 0; padding: 0; position: absolute; inset: 10px; pointer-events: none; z-index: 5; }
+.ed-calls li { position: absolute; left: var(--x); top: var(--y); transform: translate(-14px, -50%); display: flex; align-items: center; gap: 8px; animation: up .6s var(--out) calc(var(--i0) + 1.6s) both; }
+.ed-calls li.l { flex-direction: row-reverse; transform: translate(calc(-100% + 14px), -50%); }
+.ed-calls b { width: 28px; height: 28px; border-radius: 50%; background: var(--coral); color: var(--ink); display: grid; place-items: center; font: 800 13px/1 var(--body); flex: none; box-shadow: 0 0 0 5px rgba(251,139,115,.28); }
+.ed-calls span { background: var(--ink); color: var(--paper); font: 600 12.5px/1.25 var(--body); padding: 7px 11px; border-radius: 8px; max-width: 230px; }
+.h2 { font-size: clamp(30px, 4.2vw, 60px); }
+.as-h2 { font-size: clamp(36px, 6vw, 92px); }
+.get-h { font-size: clamp(44px, 8.4vw, 132px); }
+@media (max-width: 1100px) { .ed-calls span { display: none; } .hero-copy { grid-template-columns: 1fr; } .hero-copy > * { grid-column: 1 !important; grid-row: auto !important; } .hero-copy .cta { justify-content: flex-start; } .hero-copy .ss-note { text-align: left; justify-self: start; } }
+@media (max-width: 560px) {
+  .hero-shot > .taped.ed-cut { display: block; }
+  .hero-ph { display: none; }
+  .ed-calls b { width: 20px; height: 20px; font-size: 11px; box-shadow: 0 0 0 3px rgba(251,139,115,.28); }
+  .ed-eyebrow { font-size: 11px; margin: 4px 0 -12px; }
+}
 </style>
 
 <a class="skip" href="#take">Skip to the product</a>
@@ -1081,6 +1115,7 @@ html.rewind .h1 .ln > span, html.rewind .squig path, html.rewind .hero-copy, htm
               <p class="lab">Clicks <b id="hc">0</b> · zooms <b id="hz">0</b> · stray, ignored <b id="hs">0</b></p>
             </div>
           </div>
+          <p class="ed-eyebrow lab"><i></i>This is the HomaCapture editor. It opens like this the moment you press stop.</p>
           <div class="hero-shot" id="heroShot">
             <div class="taped ed-cut">
               <span class="tape" style="left:-30px;top:-10px;--r:-30deg"></span>
@@ -1089,7 +1124,7 @@ html.rewind .h1 .ln > span, html.rewind .squig path, html.rewind .hero-copy, htm
                 <div class="ed" id="ed">
                   <div class="ed-top">
                     <span class="ed-tile"><i></i></span>
-                    <span class="ed-proj"><b>Kiln · start a new project</b><span>Master · 0:24 recorded · 1920 × 1080</span></span>
+                    <span class="ed-proj"><b>HomaCapture editor · Take 01</b><span>Your recording · 0:24 · 1920 × 1080 · auto-polished</span></span>
                     <span class="ed-vers"><span class="on">Master</span><span>Quick Demo</span><span>LinkedIn</span><span>Vertical <small>9:16</small></span><span>15s</span><span>Clips <small>2</small></span></span>
                     <span class="ed-btn">Share</span><span class="ed-btn hot">Export</span>
                   </div>
@@ -1128,6 +1163,12 @@ html.rewind .h1 .ln > span, html.rewind .squig path, html.rewind .hero-copy, htm
                 </div>
               </div>
             </div>
+            <ol class="ed-calls" aria-label="Parts of the HomaCapture editor">
+              <li style="--x:50%;--y:7.5%"><b>1</b><span>Every version of the take, one click apart</span></li>
+              <li style="--x:30%;--y:44%"><b>2</b><span>Your recording, already polished: zooms, cursor, captions</span></li>
+              <li class="n" style="--x:80.5%;--y:52%"><b>3</b><span>Inspector: style, camera, sound, transcript, export</span></li>
+              <li style="--x:22%;--y:80%"><b>4</b><span>Timeline: video, zoom, voice and words lanes</span></li>
+            </ol>
             <p class="shot-tag hand" aria-hidden="true">your clicks land on the zoom lane</p>
             <div class="hero-ph">
               <p class="ph-tag hand" aria-hidden="true">same take, 9:16</p>
@@ -1695,7 +1736,7 @@ function fitHeadline() {
   const spans = $$('span', meas).filter(s => s.parentElement === meas);
   const phone = innerWidth < 560;
   // keep the hero short enough that the editor shows above the fold on a laptop
-  const maxFs = phone ? 92 : Math.min(168, innerWidth * .112, innerWidth > 1100 ? Math.max(100, (innerHeight - 520) / 2.58) : 999), minFs = phone ? 50 : 84;
+  const maxFs = phone ? 50 : Math.min(66, innerWidth * .048), minFs = phone ? 36 : 40;
   let wd = 125, fs = 100;
   const measure = () => { meas.style.setProperty('--wd', wd); meas.style.fontSize = '100px'; return Math.max(...spans.map(el => el.getBoundingClientRect().width)); };
   for (let i = 0; i < 14; i++) { const w100 = measure(); fs = avail / w100 * 100 * .985; if (fs >= minFs || wd <= 72) break; wd -= 6; }
