@@ -9,3 +9,5 @@ __pycache__/
 Thumbs.db
 app/runtime/
 recorder/mac/homacapture-sysaudio
+site/shots/
+site/concepts/*/shots/
