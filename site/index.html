@@ -163,20 +163,34 @@ h1 em, h2 em { font-style: normal; color: var(--coral); }
 .cap span { background: rgba(20,20,15,.82); color: rgba(255,255,255,.55); padding: 2px 6px; -webkit-box-decoration-break: clone; box-decoration-break: clone; }
 .cap span.said { color: #fff; } .cap span.on { color: #FB8B73; }
 
-/* ===== steps: the app stays put, the edit switches on ===== */
-.steps { margin-top: clamp(110px, 14vw, 180px); }
-.steps-head { text-align: center; }
-.steps-grid { display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 56px; margin-top: 56px; }
-.st-list { list-style: none; margin: 0; padding: 0 0 26vh; }
-.st { min-height: 62vh; display: flex; flex-direction: column; justify-content: center; gap: 10px; opacity: .28; transition: opacity .4s; }
-.st.on { opacity: 1; }
-.st .n { font: 600 13px/1 var(--mono); color: var(--coral); }
-.st h3 { margin: 0; font: 800 32px/1.05 var(--disp); font-variation-settings: "wdth" 110; letter-spacing: -.02em; }
-.st p { margin: 0; color: var(--fg2); font-size: 18px; }
-.st-app { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 110px); align-self: start; }
-.st-dots { display: flex; gap: 8px; justify-content: center; margin-top: 22px; }
-.st-dots i { width: 28px; height: 4px; border-radius: 2px; background: var(--well); transition: background .3s; }
-.st-dots i.on { background: var(--fg); }
+/* ===== the loop: big stage + full timeline, pinned while you scroll ===== */
+.loop { position: relative; height: calc(8 * 55vh + 100vh); margin-top: clamp(90px, 11vw, 150px); }
+.lp-pin { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 68px); height: calc(100vh - 68px); display: flex; align-items: center; }
+.lp-in { width: 100%; display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 48px; align-items: center; }
+.lp-in > * { min-width: 0; }
+.lp-steps { max-width: 100%; }
+.lp-side h2 { font-size: clamp(30px, 3vw, 42px); }
+.lp-steps { list-style: none; margin: 28px 0 0; padding: 0; display: grid; gap: 2px; }
+.lp-steps li { display: grid; gap: 2px; padding: 6px 0; cursor: pointer; }
+.lp-steps b { font: 850 26px/1 var(--disp); font-variation-settings: "wdth" 118; text-transform: uppercase; letter-spacing: -.01em; color: var(--fg3); opacity: .55; transition: color .3s, opacity .3s; position: relative; justify-self: start; }
+.lp-steps span { font-size: 15px; color: var(--fg2); max-height: 0; overflow: hidden; transition: max-height .4s var(--ease); }
+.lp-steps li.done b { color: var(--fg); opacity: .9; }
+.lp-steps li.on b { color: var(--fg); opacity: 1; }
+.lp-steps li.on b::after { content: ""; position: absolute; left: -10px; right: -12px; top: -7px; bottom: -6px; border: 2.5px solid var(--coral); border-radius: 50%; transform: rotate(-2deg); }
+.lp-steps li.on span { max-height: 3em; padding-top: 6px; }
+.lp-hud { display: flex; justify-content: space-between; font: 500 13px/1 var(--mono); color: var(--fg2); margin-bottom: 12px; }
+.lp-hud b { color: var(--fg); font-weight: 600; }
+.lp-main { container-type: inline-size; min-width: 0; }
+.lp-box { display: grid; place-items: center; height: min(calc(100vh - 68px - 300px), 56.25cqw); min-height: 200px; }
+.lp-box .stage { height: 100%; width: auto; aspect-ratio: 16 / 9; max-width: 100%; border-radius: 12px; transition: aspect-ratio .7s var(--ease), background .5s var(--ease); }
+.lp-box .stage.vert { aspect-ratio: 9 / 16; }
+.lp-box .stage.vert .cap { font-size: 15px; left: 8%; right: 8%; bottom: 12%; }
+.ltl { margin-top: 14px; background: #1C1C19; color: #EFEEE8; border-radius: 14px; padding: 14px 16px 16px; display: grid; grid-template-columns: 62px minmax(0, 1fr); gap: 7px 12px; position: relative; font: 500 13px/1.3 var(--body); }
+.ltl-head { grid-column: 1 / -1; display: flex; gap: 22px; font: 500 12px/1 var(--mono); color: #8F8D84; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 4px; }
+.ltl-head b { color: #EFEEE8; font-weight: 600; } .ltl-head .o b { color: var(--coral); } .ltl-head .vo { margin-left: auto; }
+.ltl .ruler { color: #77756D; } .ltl .lab { color: #A9A79E; font: 600 11.5px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; }
+.ltl .lane { background: #2A2A25; } .ltl .lane .vid { background: #3A3A33; color: #B0AEA5; } .ltl .lane .wd { background: #3A3A33; color: #C9C7BE; }
+.ltl .ph { top: 40px; bottom: 14px; }
 
 /* ===== formats ===== */
 .fmt { margin-top: clamp(110px, 14vw, 180px); text-align: center; }
@@ -222,12 +236,16 @@ h1 em, h2 em { font-style: normal; color: var(--coral); }
 .ft a { text-decoration: none; } .ft a:hover { color: var(--fg); }
 
 @media (max-width: 860px) {
-  .steps-grid { grid-template-columns: 1fr; gap: 0; margin-top: 30px; }
-  .st-app { order: -1; top: calc(env(safe-area-inset-top, 0px) + 60px); z-index: 2; background: var(--bg); padding: 10px 0 14px; }
-  .st { min-height: 46vh; text-align: center; align-items: center; }
-  .st h3 { font-size: 26px; } .st p { font-size: 16px; }
-  .st-list { padding-bottom: 10vh; }
-  .st-dots { margin-top: 12px; }
+  .loop { height: calc(8 * 50vh + 100vh); }
+  .lp-pin { top: calc(env(safe-area-inset-top, 0px) + 60px); height: calc(100vh - 60px); }
+  .lp-in { grid-template-columns: 1fr; gap: 14px; }
+  .lp-side h2 { font-size: 26px; text-align: center; }
+  .lp-steps { margin-top: 14px; grid-auto-flow: column; overflow-x: auto; gap: 14px; justify-content: start; scrollbar-width: none; padding: 6px 10px; }
+  .lp-steps b { font-size: 16px; } .lp-steps span { display: none; }
+  .lp-box { height: 48vw; }
+  .ltl { grid-template-columns: 46px minmax(0, 1fr); padding: 10px; gap: 5px 8px; }
+  .ltl .lab { font-size: 9.5px; } .ltl .lane { height: 22px; } .ltl-head { gap: 12px; font-size: 10.5px; }
+  .ltl .lane .wd { font-size: 8px; padding: 0 2px; }
 }
 @media (max-width: 560px) {
   .hd .w { height: 60px; }
@@ -264,19 +282,23 @@ h1 em, h2 em { font-style: normal; color: var(--coral); }
     <p class="hint"><i></i>Click the video. It zooms where you click.</p>
   </section>
 
-  <section class="steps w" aria-labelledby="st-h">
-    <div class="steps-head"><h2 id="st-h">Press stop<em>.</em> The edit is done<em>.</em></h2></div>
-    <div class="steps-grid">
-      <ol class="st-list" id="stList">
-        <li class="st" data-step="0"><span class="n">00</span><h3>Your raw take</h3><p>Shaky cursor, full screen, every pause.</p></li>
-        <li class="st" data-step="1"><span class="n">01</span><h3>Framed and smooth</h3><p>A background, rounded corners, a calm cursor.</p></li>
-        <li class="st" data-step="2"><span class="n">02</span><h3>Zooms on your clicks</h3><p>It follows what you do, then eases out.</p></li>
-        <li class="st" data-step="3"><span class="n">03</span><h3>Pauses cut</h3><p>Silences and "um"s, gone. 0:17 becomes 0:14.</p></li>
-        <li class="st" data-step="4"><span class="n">04</span><h3>Captions and clean voice</h3><p>Word by word, made on your computer.</p></li>
-      </ol>
-      <div class="st-app">
-        <div class="appbox" id="stepApp" data-mode="steps"></div>
-        <div class="st-dots" aria-hidden="true" id="stDots"><i></i><i></i><i></i><i></i><i></i></div>
+  <section class="loop" id="loop" aria-labelledby="lp-h">
+    <div class="lp-pin">
+      <div class="w lp-in">
+        <div class="lp-side">
+          <h2 id="lp-h">Scroll is the playhead<em>.</em></h2>
+          <ol class="lp-steps" id="lpSteps">
+            <li><b>Raw</b><span>As it came off the screen.</span></li>
+            <li><b>Frame</b><span>Background, padding, corners.</span></li>
+            <li><b>Cursor</b><span>The shaky mouse, smoothed.</span></li>
+            <li><b>Zoom</b><span>Zooms follow your clicks.</span></li>
+            <li><b>Cuts</b><span>Pauses and "um"s, gone.</span></li>
+            <li><b>Voice</b><span>Noise out, level even.</span></li>
+            <li><b>Captions</b><span>Word by word, on your computer.</span></li>
+            <li><b>9:16</b><span>Vertical, the crop follows the cursor.</span></li>
+          </ol>
+        </div>
+        <div class="lp-main"><div class="lp-player" id="loopApp" data-mode="loop"></div></div>
       </div>
     </div>
   </section>
@@ -390,12 +412,24 @@ const APP = `<div class="app">
   </div>
 </div>`;
 
+const LOOP = `<div class="lp-hud"><span>Output <b class="lres">1920 × 1080 · 16:9</b></span><span><b class="tcn">00:00</b> / <span class="tct">00:17</span></span></div>
+  <div class="lp-box"><div class="stage"><div class="scr"><div class="cam">${SCREEN}${CURSOR}</div><div class="cap"></div></div></div></div>
+  <div class="ltl tl">
+    <div class="ltl-head"><span>Recorded <b>00:17</b></span><span class="o">Output <b class="lout">00:17</b></span><span class="vo">Voice <b class="lvo">raw</b></span></div>
+    <span></span><div class="ruler"></div>
+    <span class="lab">Video</span><div class="lane l-vid"><b class="vid">Screen · mic · camera</b></div>
+    <span class="lab">Voice</span><div class="lane"><canvas class="wave" width="900" height="28"></canvas></div>
+    <span class="lab">Zoom</span><div class="lane l-zoom"></div>
+    <span class="lab">Words</span><div class="lane l-words"></div>
+    <i class="ph"></i>
+  </div>`;
+
 // ---------------------------------------------------------------- one player per box
 class Player {
   constructor(box) {
     this.box = box; this.mode = box.dataset.mode; this.out = this.mode === 'out';
-    box.innerHTML = this.out ? `<div class="stage framed" style="position:absolute;inset:0;width:auto;height:auto;border-radius:0"><div class="scr" style="border-radius:0;box-shadow:none"><div class="cam">${SCREEN}${CURSOR}</div><div class="cap"></div></div></div>` : APP;
-    this.root = this.out ? box : $('.app', box);
+    box.innerHTML = this.mode === 'loop' ? LOOP : this.out ? `<div class="stage framed" style="position:absolute;inset:0;width:auto;height:auto;border-radius:0"><div class="scr" style="border-radius:0;box-shadow:none"><div class="cam">${SCREEN}${CURSOR}</div><div class="cap"></div></div></div>` : APP;
+    this.root = this.out || this.mode === 'loop' ? box : $('.app', box);
     this.stage = $('.stage', box); this.scr = $('.scr', box); this.cam = $('.cam', box); this.cur = $('.cur', box); this.capEl = $('.cap', box);
     this.t = 0; this.z = { x: SW / 2, y: SH / 2, s: 1 }; this.c = { x: KEYS[0][1], y: KEYS[0][2] }; this.ox = 0; this.user = null; this.firedClick = -1;
     this.flags = this.mode === 'steps' ? { frame: 0, smooth: 0, zoom: 0, cuts: 0, caps: 0, voice: 0 } : { frame: 1, smooth: 1, zoom: 1, cuts: 1, caps: 1, voice: 1 };
@@ -407,7 +441,7 @@ class Player {
     this.visible = false; new IntersectionObserver(es => { this.visible = es[0].isIntersecting; }, { rootMargin: '100px' }).observe(box);
   }
   fit() {
-    if (this.out) { this.sw = this.scr.clientWidth; this.sh = this.scr.clientHeight; return; }
+    if (this.out || this.mode === 'loop') { this.sw = this.scr.clientWidth; this.sh = this.scr.clientHeight; return; }
     const k = this.box.clientWidth / 1200; this.root.style.transform = `scale(${k})`; this.box.style.height = (740 * k) + 'px'; this.k = k;
     this.sw = this.scr.clientWidth; this.sh = this.scr.clientHeight;
   }
@@ -419,11 +453,12 @@ class Player {
     $('.l-zoom', this.root).innerHTML = ZOOMS.map(z => `<b class="zb" style="left:${pct(z[0])};width:${((z[1] - z[0]) / DUR * 100)}%">${z[4]}×</b>`).join('');
     $('.l-words', this.root).innerHTML = WORDS.map(([w, t], i) => { const end = (WORDS[i + 1] || [0, t + .6])[1]; return `<b class="wd" style="left:${pct(t)};width:calc(${((Math.min(end, t + 1.2) - t) / DUR * 100)}% - 2px)">${w.replace(/[,.]/g, '')}</b>`; }).join('');
     this.wd = $$('.wd', this.root); this.phEl = $('.ph', this.root); this.tcn = $('.tcn', this.root); this.tct = $('.tct', this.root);
-    this.wave = $('.wave', this.root).getContext('2d');
+    this.zl = $('.l-zoom', this.root); const cv = $('.wave', this.root); this.waveCv = cv; this.wave = cv.getContext('2d');
   }
   drawWave() {
-    const g = this.wave, W = 1092, H = 28, clean = this.flags.voice; g.clearRect(0, 0, W, H);
-    g.fillStyle = clean ? '#6E71E8' : getComputedStyle(this.root).getPropertyValue('--afg3');
+    const g = this.wave, cv = this.waveCv; if (this.mode === 'loop') { const w = Math.round(cv.parentElement.clientWidth); if (w && cv.width !== w) cv.width = w; }
+    const W = cv.width, H = cv.height, clean = this.flags.voice; g.clearRect(0, 0, W, H);
+    g.fillStyle = clean ? '#6E71E8' : (this.mode === 'loop' ? '#8F8D84' : getComputedStyle(this.root).getPropertyValue('--afg3'));
     for (let x = 0; x < W; x += 4) {
       const t = x / W * DUR; const speaking = WORDS.some(([, s], i) => t >= s - .1 && t < s + .45);
       let a = speaking ? .45 + .4 * Math.abs(Math.sin(x * .37) * Math.cos(x * .11)) : .08;
@@ -437,11 +472,14 @@ class Player {
     this.stage.classList.toggle('framed', !!f.frame);
     if (!this.out) {
       this.root.classList.toggle('zooms', !!f.zoom); this.root.classList.toggle('cuts', !!f.cuts); this.root.classList.toggle('caps', !!f.caps);
+      if (this.mode === 'loop') { $('.lout', this.root).textContent = f.cuts ? '00:14' : '00:17'; $('.lvo', this.root).textContent = f.voice ? 'clean' : 'raw'; $('.lres', this.root).textContent = f.vert ? '1080 × 1920 · 9:16' : '1920 × 1080 · 16:9'; this.stage.classList.toggle('vert', !!f.vert); setTimeout(() => this.fit(), 30); setTimeout(() => this.fit(), 760); }
+      else {
       $('.s-pad', this.root).style.width = f.frame ? '58%' : '0%'; $('.v-pad', this.root).textContent = f.frame ? '7%' : '0%';
       $('.s-cor', this.root).style.width = f.frame ? '50%' : '0%'; $('.v-cor', this.root).textContent = f.frame ? '12' : '0';
       $('.t-smooth', this.root).classList.toggle('on', !!f.smooth); $('.t-zoom', this.root).classList.toggle('on', !!f.zoom); $('.t-voice', this.root).classList.toggle('on', !!f.voice);
       $$('.s-cap span', this.root).forEach((s, i) => s.classList.toggle('on', i === (f.caps ? 1 : 0)));
       $$('.chipz span', this.root).forEach(s => s.classList.toggle('on', !!f[s.dataset.c]));
+      }
       this.tct.textContent = f.cuts ? '00:14' : '00:17';
       this.drawWave();
     } else this.box.classList.add('caps');
@@ -500,15 +538,16 @@ class Player {
     const li = Math.max(0, LINES.findIndex(([a, b]) => wi >= a && wi < b)); this.capRender(li);
     this.capSpans.forEach(sp => { const i = +sp.dataset.i; sp.className = i === wi ? 'on' : i < wi ? 'said' : ''; });
     if (!this.out) {
-      this.phEl.style.left = `calc(16px + 62px + 10px + ${t / DUR} * (100% - 32px - 72px))`;
+      const ln = this.zl; this.phEl.style.left = (ln.offsetLeft + t / DUR * ln.offsetWidth) + 'px';
       this.tcn.textContent = fmt(f.cuts ? t : t * 17 / 14);
       this.wd.forEach((el, i) => el.classList.toggle('on', i === wi && !!f.caps));
     }
   }
 }
 
-const players = $$('.appbox, .out').map(b => new Player(b));
-const [hero, steps, out] = players;
+const hero = new Player($('#heroApp')), steps = new Player($('#loopApp')), out = new Player($('#outApp'));
+const players = [hero, steps, out];
+new ResizeObserver(() => steps.drawWave()).observe($('#loopApp'));
 
 // one clock for all players, paused when off screen or when motion is reduced
 let last = performance.now();
@@ -522,21 +561,23 @@ requestAnimationFrame(t => { last = t; loop(t); });
 
 // steps: which text block is in the middle of the screen drives the app
 const STEP_FLAGS = [
-  { frame: 0, smooth: 0, zoom: 0, cuts: 0, caps: 0, voice: 0 },
-  { frame: 1, smooth: 1, zoom: 0, cuts: 0, caps: 0, voice: 0 },
-  { frame: 1, smooth: 1, zoom: 1, cuts: 0, caps: 0, voice: 0 },
-  { frame: 1, smooth: 1, zoom: 1, cuts: 1, caps: 0, voice: 0 },
-  { frame: 1, smooth: 1, zoom: 1, cuts: 1, caps: 1, voice: 1 },
+  { frame: 0, smooth: 0, zoom: 0, cuts: 0, voice: 0, caps: 0, vert: 0 },
+  { frame: 1, smooth: 0, zoom: 0, cuts: 0, voice: 0, caps: 0, vert: 0 },
+  { frame: 1, smooth: 1, zoom: 0, cuts: 0, voice: 0, caps: 0, vert: 0 },
+  { frame: 1, smooth: 1, zoom: 1, cuts: 0, voice: 0, caps: 0, vert: 0 },
+  { frame: 1, smooth: 1, zoom: 1, cuts: 1, voice: 0, caps: 0, vert: 0 },
+  { frame: 1, smooth: 1, zoom: 1, cuts: 1, voice: 1, caps: 0, vert: 0 },
+  { frame: 1, smooth: 1, zoom: 1, cuts: 1, voice: 1, caps: 1, vert: 0 },
+  { frame: 1, smooth: 1, zoom: 1, cuts: 1, voice: 1, caps: 1, vert: 1 },
 ];
-const stEls = $$('.st'), dots = $$('#stDots i'); let cur = -1;
-function setStep(i) { if (i === cur) return; cur = i; stEls.forEach((el, k) => el.classList.toggle('on', k === i)); dots.forEach((d, k) => d.classList.toggle('on', k <= i)); steps.set(STEP_FLAGS[i]); }
-setStep(0);
+const stEls = $$('#lpSteps li'), loopSec = $('#loop'); let cur = -1;
+function setStep(i) { if (i === cur) return; cur = i; stEls.forEach((el, k) => { el.classList.toggle('on', k === i); el.classList.toggle('done', k < i); }); steps.set(STEP_FLAGS[i]); }
 function pickStep() {
-  const mid = innerHeight * (innerWidth <= 860 ? .72 : .5); let best = 0, bd = 1e9;
-  stEls.forEach((el, i) => { const r = el.getBoundingClientRect(); const d = Math.abs(r.top + r.height / 2 - mid); if (d < bd) { bd = d; best = i; } });
-  setStep(best);
+  const r = loopSec.getBoundingClientRect(), pin = $('.lp-pin', loopSec).offsetHeight; const run = r.height - pin;
+  const p = clamp((-r.top + (innerWidth <= 860 ? 60 : 68)) / run, 0, .999); setStep(Math.floor(p * STEP_FLAGS.length));
 }
-addEventListener('scroll', pickStep, { passive: true }); pickStep();
+stEls.forEach((el, k) => el.addEventListener('click', () => { const run = loopSec.offsetHeight - $('.lp-pin', loopSec).offsetHeight; scrollTo({ top: loopSec.offsetTop - 68 + run * (k + .5) / STEP_FLAGS.length, behavior: RM ? 'auto' : 'smooth' }); }));
+setStep(0); addEventListener('scroll', pickStep, { passive: true }); pickStep();
 
 // formats
 const LABELS = { '16/9': ['1920 × 1080', 'YouTube'], '9/16': ['1080 × 1920', 'Shorts, Reels, TikTok'], '1/1': ['1080 × 1080', 'Instagram feed'], '4/5': ['1080 × 1350', 'Instagram, LinkedIn'] };
