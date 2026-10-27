@@ -56,6 +56,13 @@ Test recording used for screenshots: `%USERPROFILE%\Videos\Narrate\zz-smoke-test
 - Renamed to **HomaCapture** (repo `Tassyomah/homacapture`); see DECISIONS for what kept the old name.
 - First Mac build: `npm run dist:mac` → arm64 DMG, ad-hoc signed; installed to /Applications/HomaCapture.app on her MacBook Pro (macOS 15.1). Verified: launches, Home lists the Retina display, mics and cameras, live mic meter runs through `recorder/narrate.py`. Computer sound on Mac added the same day (recorder/mac/sysaudio.m, ScreenCaptureKit, self-tested in sync); the Home option now shows on both platforms, so Mac = Windows feature for feature. NOT yet done: screen-recording permission and a first real recording (she tests it herself). Expect avfoundation/PyObjC fixes on the first recording. Later: bundle Python + ffmpeg for Macs without them, app icon. Swift does not build on her Mac (Command Line Tools glitch); write native Mac helpers in Objective-C.
 
+## State as of 2026-10-27 (Mac audit)
+- First real Mac recording made (scripted audit). Recording, pause, cursor/click positions on Retina, editor, zoom preview and export all work.
+- FIXED: Mac voice tracks lost 7–60 % of the audio (ffmpeg avfoundation mic). Mic now goes through `recorder/mac/micaudio.m` → `homacapture-mic` (built by `npm run build:mic`, packaged next to the sysaudio helper). Verified: 14.56 s voice for a 14.1 s recording, no gaps.
+- FIXED: Smart Director `analyze` crashed on every recording with clicks.
+- `NARRATE_SCREENSHOT` now runs the window hidden (no dock icon, no focus steal). Never drive her real mouse/keyboard or play sound during tests: she works while tests run.
+- Open audit items: export is slow (89 s for a 12 s 1080p60 clip on M-series); automatic zooms are invisible on the Zoom lane; no import of outside videos (planned: upload + in-app "select a stretch, ask Claude" prompt box, API key route recommended, her decision pending).
+
 ## Continuing on her Mac / another Claude account
 She works from two Claude accounts; this repo (pushed to GitHub `Tassyomah/homacapture`) is the only shared context. On the Mac: clone the repo, open it in Claude Code, say "continue" — this skill loads via CLAUDE.md. First Mac session: follow `docs/DEVELOPMENT.md` → macOS, run `python3 recorder/narrate.py --list`, tell her before a short test recording, then `npm run dev`, fix what breaks, commit, ask before pushing.
 
