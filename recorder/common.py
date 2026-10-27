@@ -200,7 +200,7 @@ def analyze(args):
     moves = sorted(m[0] - t0 for m in ev["moves"])
     for start in [x * 2.0 for x in range(int(max(0, dur - WIN) / 2.0) + 1)]:
         end = start + WIN
-        sc = sum(1 for t in moves if start <= t < end) / 60.0 + 3 * sum(1 for c in clicks if start <= t < end) + 4 * sum(1 for t, _ in scenes if start <= t < end)
+        sc = sum(1 for t in moves if start <= t < end) / 60.0 + 3 * sum(1 for c in clicks if start <= c < end) + 4 * sum(1 for t, _ in scenes if start <= t < end)
         scores.append((sc, start, end))
     scores.sort(reverse=True)
     chosen = []
@@ -325,7 +325,7 @@ def transcribe(args):
 def finalize(outdir, setup, t_end, capture=None, log_data=None, platform="win32", mic_latency=0.0):
     """Turn the raw capture (screen.mkv, mic.mka, journal) into screen.mp4 / mic.wav / events.json.
     Used at the end of a normal recording and by `finalize` after a crash (then log_data comes from the journal).
-    Raw inputs: screen.mkv (or screen.mov), mic.mka (or mic.mov), camera.mkv (or camera.mov), system.raw.wav."""
+    Raw inputs: screen.mkv (or screen.mov), mic.mka (or mic.mov) or mic.raw.wav (macOS helper), camera.mkv (or camera.mov), system.raw.wav."""
     first = lambda *names: next((os.path.join(outdir, n) for n in names if os.path.exists(os.path.join(outdir, n))), os.path.join(outdir, names[0]))
     raw_video = first("screen.mkv", "screen.mov"); screen_path = os.path.join(outdir, "screen.mp4"); mic_path = first("mic.mka", "mic.mov")
     journal_path = os.path.join(outdir, "events.partial.jsonl")
@@ -346,7 +346,7 @@ def finalize(outdir, setup, t_end, capture=None, log_data=None, platform="win32"
         emit(event="error", code="no_video", message="This recording has no video file; nothing could be recovered."); sys.exit(5)
     vid = probe(screen_path)
     t0m = None
-    wav = os.path.join(outdir, "mic.wav")
+    wav = os.path.join(outdir, "mic.wav"); mic_raw = os.path.join(outdir, "mic.raw.wav")
     if os.path.exists(mic_path):
         emit(event="finalizing", step="audio")
         st = probe(mic_path).get("start_time")
@@ -354,6 +354,10 @@ def finalize(outdir, setup, t_end, capture=None, log_data=None, platform="win32"
         if st is not None and os.path.exists(wav):
             t0m = float(st) - mic_latency                             # Windows: packets are stamped on arrival; the first sample is one buffer older
             setup["t0Mic"] = t0m; os.remove(mic_path)
+    elif os.path.exists(mic_raw) and setup.get("t0Mic") is not None:    # macOS native helper: float WAV whose origin is its first buffer
+        emit(event="finalizing", step="audio")
+        run([FFMPEG, "-v", "error", "-y", "-i", mic_raw, "-c:a", "pcm_s16le", "-ar", "48000", wav], timeout=600)
+        if os.path.exists(wav) and os.path.getsize(wav) > 1000: t0m = float(setup["t0Mic"]); os.remove(mic_raw)
     elif os.path.exists(wav) and setup.get("t0Mic") is not None: t0m = float(setup["t0Mic"])
     # camera: same treatment as the screen (Matroska → faststart MP4), origin kept in setup for re-runs
     cam_raw = first("camera.mkv", "camera.mov"); cam_mp4 = os.path.join(outdir, "camera.mp4"); t0c = None; cam_info = None

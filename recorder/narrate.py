@@ -162,19 +162,22 @@ class SysAudio:
     """Computer sound through mac/homacapture-sysaudio (ScreenCaptureKit). Same shape as win_loopback.Loopback:
     start(), stop(), .t0 on the host clock once the first buffer arrives, .error if it failed."""
     BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mac", "homacapture-sysaudio")
-    def __init__(self, path): self.path = path; self.t0 = None; self.error = None; self.ready = threading.Event(); self.p = None
+    TAG, SRC = "system", "sysaudio.m"
+    def __init__(self, path, *extra): self.path = path; self.extra = list(extra); self.t0 = None; self.error = None; self.ready = threading.Event(); self.p = None
+    @classmethod
+    def available(cls): return os.path.exists(cls.BIN)
     def start(self):
-        if not os.path.exists(self.BIN): raise RuntimeError("the computer-sound helper is missing (build it: see recorder/mac/sysaudio.m)")
-        self.p = subprocess.Popen([self.BIN, self.path], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        if not self.available(): raise RuntimeError(f"the {self.TAG} helper is missing (build it: see recorder/mac/{self.SRC})")
+        self.p = subprocess.Popen([self.BIN, self.path, *self.extra], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
         def read():
             for line in self.p.stdout:
                 try: e = json.loads(line)
                 except ValueError: continue
                 if e.get("event") == "t0": self.t0 = float(e["t0"])
-                elif e.get("event") == "error": self.error = e.get("message"); log("[system] " + str(self.error))
+                elif e.get("event") == "error": self.error = e.get("message"); log(f"[{self.TAG}] " + str(self.error))
                 if e.get("event") in ("ready", "error"): self.ready.set()
         threading.Thread(target=read, daemon=True).start()
-        drain(self.p.stderr, lambda l: log("[system] " + l))
+        drain(self.p.stderr, lambda l: log(f"[{self.TAG}] " + l))
         if not self.ready.wait(6) or self.error or self.p.poll() is not None:
             msg = self.error or "it did not start"; self.stop(); raise RuntimeError(msg)
     def alive(self): return self.p is not None and self.p.poll() is None
@@ -184,6 +187,12 @@ class SysAudio:
         except Exception: pass
         try: self.p.wait(timeout=8)
         except subprocess.TimeoutExpired: kill(self.p)
+
+class MicAudio(SysAudio):
+    """Microphone through mac/homacapture-mic (AVCaptureAudioDataOutput, 48 kHz mono float32). ffmpeg's avfoundation
+    audio input drops buffers on Apple silicon (≈60 % next to a Retina screen capture), so the mic never goes through it."""
+    BIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mac", "homacapture-mic")
+    TAG, SRC = "mic", "micaudio.m"
 
 def record(args):
     need_ffmpeg()
@@ -223,9 +232,16 @@ def record(args):
     flush = ["-cluster_time_limit", "1000", "-flush_packets", "1"]     # Matroska: a crash loses at most ~1 s
     cmd = [FFMPEG, "-hide_banner", "-loglevel", "error", "-y",
            "-f", "avfoundation", "-framerate", str(args.fps), "-pixel_format", "nv12", "-capture_cursor", "0", "-i", f"{screen_idx}:none"]
-    if mic_idx is not None: cmd += ["-f", "avfoundation", "-i", f"none:{mic_idx}"]
+    ff_mic = mic_idx is not None and not MicAudio.available()          # fallback only: ffmpeg drops mic audio on this hardware
+    if ff_mic: cmd += ["-f", "avfoundation", "-i", f"none:{mic_idx}"]
     cmd += ["-copyts", "-map", "0:v", "-c:v", "h264_videotoolbox", "-b:v", f"{mbps}M", "-realtime", "1", "-g", str(args.fps), *flush, raw_video]
-    if mic_idx is not None: cmd += ["-map", "1:a", "-c:a", "pcm_s16le", "-ar", "48000", *flush, mic_path]
+    if ff_mic: cmd += ["-map", "1:a", "-c:a", "pcm_s16le", "-ar", "48000", *flush, mic_path]
+    mic = None
+    if mic_idx is not None and not ff_mic:
+        try:
+            mic = MicAudio(os.path.join(outdir, "mic.raw.wav"), mic_name or ""); mic.start(); log("[mic] native capture started")
+        except Exception as e:
+            emit(event="error", code="mic_failed", message=f"The microphone could not be started: {e}"); sys.exit(4)
     log("[screen] " + " ".join(cmd))
     ff = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     ff_err = []; drain(ff.stderr, lambda l: (ff_err.append(l), log("[ffmpeg] " + l)))
@@ -246,9 +262,11 @@ def record(args):
     else:
         kill(ff)
         if camera: kill(camera)
+        if mic: mic.stop()
         emit(event="error", code="no_frames", message="The screen capture produced no frames. Check Screen Recording permission for this app.\n" + "\n".join(ff_err[-5:])); sys.exit(4)
     if ff.poll() is not None:
         if camera: kill(camera)
+        if mic: mic.stop()
         emit(event="error", code="ffmpeg_exit", message="Capture failed to start.\n" + "\n".join(ff_err[-8:])); sys.exit(4)
     warning = None
     if camera:
@@ -295,6 +313,9 @@ def record(args):
             emit(event="error", code="ffmpeg_died", message="Capture stopped unexpectedly.\n" + "\n".join(ff_err[-8:])); stopped.set()
         elif camera and camera.poll() is not None:
             log("[recorder] camera capture ended early"); camera = None
+        if mic and mic.t0 is not None and setup.get("t0Mic") is None:
+            setup["t0Mic"] = mic.t0                                         # recording.json carries it for crash recovery
+            with open(os.path.join(outdir, "recording.json"), "w") as fh: json.dump(setup, fh)
         if sysaudio and sysaudio.t0 is not None and setup.get("t0System") is None:
             setup["t0System"] = sysaudio.t0                                   # recording.json carries it for crash recovery
             with open(os.path.join(outdir, "recording.json"), "w") as fh: json.dump(setup, fh)
@@ -308,6 +329,9 @@ def record(args):
         except Exception: pass
         try: p.wait(timeout=15)
         except subprocess.TimeoutExpired: kill(p)
+    if mic:
+        mic.stop()
+        if mic.t0 is not None: setup["t0Mic"] = mic.t0
     if sysaudio:
         sysaudio.stop()
         if sysaudio.t0 is not None: setup["t0System"] = sysaudio.t0

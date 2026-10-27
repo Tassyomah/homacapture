@@ -44,6 +44,7 @@ function load(w: BrowserWindow, hash = '') {
 function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 980, minHeight: 640,
+    show: !process.env.NARRATE_SCREENSHOT,   // dev screenshots run hidden, no window or focus steal
     title: 'HomaCapture', backgroundColor: '#EFEEE8',
     ...(IS_WIN
       ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#EFEEE8', symbolColor: '#14140F', height: 52 } }
@@ -70,7 +71,7 @@ function devScreenshot(w: BrowserWindow) {
     setTimeout(async () => {
       for (let attempt = 1; attempt <= 4; attempt++) {
         try {
-          w.focus()
+          if (w.isVisible()) w.focus()
           // NARRATE_SCREENSHOT_JS: a snippet run in the page first (drive the UI into a state worth checking).
           if (process.env.NARRATE_SCREENSHOT_JS && attempt === 1) { const r = await w.webContents.executeJavaScript(process.env.NARRATE_SCREENSHOT_JS); if (r) console.log('[dev] js:', r); await new Promise((r) => setTimeout(r, 900)) }
           const img = await w.webContents.capturePage()
@@ -171,6 +172,7 @@ recorder.on('event', (raw: RecorderEvent) => {
 })
 
 app.whenReady().then(async () => {
+  if (process.env.NARRATE_SCREENSHOT) app.dock?.hide()
   await mkdir(RECORDINGS, { recursive: true })
   server = await AssetServer.start(RECORDINGS)
 

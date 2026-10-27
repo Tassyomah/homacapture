@@ -13,8 +13,9 @@
     "dist": "npm run build && npm run bundle:video && npm run bundle:runtime && electron-builder --win nsis --publish never",
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
-    "dist:mac": "npm run build && npm run bundle:video && npm run build:sysaudio && electron-builder --mac dmg --arm64 --publish never",
-    "build:sysaudio": "clang -fobjc-arc -O2 -Wall -mmacosx-version-min=13.0 -framework Foundation -framework ScreenCaptureKit -framework CoreMedia -framework AudioToolbox ../recorder/mac/sysaudio.m -o ../recorder/mac/homacapture-sysaudio"
+    "dist:mac": "npm run build && npm run bundle:video && npm run build:sysaudio && npm run build:mic && electron-builder --mac dmg --arm64 --publish never",
+    "build:sysaudio": "clang -fobjc-arc -O2 -Wall -mmacosx-version-min=13.0 -framework Foundation -framework ScreenCaptureKit -framework CoreMedia -framework AudioToolbox ../recorder/mac/sysaudio.m -o ../recorder/mac/homacapture-sysaudio",
+    "build:mic": "clang -fobjc-arc -O2 -Wall -mmacosx-version-min=13.0 -framework Foundation -framework AVFoundation -framework CoreMedia -framework AudioToolbox ../recorder/mac/micaudio.m -o ../recorder/mac/homacapture-mic"
   },
   "keywords": [],
   "author": "Homalabs",
@@ -38,7 +39,8 @@
         "to": "recorder",
         "filter": [
           "**/*.py",
-          "mac/homacapture-sysaudio"
+          "mac/homacapture-sysaudio",
+          "mac/homacapture-mic"
         ]
       },
       {
