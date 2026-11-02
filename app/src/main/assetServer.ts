@@ -3,7 +3,8 @@ import { createReadStream, statSync, existsSync } from 'node:fs'
 import { resolve, extname, relative, sep } from 'node:path'
 import type { AddressInfo } from 'node:net'
 
-const TYPES: Record<string, string> = { '.mp4': 'video/mp4', '.wav': 'audio/wav', '.png': 'image/png', '.json': 'application/json' }
+const TYPES: Record<string, string> = { '.mp4': 'video/mp4', '.webm': 'video/webm', '.wav': 'audio/wav', '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
+  '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.json': 'application/json' }
 
 /** Serves the recordings folder over localhost with Range support, for <video> in the UI and Remotion's renderer. */
 export class AssetServer {

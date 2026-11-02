@@ -41,5 +41,7 @@ const api: NarrateApi = {
   trashProject: (dir) => ipcRenderer.invoke('project:trash', dir),
   importVideo: (path) => ipcRenderer.invoke('project:import', path),
   pathForFile: (file) => webUtils.getPathForFile(file),
+  addMedia: (dir, kind) => ipcRenderer.invoke('project:media', dir, kind),
+  matteProject: (dir) => ipcRenderer.invoke('project:matte', dir),
 }
 contextBridge.exposeInMainWorld('narrate', api)

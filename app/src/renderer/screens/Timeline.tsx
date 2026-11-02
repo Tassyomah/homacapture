@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
-import { IconEyeOff, IconLetterT, IconPlayerTrackNext, IconScissors, IconX, IconZoomIn } from '@tabler/icons-react'
-import type { Chapter, Cut, ManualZoom, Mask, RecordingEvents, SpeedRange, TextPop, Transcript } from '../../shared/types'
+import { IconEyeOff, IconLetterT, IconPhoto, IconPlayerTrackNext, IconScissors, IconX, IconZoomIn } from '@tabler/icons-react'
+import type { Chapter, Cut, ManualZoom, Mask, MusicTrack, Overlay, RecordingEvents, SpeedRange, TextPop, Transcript } from '../../shared/types'
 import { keptRanges, removedRanges, type Range } from '../../video/ranges'
 
 /** Something on the timeline the user can select and edit in the inspector. */
-export type Item = { kind: 'cut'; i: number } | { kind: 'zoom'; id: string } | { kind: 'speed'; i: number } | { kind: 'mask'; id: string } | { kind: 'text'; id: string }
-export type RangeAction = 'cut' | 'zoom' | 'speed' | 'mask' | 'text'
+export type Item = { kind: 'cut'; i: number } | { kind: 'zoom'; id: string } | { kind: 'speed'; i: number } | { kind: 'mask'; id: string } | { kind: 'text'; id: string } | { kind: 'broll'; id: string }
+export type RangeAction = 'cut' | 'zoom' | 'speed' | 'mask' | 'text' | 'broll'
 export const sameItem = (a: Item | null, b: Item | null) => !!a && !!b && a.kind === b.kind && ('id' in a ? a.id === (b as { id: string }).id : a.i === (b as { i: number }).i)
 
 /**
@@ -13,9 +13,9 @@ export const sameItem = (a: Item | null, b: Item | null) => !!a && !!b && a.kind
  * drag across any track to select a stretch (a toolbar offers Cut / Zoom / Speed / Blur), click a block to edit it.
  * Hovering anything says what it is.
  */
-export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], transcript, playhead, range, selected, editable,
+export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], music = null, transcript, playhead, range, selected, editable,
   onSeek, onRange, onSelect, onAction }: {
-  ev: RecordingEvents; cuts: Cut[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]
+  ev: RecordingEvents; cuts: Cut[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; music?: MusicTrack | null
   transcript?: Transcript | null; playhead: number; range: [number, number] | null; selected: Item | null
   /** False while editing a derived version: only cuts belong to it, so zoom / speed / blur tracks are read-only. */
   editable: boolean
@@ -95,6 +95,10 @@ export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [],
         {(upload || texts.length > 0) && lane('Text', 'Words that pop up on screen. Click one to change it.', texts.map((x) => (
           <div key={x.id} className={'blk pill text' + on({ kind: 'text', id: x.id }) + (editable ? '' : ' ro')} style={{ left: pct(x.t), width: w(x.t, x.t + x.duration) }}
             data-item={editable ? it({ kind: 'text', id: x.id }) : undefined} data-info={`“${x.text}” · ${fmt(x.t)} · click to edit`}><span>{x.text}</span></div>)))}
+        {(upload || overlays.length > 0) && lane('B-roll', 'Pictures and clips shown over the video. Drag across the timeline, then B-roll.', overlays.map((o) => (
+          <div key={o.id} className={'blk pill broll' + on({ kind: 'broll', id: o.id }) + (editable ? '' : ' ro')} style={{ left: pct(o.t), width: w(o.t, o.t + o.duration) }}
+            data-item={editable ? it({ kind: 'broll', id: o.id }) : undefined} data-info={`${o.name} · ${fmt(o.t)}–${fmt(o.t + o.duration)} · click to edit`}><span>{o.name}</span></div>)))}
+        {music && lane('Music', 'Music under the whole video. Change it in the Sound tab.', <div className="blk pill music" style={{ left: 0, width: '100%' }} data-info={`${music.name} · ${Math.round(music.volume * 100)}%${music.duck ? ' · quieter when you talk' : ''}`}><span>{music.name}</span></div>)}
         {lane('Speed', 'Stretches played faster or slower.', speeds.map((s, i) => (
           <div key={'s' + i} className={'blk pill speed' + on({ kind: 'speed', i }) + (editable ? '' : ' ro')} style={{ left: pct(s.start), width: w(s.start, s.end) }}
             data-item={editable ? it({ kind: 'speed', i }) : undefined} data-info={`${s.rate}× speed · ${fmt(s.start)}–${fmt(s.end)} · click to edit`}><span>{s.rate}×</span></div>)))}
@@ -112,6 +116,7 @@ export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [],
             {editable && <>
               <button data-tip={upload ? 'Punch in on the speaker · Z' : 'Zoom in on the cursor · Z'} onClick={() => onAction('zoom')}><IconZoomIn size={15} />Zoom</button>
               <button data-tip="Pop up words from here · T" onClick={() => onAction('text')}><IconLetterT size={15} />Text</button>
+              <button data-tip="Show a picture or clip here · R" onClick={() => onAction('broll')}><IconPhoto size={15} />B-roll</button>
               <button data-tip="Play faster · S" onClick={() => onAction('speed')}><IconPlayerTrackNext size={15} />Speed</button>
               <button data-tip="Hide something private · B" onClick={() => onAction('mask')}><IconEyeOff size={15} />Blur</button>
             </>}

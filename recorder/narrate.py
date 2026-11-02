@@ -361,6 +361,7 @@ def main():
     if args.cmd == "transcribe": transcribe(args); return
     if args.cmd == "enhance": enhance(args); return
     if args.cmd == "import": import_video(args); return
+    if args.cmd == "matte": matte(args); return
     record(args)
 
 if __name__ == "__main__": main()

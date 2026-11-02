@@ -5,7 +5,7 @@
  *   npx tsx scripts/export.ts <recording dir> [outputHeight=1080] [zoom=2] [--gif]
  */
 import { join, resolve, basename } from 'node:path'
-import { existsSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { AssetServer } from '../src/main/assetServer'
 import { exportProject } from '../src/main/exporter'
 import { defaultConfig, type Project, type RecordingEvents } from '../src/shared/types'
@@ -31,7 +31,9 @@ const project: Project = {
   assets: { screen: url(events.files.screen), mic: events.files.mic ? url(events.files.mic) : null,
             micClean: existsSync(join(dir, 'mic.clean.wav')) ? url('mic.clean.wav') : null,
             camera: events.files.camera ? url(events.files.camera) : null,
-            system: events.files.system ? url(events.files.system) : null, cursors },
+            system: events.files.system ? url(events.files.system) : null, cursors,
+            cutout: existsSync(join(dir, 'screen.cutout.webm')) ? url('screen.cutout.webm') : null,
+            media: Object.fromEntries((existsSync(join(dir, 'media')) ? readdirSync(join(dir, 'media')) : []).map((f) => [`media/${f}`, url(join('media', f))])) },
 }
 // Saved edits apply, as in the app; the CLI arguments override height and zoom.
 const base = { ...defaultConfig, ...(saved?.config ?? {}) }

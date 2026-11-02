@@ -1,8 +1,9 @@
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion'
 import { useMemo } from 'react'
-import { ASPECTS, type Mask, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type TextPop, type Transcript } from '../shared/types'
+import { ASPECTS, type Mask, type MusicTrack, type Overlay, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type TextPop, type Transcript } from '../shared/types'
 import { buildCamera, cameraAt, cursorIdAt, smoothCursor, type CamKey, type Viewport } from './motion'
-import { keptRanges } from './ranges'
+import { keptRanges, srcToOut, type Range } from './ranges'
+import { POP, WHOOSH } from './sfx'
 import { Captions } from './Captions'
 
 const BACKGROUNDS: Record<string, string> = {
@@ -38,8 +39,8 @@ export function layout(ev: RecordingEvents, cfg: RenderConfig): Layout {
 }
 
 /** One kept range of the recording, rendered at source time = srcStart + local frame. */
-const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[] }> =
-  ({ ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts }) => {
+const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[]; overlays: Overlay[] }> =
+  ({ ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts, overlays }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = srcStart + (frame / fps) * rate
@@ -58,6 +59,8 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
   const sysStart = srcStart - (ev.systemOffset ?? 0)
   // The camera starts a moment after the screen; show the overlay only once it has frames (no black box at the start).
   const cameraHasFrames = t - (ev.cameraOffset ?? 0) >= 0 && (!ev.camera?.duration || t - (ev.cameraOffset ?? 0) <= ev.camera.duration)
+  const backdropImage = cfg.backdrop === 'image' && cfg.backdropImage ? assets.media?.[cfg.backdropImage] ?? null : null
+  const cutout = assets.cutout && cfg.backdrop !== 'off' && (cfg.backdrop !== 'image' || backdropImage) ? assets.cutout : null
   const webcam = assets.camera && ev.camera && cfg.cameraShape !== 'off' && cameraHasFrames ? cameraRect(cfg, ev.camera, F.w, F.h) : null
 
   return (
@@ -65,7 +68,15 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
       <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, borderRadius: cfg.radius,
                     overflow: 'hidden', boxShadow: '0 40px 120px rgba(20,20,15,0.35)', background: '#14140F' }}>
         <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${cam.scale})` }}>
-          <OffthreadVideo src={assets.screen} muted startFrom={Math.round(srcStart * fps)} playbackRate={rate} style={{ width: W, height: H, display: 'block' }} />
+          {cutout ? <>
+            {/* Remove / blur background: what sits behind the speaker, then the speaker cut out (transparent video) on top. */}
+            {cfg.backdrop === 'blur' && <OffthreadVideo src={assets.screen} muted startFrom={Math.round(srcStart * fps)} playbackRate={rate}
+              style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, display: 'block', filter: `blur(${Math.round(Math.max(W, H) * 0.018)}px) brightness(0.92)`, transform: 'scale(1.08)' }} />}
+            {cfg.backdrop === 'color' && <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, background: BACKGROUNDS[cfg.backdropColor] ?? BACKGROUNDS.paper }} />}
+            {cfg.backdrop === 'image' && backdropImage && <Img src={backdropImage} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, objectFit: 'cover' }} />}
+            <OffthreadVideo src={cutout} muted transparent startFrom={Math.round(srcStart * fps)} playbackRate={rate} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, display: 'block' }} />
+            <div style={{ width: W, height: H }} />
+          </> : <OffthreadVideo src={assets.screen} muted startFrom={Math.round(srcStart * fps)} playbackRate={rate} style={{ width: W, height: H, display: 'block' }} />}
           {/* Privacy masks live in screen coordinates, so they follow the zoom and are part of every export (spec §49). */}
           {masks.filter((m) => t >= m.start && t <= m.end).map((m) => (
             <div key={m.id} style={{ position: 'absolute', left: m.x, top: m.y, width: m.w, height: m.h, borderRadius: 8,
@@ -91,6 +102,8 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
             style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transform: cfg.cameraMirror ? 'scaleX(-1)' : undefined }} />
         </div>
       )}
+      {overlays.filter((o) => t >= o.t && t < o.t + o.duration && assets.media?.[o.file]).map((o) => (
+        <BRoll key={o.id} o={o} src={assets.media![o.file]} t={t} srcStart={srcStart} fps={fps} rate={rate} F={F} faceLeft={(ev.focus?.[0] ?? W / 2) < W / 2} />))}
       {cfg.keycaps && ev.keys && ev.keys.length > 0 && <Keycaps keys={ev.keys} t={t} t0={ev.t0Video} F={F} />}
       {texts.length > 0 && <KineticText texts={texts} t={t} F={F} portrait={F.h > F.w} />}
       {transcript && cfg.captions !== 'off' && (
@@ -153,6 +166,70 @@ const KineticText: React.FC<{ texts: TextPop[]; t: number; F: { x: number; y: nu
   )
 }
 
+/**
+ * B-roll: a picture or clip over the video. 'full' fills the frame (pictures drift in slowly, Ken Burns style);
+ * 'card' floats a rounded card clear of the speaker's face (above it on vertical video, beside it on landscape). Flat card, soft shadow, no border.
+ */
+const BRoll: React.FC<{ o: Overlay; src: string; t: number; srcStart: number; fps: number; rate: number; F: { x: number; y: number; w: number; h: number }; faceLeft: boolean }> = ({ o, src, t, srcStart, fps, rate, F, faceLeft }) => {
+  const age = t - o.t, left = o.t + o.duration - t
+  const alpha = Math.min(1, age / 0.12, left / 0.12)
+  const media = (style: React.CSSProperties) => o.kind === 'video'
+    ? <TimedVideo src={src} start={srcStart - o.t} fps={fps} rate={rate} style={style} />
+    : <Img src={src} style={style} />
+  if (o.fit === 'full') {
+    const drift = o.kind === 'image' ? 1 + 0.06 * Math.min(1, age / Math.max(0.5, o.duration)) : 1
+    return (
+      <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, overflow: 'hidden', opacity: alpha, background: '#14140F' }}>
+        {media({ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transform: `scale(${drift * (1.04 - 0.04 * Math.min(1, age / 0.25))})` })}
+      </div>)
+  }
+  const portrait = F.h > F.w
+  const w = Math.round(F.w * (portrait ? 0.8 : 0.42)), h = Math.round(w * 0.625)
+  const scale = 0.7 + 0.3 * easeOutBack(Math.min(1, age / 0.28))
+  const x = portrait ? (F.w - w) / 2 : faceLeft ? F.w * 0.54 : F.w * 0.04
+  const y = portrait ? F.h * 0.05 : (F.h - h) / 2
+  return (
+    <div style={{ position: 'absolute', left: F.x + x, top: F.y + y, width: w, height: h, borderRadius: Math.round(w * 0.05), overflow: 'hidden',
+                  opacity: alpha, transform: `scale(${scale}) rotate(-1.5deg)`, boxShadow: '0 30px 90px rgba(20,20,15,0.45)', background: '#14140F' }}>
+      {media({ width: '100%', height: '100%', objectFit: 'cover', display: 'block' })}
+    </div>)
+}
+
+/** Output-time spans where someone is speaking (transcript words that survive the cuts), merged across short gaps. */
+function speechSpans(transcript: Transcript | null, ranges: Range[]): [number, number][] {
+  if (!transcript) return []
+  const inside = (t: number) => ranges.some((r) => t >= r.start && t < r.end)
+  const spans: [number, number][] = []
+  for (const s of transcript.segments) for (const w of s.words) {
+    const mid = (w.start + w.end) / 2
+    if (!inside(mid)) continue
+    const a = srcToOut(ranges, Math.max(w.start, s.start)), b = srcToOut(ranges, w.end)
+    const last = spans[spans.length - 1]
+    if (last && a - last[1] < 0.6) last[1] = Math.max(last[1], b); else spans.push([a, b])
+  }
+  return spans
+}
+
+/** Background music, looped under the whole video: dips to a quarter while anyone speaks (auto-duck), fades in and out. */
+const Music: React.FC<{ src: string; music: MusicTrack; spans: [number, number][]; total: number; hasVoice: boolean }> = ({ src, music, spans, total, hasVoice }) => {
+  const { fps } = useVideoConfig()
+  const volume = (f: number) => {
+    const t = f / fps
+    let duck = 1
+    if (music.duck) {
+      if (!spans.length) duck = hasVoice ? 0.28 : 1
+      else {
+        let d = Infinity
+        for (const [a, b] of spans) { if (t >= a && t <= b) { d = 0; break } d = Math.min(d, t < a ? a - t : t - b) }
+        duck = 0.28 + 0.72 * Math.min(1, d / 0.35)
+      }
+    }
+    const fade = Math.min(1, t / 0.6, Math.max(0, total - t) / 1.5)
+    return Math.max(0, music.volume * duck * fade)
+  }
+  return <Audio src={src} loop volume={volume} />
+}
+
 /** A video whose own time axis starts `start` seconds into this segment (negative = it begins later than the segment). */
 const TimedVideo: React.FC<{ src: string; start: number; fps: number; rate: number; style: React.CSSProperties }> = ({ src, start, fps, rate, style }) =>
   start >= 0
@@ -182,11 +259,22 @@ export function cameraRect(cfg: RenderConfig, camera: { width: number; height: n
  * so the exporter can pick any integer output size without the layout maths changing.
  */
 export const Screencast: React.FC<ScreencastProps> = (props) => {
-  const { assets, events: ev, config: cfg, cuts = [], zooms = [], speeds = [], masks = [], texts = [], transcript = null } = props
+  const { assets, events: ev, config: cfg, cuts = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], music = null, transcript = null } = props
   const { fps, width: VW } = useVideoConfig()
   const L = useMemo(() => layout(ev, cfg), [ev, cfg])
   const keys = useMemo(() => buildCamera(ev, cfg, L.vp, zooms), [ev, cfg, L, zooms])
   const ranges = useMemo(() => keptRanges(ev, cuts, speeds), [ev, cuts, speeds])
+  const total = ranges.reduce((s, r) => s + Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps)), 0) / fps
+  const spans = useMemo(() => (music?.duck ? speechSpans(transcript, ranges) : []), [music?.duck, transcript, ranges])
+  // Sound effects (output seconds): a whoosh that peaks on each zoom / punch-in and B-roll, a pop on each text.
+  const sfx = useMemo(() => {
+    if (!cfg.sfx) return []
+    const kept = (t: number) => ranges.some((r) => t >= r.start - 0.01 && t < r.end)
+    const list = [...zooms.map((z) => ({ t: z.t, src: WHOOSH, lead: 0.26 })), ...overlays.map((o) => ({ t: o.t, src: WHOOSH, lead: 0.26 })), ...texts.map((x) => ({ t: x.t, src: POP, lead: 0 }))]
+      .filter((e) => kept(e.t)).map((e) => ({ at: Math.max(0, srcToOut(ranges, e.t) - e.lead), src: e.src })).sort((a, b) => a.at - b.at)
+    return list.filter((e, i) => !list.slice(0, i).some((p) => p.src === e.src && e.at - p.at < 0.15))
+  }, [cfg.sfx, zooms, overlays, texts, ranges])
+  const musicSrc = music ? assets.media?.[music.file] ?? null : null
   let from = 0
   return (
     <AbsoluteFill style={{ background: BACKGROUNDS[cfg.background] ?? BACKGROUNDS.indigo }}>
@@ -195,13 +283,18 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
           const len = Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps))
           const seq = (
             <Sequence key={i} from={from} durationInFrames={len}>
-              <Segment ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} />
+              <Segment ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} overlays={overlays} />
             </Sequence>
           )
           from += len
           return seq
         })}
       </div>
+      {music && musicSrc && <Music src={musicSrc} music={music} spans={spans} total={total} hasVoice={!!assets.mic} />}
+      {sfx.map((e, i) => (
+        <Sequence key={'fx' + i} from={Math.round(e.at * fps)} durationInFrames={Math.round(0.6 * fps)} layout="none">
+          <Audio src={e.src} volume={cfg.sfxVolume} />
+        </Sequence>))}
     </AbsoluteFill>
   )
 }

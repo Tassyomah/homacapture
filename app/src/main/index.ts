@@ -1,12 +1,13 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, screen, globalShortcut, clipboard } from 'electron'
-import { join, resolve, basename } from 'node:path'
+import { join, resolve, basename, extname } from 'node:path'
+import { execFileSync, spawn } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import type { Analysis, Cut, Devices, ExportFormat, ExportProgress, MasterExtras, Project, ProjectFile, RecorderEvent, RenderConfig, StartOptions, Transcript, UnfinishedRecording } from '../shared/types'
+import type { Analysis, Cut, Devices, ExportFormat, ExportProgress, MasterExtras, MediaFile, Project, ProjectFile, RecorderEvent, RenderConfig, StartOptions, Transcript, UnfinishedRecording } from '../shared/types'
 import { Recorder } from './recorder'
 import { AssetServer } from './assetServer'
-import { exportProject, renderThumbnails } from './exporter'
+import { exportProject, findFfmpeg, renderThumbnails } from './exporter'
 import { getShareSettings, saveShareSettings, shareFile } from './share'
 
 const IS_WIN = process.platform === 'win32'
@@ -119,7 +120,9 @@ function loadProject(dir: string): Project | null {
     assets: { screen: url(events.files.screen), mic: events.files.mic ? url(events.files.mic) : null,
               micClean: existsSync(join(dir, 'mic.clean.wav')) ? url('mic.clean.wav') + `?v=${statSync(join(dir, 'mic.clean.wav')).mtimeMs}` : null,
               camera: events.files.camera ? url(events.files.camera) : null,
-              system: events.files.system ? url(events.files.system) : null, cursors },
+              system: events.files.system ? url(events.files.system) : null, cursors,
+              cutout: existsSync(join(dir, 'screen.cutout.webm')) ? url('screen.cutout.webm') + `?v=${statSync(join(dir, 'screen.cutout.webm')).mtimeMs}` : null,
+              media: Object.fromEntries((existsSync(join(dir, 'media')) ? readdirSync(join(dir, 'media')) : []).filter((f) => !f.startsWith('.')).map((f) => [`media/${f}`, url(join('media', f))])) },
   }
 }
 
@@ -154,6 +157,7 @@ recorder.on('transcribe', (ev: RecorderEvent) => {
   else if (ev.event === 'ready') broadcast({ event: 'transcribing', stage: 'done' })
 })
 recorder.on('import', (ev: RecorderEvent) => { if (ev.event === 'importing') broadcast(ev) })
+recorder.on('matte', (ev: RecorderEvent) => { if (ev.event === 'matting') broadcast(ev) })
 recorder.on('enhance', (ev: RecorderEvent) => {
   if (ev.event === 'enhancing') broadcast(ev)
   else if (ev.event === 'ready') broadcast({ event: 'enhancing', step: 'done' })
@@ -249,7 +253,7 @@ app.whenReady().then(async () => {
     const p = loadProject(process.env.NARRATE_OPEN)
     if (p) exportProject(APP_ROOT, p, { ...(await import('../shared/types')).defaultConfig, ...(p.file?.config ?? {}), outputHeight: 480 }, p.file?.cuts ?? [],
       (prog) => console.log('[dev] export', prog.stage, Math.round(prog.progress * 100) + '%', prog.message ?? ''), 'packaged-test', 'mp4', join(RESOURCES, 'remotion'),
-      { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [], texts: p.file?.texts ?? [] })
+      { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [], texts: p.file?.texts ?? [], overlays: p.file?.overlays ?? [], music: p.file?.music ?? null })
       .then(() => app.quit(), (e) => { console.log('[dev] export failed', e.message); app.quit() })
   }
   ipcMain.handle('share:settings', () => getShareSettings())
@@ -273,6 +277,39 @@ app.whenReady().then(async () => {
     const out = join(RECORDINGS, `${slug}-${stamp}`)
     await recorder.importVideo(src, out)
     const p = loadProject(out); if (!p) throw new Error('The video was read but no project was written.')
+    return p
+  })
+
+  // Music and B-roll: the chosen file is copied into <project>/media (the original stays where it is). Videos that are not
+  // MP4 are converted so every player and the renderer can read them.
+  ipcMain.handle('project:media', async (_e, dir: string, kind: 'music' | 'broll' | 'image'): Promise<MediaFile | null> => {
+    const filters = kind === 'music' ? [{ name: 'Music', extensions: ['mp3', 'm4a', 'wav', 'aac'] }]
+      : kind === 'image' ? [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      : [{ name: 'Pictures and clips', extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'm4v', 'webm'] }]
+    const r = await dialog.showOpenDialog(win!, { title: kind === 'music' ? 'Add music' : kind === 'image' ? 'Choose a background picture' : 'Add B-roll', properties: ['openFile'], filters })
+    if (r.canceled || !r.filePaths[0]) return null
+    const src = r.filePaths[0], ext = extname(src).toLowerCase()
+    const isVideo = ['.mp4', '.mov', '.m4v', '.webm'].includes(ext), isAudio = ['.mp3', '.m4a', '.wav', '.aac'].includes(ext)
+    const slug = basename(src, extname(src)).replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'media'
+    mkdirSync(join(dir, 'media'), { recursive: true })
+    let name = `${slug}${isVideo ? '.mp4' : ext}`
+    for (let i = 2; existsSync(join(dir, 'media', name)); i++) name = `${slug}-${i}${isVideo ? '.mp4' : ext}`
+    const dest = join(dir, 'media', name)
+    if (isVideo && ext !== '.mp4') {
+      const ff = findFfmpeg(); if (!ff) throw new Error('ffmpeg is needed to add this clip.')
+      await new Promise<void>((res, rej) => { const p = spawn(ff, ['-v', 'error', '-y', '-i', src, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-pix_fmt', 'yuv420p', '-an', '-movflags', '+faststart', dest]); p.on('error', rej); p.on('close', (c) => c === 0 ? res() : rej(new Error('That clip could not be converted.'))) })
+    } else copyFileSync(src, dest)
+    let duration: number | undefined
+    const probe = findFfmpeg()?.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'))
+    if ((isVideo || isAudio) && probe && existsSync(probe)) {
+      try { duration = Number(execFileSync(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', dest], { encoding: 'utf8' }).trim()) || undefined } catch { /* unknown length */ }
+    }
+    return { file: `media/${name}`, url: server.url(dest), kind: isVideo ? 'video' : isAudio ? 'audio' : 'image', name: basename(src), duration }
+  })
+  ipcMain.handle('project:matte', async (_e, dir: string): Promise<Project> => {
+    if (process.platform !== 'darwin') throw new Error('Removing the background works on macOS for now.')
+    await recorder.matte(dir)
+    const p = loadProject(dir); if (!p) throw new Error('project not found')
     return p
   })
 

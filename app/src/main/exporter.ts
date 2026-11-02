@@ -67,7 +67,8 @@ function getBundle(appRoot: string, prebuilt?: string) {
 export async function renderThumbnails(appRoot: string, project: Project, config: RenderConfig, cuts: Cut[], timesOut: number[], prebuilt?: string, extra?: MasterExtras): Promise<string[]> {
   const serveUrl = await getBundle(appRoot, prebuilt)
   const inputProps: ScreencastProps = { assets: project.assets, events: project.events, config, cuts, transcript: project.transcript,
-    zooms: extra?.zooms ?? project.file?.zooms ?? [], speeds: extra?.speeds ?? project.file?.speeds ?? [], masks: extra?.masks ?? project.file?.masks ?? [], texts: extra?.texts ?? project.file?.texts ?? [] }
+    zooms: extra?.zooms ?? project.file?.zooms ?? [], speeds: extra?.speeds ?? project.file?.speeds ?? [], masks: extra?.masks ?? project.file?.masks ?? [], texts: extra?.texts ?? project.file?.texts ?? [],
+    overlays: extra?.overlays ?? project.file?.overlays ?? [], music: extra?.music !== undefined ? extra.music : project.file?.music ?? null }
   const binaries = binariesDirectory()
   const design = await selectComposition({ serveUrl, id: 'Screencast', inputProps, binariesDirectory: binaries })
   const scale = 1280 / design.width
@@ -91,7 +92,8 @@ export async function exportProject(appRoot: string, project: Project, config: R
     send({ stage: 'bundling', progress: 0, suffix: safe })
     const serveUrl = await getBundle(appRoot, prebuilt)
     const inputProps: ScreencastProps = { assets: project.assets, events: project.events, config, cuts, transcript: project.transcript,
-      zooms: extra?.zooms ?? project.file?.zooms ?? [], speeds: extra?.speeds ?? project.file?.speeds ?? [], masks: extra?.masks ?? project.file?.masks ?? [], texts: extra?.texts ?? project.file?.texts ?? [] }
+      zooms: extra?.zooms ?? project.file?.zooms ?? [], speeds: extra?.speeds ?? project.file?.speeds ?? [], masks: extra?.masks ?? project.file?.masks ?? [], texts: extra?.texts ?? project.file?.texts ?? [],
+    overlays: extra?.overlays ?? project.file?.overlays ?? [], music: extra?.music !== undefined ? extra.music : project.file?.music ?? null }
     const binaries = binariesDirectory()
     const design = await selectComposition({ serveUrl, id: 'Screencast', inputProps, binariesDirectory: binaries })
     // Render at an even integer size; the composition scales its design layout to whatever size it is given.

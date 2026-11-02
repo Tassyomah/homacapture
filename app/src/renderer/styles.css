@@ -366,3 +366,21 @@ button.wide { width: 100%; }
 .drop-hint span { color: rgba(20,20,15,.7); }
 .smart-btn { background: var(--coral); color: var(--ink); }
 .smart-btn:hover:not(:disabled) { filter: brightness(1.05); }
+
+/* CapCut-style additions (2026-11-02): B-roll + music lanes, caption style picker, B-roll preview */
+.blk.broll { background: var(--ink); color: var(--paper); }
+.blk.broll.on { background: var(--coral); color: var(--ink); }
+.blk.music { background: rgba(110,113,232,.35); color: var(--ink); cursor: default; }
+.capstyles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.capstyles button { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 10px 4px 8px; border-radius: 10px; background: var(--ink-10); font-size: 12px; }
+.capstyles button.on { background: var(--ink); color: var(--paper); }
+.cap-sample { display: flex; align-items: center; justify-content: center; gap: 3px; height: 24px; padding: 0 6px; max-width: 100%; overflow: hidden; border-radius: 6px; background: #3a3a34; color: var(--paper);
+  font-weight: 800; font-size: 10.5px; letter-spacing: .01em; white-space: nowrap; }
+.cap-minimal .cap-sample { font-weight: 600; }
+.cap-bold .cap-sample b { color: var(--mustard); }
+.cap-box .cap-sample b { background: var(--coral); color: var(--ink); border-radius: 4px; padding: 1px 4px; }
+.cap-karaoke .cap-sample b { color: var(--coral); } .cap-karaoke .cap-sample i { font-style: normal; opacity: .5; }
+.cap-word .cap-sample { font-size: 14px; font-weight: 900; }
+.broll-thumb { border-radius: 10px; overflow: hidden; background: var(--ink); aspect-ratio: 16 / 9; }
+.broll-thumb img, .broll-thumb video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.row-btns { display: flex; gap: 8px; }

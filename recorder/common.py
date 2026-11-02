@@ -299,6 +299,49 @@ def import_video(args):
     os.replace(tmpj, os.path.join(outdir, "events.json"))
     emit(event="ready", out=outdir, duration=vdur, width=w, height=h, audio=bool(mic))
 
+
+def matte(args):
+    """Remove / blur background (uploads): the speaker cut out of screen.mp4 as a transparent video, screen.cutout.webm
+    (VP9 with alpha, 30 fps, long side ≤ 1920). The composition lays it over a blurred copy of the video, a brand colour
+    or a picture. Made once per project; the original is never touched. macOS only (Vision person segmentation)."""
+    need_ffmpeg()
+    outdir = args.out
+    helper = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mac", "homacapture-matte")
+    if not os.path.exists(helper):
+        emit(event="error", code="no_matte", message="Removing the background needs the macOS person cut-out helper, which is not in this build."); sys.exit(3)
+    with open(os.path.join(outdir, "events.json")) as fh: ev = json.load(fh)
+    W, H = ev["display"]["width"], ev["display"]["height"]
+    s = min(1.0, 1920 / max(W, H))
+    w, h = int(round(W * s / 2)) * 2, int(round(H * s / 2)) * 2
+    fps = 30
+    total = max(1, int(ev.get("videoDuration", 0) * fps))
+    out = os.path.join(outdir, "screen.cutout.webm"); tmp = out + ".tmp.webm"
+    emit(event="matting", done=0, total=total)
+    dec = subprocess.Popen([FFMPEG, "-v", "error", "-nostdin", "-i", os.path.join(outdir, ev["files"]["screen"]),
+                            "-vf", f"fps={fps},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "bgra", "-"],
+                           stdout=subprocess.PIPE, stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    cut = subprocess.Popen([helper, str(w), str(h)], stdin=dec.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=False)
+    dec.stdout.close()
+    enc = subprocess.Popen([FFMPEG, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
+                            "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "30", "-deadline", "realtime", "-cpu-used", "8",
+                            "-row-mt", "1", "-auto-alt-ref", "0", "-f", "webm", tmp], stdin=cut.stdout, stderr=subprocess.PIPE)
+    cut.stdout.close()
+    enc_err = []
+    t = threading.Thread(target=lambda: enc_err.extend(enc.stderr.read().decode(errors="replace").splitlines()), daemon=True); t.start()
+    last = 0.0
+    for line in cut.stderr:
+        try: e = json.loads(line)
+        except Exception: continue
+        if e.get("event") == "frame" and time.time() - last > 0.4:
+            last = time.time(); emit(event="matting", done=min(total, e["n"]), total=total)
+    rc = (cut.wait(), enc.wait(), dec.wait()); t.join(5)
+    if rc[0] != 0 or rc[1] != 0 or not os.path.exists(tmp):
+        try: os.remove(tmp)
+        except OSError: pass
+        emit(event="error", code="matte_failed", message="The background could not be removed. " + " ".join(enc_err)[-300:]); sys.exit(5)
+    os.replace(tmp, out)
+    emit(event="ready", out=outdir, file="screen.cutout.webm", width=w, height=h)
+
 def enhance(args):
     """mic.wav → mic.clean.wav, same length and start. Chain (spec §16): rumble high-pass, hum notches (50/60 Hz mains),
     adaptive FFT noise reduction, gentle de-ess, light speech compression, two-pass EBU loudness to -16 LUFS, true-peak

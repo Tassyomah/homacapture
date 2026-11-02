@@ -68,6 +68,15 @@ export interface ManualZoom { id: string; t: number; duration: number; x: number
 /** Kinetic text (auto-edit): a key phrase that pops in big over the video from `t` for `duration` (source seconds). */
 export type TextStyle = 'pop' | 'title'
 export interface TextPop { id: string; t: number; duration: number; text: string; style: TextStyle }
+/** B-roll (CapCut-style overlay): a picture or clip shown over the video from `t` for `duration` (source seconds).
+ *  `file` is relative to the project folder (media/…). 'full' covers the frame; 'card' floats a rounded card above the speaker. */
+export interface Overlay { id: string; t: number; duration: number; file: string; kind: 'image' | 'video'; name: string; fit: 'full' | 'card'
+  /** A clip's own length in seconds (it is never shown past its end). */
+  length?: number }
+/** Background music: one track under the whole video, looped, ducked while anyone speaks. `file` is relative (media/…). */
+export interface MusicTrack { file: string; name: string; volume: number; duck: boolean }
+/** A file the user added to a project (copied into <project>/media). */
+export interface MediaFile { file: string; url: string; kind: 'image' | 'video' | 'audio'; name: string; duration?: number }
 /** Playback speed for a stretch of the recording (spec §40); 1 = normal. Source seconds. */
 export interface SpeedRange { start: number; end: number; rate: number }
 /** Privacy mask (spec §49): a rectangle in screen pixels, blurred or painted over, from `start` to `end` (source seconds). */
@@ -100,6 +109,8 @@ export interface ProjectFile {
   speeds?: SpeedRange[]
   masks?: Mask[]
   texts?: TextPop[]
+  overlays?: Overlay[]
+  music?: MusicTrack | null
   /** When the automatic first edit of an uploaded video ran (it runs once; "Auto-edit again" redoes it). */
   autoEditedAt?: string
   chapters?: Chapter[]
@@ -115,7 +126,13 @@ export interface TranscriptWord { start: number; end: number; word: string; p: n
 export interface TranscriptSegment { start: number; end: number; text: string; words: TranscriptWord[] }
 export interface Transcript { version: number; language: string; model: string; createdAt: string; duration: number; segments: TranscriptSegment[] }
 
-export type CaptionStyle = 'off' | 'minimal' | 'bold'
+/** Caption looks: minimal pill, bold sentence, and the social ones that show a few words at a time
+ *  (box = coral block behind the spoken word, karaoke = words light up as they are said, word = one big word at a time). */
+export type CaptionStyle = 'off' | 'minimal' | 'bold' | 'box' | 'karaoke' | 'word'
+export const CAPTION_STYLES: { id: CaptionStyle; label: string }[] = [
+  { id: 'off', label: 'Off' }, { id: 'minimal', label: 'Minimal' }, { id: 'bold', label: 'Bold' },
+  { id: 'box', label: 'Box' }, { id: 'karaoke', label: 'Karaoke' }, { id: 'word', label: 'One word' },
+]
 
 /** analysis.json — written by `narrate_win.py analyze` (add-on spec §7–9). Signals are raw; proposals are editable suggestions. */
 export type ProposalType = 'REMOVE' | 'ZOOM' | 'CHAPTER' | 'HIGHLIGHT' | 'SPEED'
@@ -130,7 +147,13 @@ export interface Analysis {
   proposals: Proposal[]
   summary: Record<ProposalType, number> & { removableSeconds: number }
 }
-export interface ProjectAssets { screen: string; mic: string | null; micClean: string | null; camera: string | null; system: string | null; cursors: Record<string, string> }
+export interface ProjectAssets { screen: string; mic: string | null; micClean: string | null; camera: string | null; system: string | null; cursors: Record<string, string>
+  /** screen.cutout.webm: the speaker cut out (transparent), made on request for Remove / blur background. */
+  cutout?: string | null
+  /** Files in <project>/media (music, B-roll), relative path → URL. */
+  media?: Record<string, string> }
+/** What sits behind the speaker once they are cut out: nothing (the original video), a blurred copy, a colour or a picture. */
+export type BackdropFill = 'off' | 'blur' | 'color' | 'image'
 
 export type Background = 'indigo' | 'coral' | 'ink' | 'paper'
 export type CameraShape = 'off' | 'circle' | 'rounded'
@@ -159,16 +182,22 @@ export interface RenderConfig {
   captions: CaptionStyle
   voice: 'raw' | 'clean' // 'clean' uses mic.clean.wav when it exists (spec §16); the raw track is always kept
   keycaps: boolean      // show pressed shortcuts as keycaps (spec §46)
+  sfx: boolean          // whoosh on punch-ins and B-roll, pop on text pops
+  sfxVolume: number     // 0..1
+  backdrop: BackdropFill
+  backdropColor: Background
+  backdropImage: string | null  // media/… file
 }
 export const defaultConfig: RenderConfig = {
   aspect: 'source', zoom: 2, padding: 0.06, radius: 24, background: 'indigo', cursorScale: 1.6, outputHeight: 1080, outputFps: 60,
   cameraShape: 'circle', cameraSize: 0.2, cameraCorner: 'br', cameraMirror: true,
   micVolume: 1, systemVolume: 0.8, captions: 'off', voice: 'raw', keycaps: true,
+  sfx: false, sfxVolume: 0.55, backdrop: 'off', backdropColor: 'paper', backdropImage: null,
 }
 
-export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; transcript?: Transcript | null; [k: string]: unknown }
+export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; music?: MusicTrack | null; transcript?: Transcript | null; [k: string]: unknown }
 /** Master-level instructions every derivative inherits. */
-export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[] }
+export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; music?: MusicTrack | null }
 
 export type MicPermission = 'authorized' | 'denied' | 'restricted' | 'notDetermined' | 'unknown'
 export interface Permissions { screen: boolean; mic: MicPermission }
@@ -182,6 +211,7 @@ export type RecorderEvent =
   | { event: 'transcribing'; stage: 'installing' | 'loading' | 'transcribing' | 'done'; message?: string; done?: number; total?: number }
   | { event: 'enhancing'; step: 'measure' | 'render' | 'done' }
   | { event: 'importing'; step: 'reading' | 'video' | 'audio' | 'framing' }
+  | { event: 'matting'; done: number; total: number }
   | { event: 'ready'; out: string; project: Project }
   | { event: 'error'; code: string; message: string }
 export type RecState = 'idle' | 'countdown' | 'recording' | 'paused' | 'finalizing'
@@ -257,6 +287,10 @@ export interface NarrateApi {
   importVideo(path?: string): Promise<Project | null>
   /** The file path of a file dropped on the window (Electron webUtils). */
   pathForFile(file: File): string
+  /** Add a music track or a B-roll picture/clip: file picker, copied into <project>/media. null = cancelled. */
+  addMedia(dir: string, kind: 'music' | 'broll' | 'image'): Promise<MediaFile | null>
+  /** Cut the speaker out (screen.cutout.webm) for Remove / blur background. Progress via onRecorderEvent 'matting'. */
+  matteProject(dir: string): Promise<Project>
   /** Developer screenshots only (NARRATE_OPEN): open a recording folder in the editor on launch. */
   onDevOpen(cb: (dir: string) => void): () => void
 }
