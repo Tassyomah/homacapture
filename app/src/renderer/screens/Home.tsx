@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Devices, Permissions, Project, UnfinishedRecording } from '../../shared/types'
-import { IconCamera, IconClock, IconDeviceDesktop, IconMicrophone, IconPlayerPlay, IconTrash, IconVolume } from '@tabler/icons-react'
+import { IconCamera, IconClock, IconDeviceDesktop, IconMicrophone, IconPlayerPlay, IconTrash, IconUpload, IconVolume, IconWand } from '@tabler/icons-react'
 import { isWin, keys, machine } from '../platform'
 
 type Phase = { kind: 'idle' } | { kind: 'countdown'; n: number } | { kind: 'starting' }
@@ -20,6 +20,23 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
   const [unfinished, setUnfinished] = useState<UnfinishedRecording[]>([])
   const [recovering, setRecovering] = useState<string | null>(null)   // dir being recovered
   const [level, setLevel] = useState(0)
+  const [importing, setImporting] = useState<string | null>(null)   // what the upload is doing right now
+  const [dragging, setDragging] = useState(false)
+  const UPLOAD_STEP: Record<string, string> = { reading: 'Reading the video…', video: 'Bringing in the picture…', audio: 'Bringing in the sound…', framing: 'Finding the speaker…' }
+  useEffect(() => window.narrate.onRecorderEvent((e) => { if (e.event === 'importing') setImporting(UPLOAD_STEP[e.step] ?? 'Bringing it in…') }), [])
+  /** Upload: any video becomes a project, then opens in the editor, where the automatic first edit runs. */
+  const upload = (path?: string) => {
+    if (importing) return
+    setError(null); setImporting(path ? 'Reading the video…' : null)
+    window.narrate.importVideo(path).then((p) => { setImporting(null); if (p) { onChanged(); onOpen(p) } })
+      .catch((e: Error) => { setImporting(null); setError(e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')) })
+  }
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setDragging(false)
+    const f = e.dataTransfer.files[0]; if (!f) return
+    if (!/^video\//.test(f.type) && !/\.(mp4|mov|m4v|webm|mkv|avi)$/i.test(f.name)) { setError('That is not a video. Drop an MP4, MOV, M4V or WebM file.'); return }
+    upload(window.narrate.pathForFile(f))
+  }
 
   const loadPerms = (request = false) => window.narrate.checkPermissions(request).then(setPerms)
   useEffect(() => {
@@ -90,7 +107,8 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
   const needsScreen = perms && !perms.screen
   const micBlocked = perms?.mic === 'denied'
   return (
-    <div className="home">
+    <div className={'home' + (dragging ? ' dropping' : '')} onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true) } }}
+      onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false) }} onDrop={onDrop}>
       {needsScreen && (
         <div className="permission">
           <b>HomaCapture needs permission to record the screen.</b>
@@ -174,6 +192,14 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
         </div>
       </section>
 
+      <section className="up-card">
+        <span className="up-icon" aria-hidden="true"><IconWand size={22} stroke={1.6} /></span>
+        <div className="up-text"><b>Already have a video? Upload it and it edits itself.</b>
+          <span>Pauses and filler words cut, punch-ins on the speaker, key words popping on screen, captions. Then change anything you like.</span></div>
+        <button className="primary" disabled={!!importing} onClick={() => upload()}><IconUpload size={16} />{importing ?? 'Upload a video'}</button>
+      </section>
+      {dragging && <div className="drop-hint" aria-hidden="true"><IconUpload size={28} stroke={1.6} /><b>Drop to upload</b><span>It opens in the editor and edits itself.</span></div>}
+
       <div className="list-head"><h2>Your recordings</h2>{projects.length > 0 && <span>{projects.length}</span>}</div>
       {projects.length === 0 ? <div className="empty">Your recordings will appear here. Press Start recording to make the first one.</div> : (
         <div className="cards">
@@ -187,7 +213,7 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
                 <span className="open"><IconPlayerPlay size={16} />Open</span>
               </div>
               <div className="meta">
-                <div><b>{niceName(p.name)}</b><span>{p.events.display.width}×{p.events.display.height}{p.assets.mic ? ' · voice' : ''}{p.assets.camera ? ' · camera' : ''}</span></div>
+                <div><b>{niceName(p.name)}</b><span>{p.events.source === 'import' ? 'Upload · ' : ''}{p.events.display.width}×{p.events.display.height}{p.assets.mic ? ' · voice' : ''}{p.assets.camera ? ' · camera' : ''}</span></div>
                 <button className="icon" aria-label="Move to Bin" data-tip="Move to the Bin (you can restore it from there)"
                   onClick={(e) => { e.stopPropagation(); window.narrate.trashProject(p.dir).then(onChanged) }}><IconTrash size={16} /></button>
               </div>

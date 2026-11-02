@@ -1,6 +1,6 @@
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion'
 import { useMemo } from 'react'
-import { ASPECTS, type Mask, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type Transcript } from '../shared/types'
+import { ASPECTS, type Mask, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type TextPop, type Transcript } from '../shared/types'
 import { buildCamera, cameraAt, cursorIdAt, smoothCursor, type CamKey, type Viewport } from './motion'
 import { keptRanges } from './ranges'
 import { Captions } from './Captions'
@@ -38,8 +38,8 @@ export function layout(ev: RecordingEvents, cfg: RenderConfig): Layout {
 }
 
 /** One kept range of the recording, rendered at source time = srcStart + local frame. */
-const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[] }> =
-  ({ ev, cfg, assets, keys, srcStart, rate, L, transcript, masks }) => {
+const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[] }> =
+  ({ ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = srcStart + (frame / fps) * rate
@@ -92,9 +92,10 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
         </div>
       )}
       {cfg.keycaps && ev.keys && ev.keys.length > 0 && <Keycaps keys={ev.keys} t={t} t0={ev.t0Video} F={F} />}
+      {texts.length > 0 && <KineticText texts={texts} t={t} F={F} portrait={F.h > F.w} />}
       {transcript && cfg.captions !== 'off' && (
         <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, pointerEvents: 'none' }}>
-          <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={F.h} portrait={L.vp.crop} />
+          <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={F.h} portrait={L.vp.crop || F.h > F.w} />
         </div>
       )}
       {assets.mic && cfg.micVolume > 0 && <TimedAudio src={cfg.voice === 'clean' && assets.micClean ? assets.micClean : assets.mic} start={micStart} fps={fps} volume={cfg.micVolume} rate={rate} />}
@@ -118,6 +119,36 @@ const Keycaps: React.FC<{ keys: { t: number; keys: string }[]; t: number; t0: nu
         <span key={i} style={{ fontFamily: 'Aeonik, Archivo, Inter, system-ui, sans-serif', fontWeight: 600, fontSize: size, lineHeight: 1, color: '#14140F',
           background: '#EFEEE8', borderRadius: size * 0.45, padding: `${size * 0.55}px ${size * 0.8}px`, boxShadow: `0 ${size * 0.25}px 0 rgba(20,20,15,0.25), 0 ${size * 0.6}px ${size * 1.2}px rgba(20,20,15,0.25)`, minWidth: size * 1.2, textAlign: 'center' }}>{k}</span>
       ))}
+    </div>
+  )
+}
+
+const easeOutBack = (p: number) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * (p - 1) ** 3 + c1 * (p - 1) ** 2 }
+
+/**
+ * Kinetic text (auto-edit of uploads): the key phrase pops in big above the speaker's head and fades just before the
+ * next beat. It sits on the frame, not on the zoomed video, so it stays put through punch-ins. Flat brand shapes only.
+ * 'pop' = coral word(s); 'title' = a paper card with ink type for the opening hook.
+ */
+const KineticText: React.FC<{ texts: TextPop[]; t: number; F: { x: number; y: number; w: number; h: number }; portrait: boolean }> = ({ texts, t, F, portrait }) => {
+  const on = texts.filter((x) => t >= x.t && t < x.t + x.duration)
+  if (!on.length) return null
+  const tp = on[on.length - 1]
+  const age = t - tp.t, left = tp.t + tp.duration - t
+  const p = Math.min(1, age / 0.24)
+  const scale = 0.62 + 0.38 * easeOutBack(p)
+  const alpha = Math.min(1, age / 0.08, left / 0.16)
+  const text = tp.text.toUpperCase()
+  const title = tp.style === 'title'
+  const base = F.w * (portrait ? (title ? 0.075 : 0.12) : (title ? 0.045 : 0.07))
+  const fontSize = Math.round(Math.min(base, (F.w * (portrait ? 0.84 : 0.7)) / Math.max(4, Math.min(text.length, 14) * 0.6)))
+  return (
+    <div style={{ position: 'absolute', left: F.x, top: F.y + Math.round(F.h * (portrait ? 0.13 : 0.1)), width: F.w, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
+      <div style={{ transform: `scale(${scale}) rotate(${title ? 0 : -2}deg)`, opacity: alpha, transformOrigin: '50% 60%', maxWidth: portrait ? '86%' : '72%', textAlign: 'center',
+                    fontFamily: 'Aeonik, Archivo, Inter, system-ui, sans-serif', fontWeight: 800, fontSize, lineHeight: 1.02, letterSpacing: '-0.01em', textWrap: 'balance' as never,
+                    color: title ? '#14140F' : '#FB8B73', background: title ? '#EFEEE8' : 'transparent', borderRadius: title ? fontSize * 0.45 : 0,
+                    padding: title ? `${Math.round(fontSize * 0.4)}px ${Math.round(fontSize * 0.7)}px` : 0,
+                    textShadow: title ? undefined : `0 ${Math.round(fontSize * 0.06)}px ${Math.round(fontSize * 0.3)}px rgba(20,20,15,0.55)` }}>{text}</div>
     </div>
   )
 }
@@ -151,7 +182,7 @@ export function cameraRect(cfg: RenderConfig, camera: { width: number; height: n
  * so the exporter can pick any integer output size without the layout maths changing.
  */
 export const Screencast: React.FC<ScreencastProps> = (props) => {
-  const { assets, events: ev, config: cfg, cuts = [], zooms = [], speeds = [], masks = [], transcript = null } = props
+  const { assets, events: ev, config: cfg, cuts = [], zooms = [], speeds = [], masks = [], texts = [], transcript = null } = props
   const { fps, width: VW } = useVideoConfig()
   const L = useMemo(() => layout(ev, cfg), [ev, cfg])
   const keys = useMemo(() => buildCamera(ev, cfg, L.vp, zooms), [ev, cfg, L, zooms])
@@ -164,7 +195,7 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
           const len = Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps))
           const seq = (
             <Sequence key={i} from={from} durationInFrames={len}>
-              <Segment ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} />
+              <Segment ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} />
             </Sequence>
           )
           from += len

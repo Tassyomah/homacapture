@@ -22,7 +22,7 @@ export function clampCenter(cx: number, cy: number, scale: number, W: number, H:
 /** Where the viewport rests when nothing is zoomed: the screen centre, or the (slowly) followed cursor when cropping. */
 export function restCenter(ev: RecordingEvents, t: number, W: number, H: number, vp: Viewport): [number, number] {
   if (!vp.crop) return [W / 2, H / 2]
-  const p = smoothCursor(ev, t, 0.6) ?? [W / 2, H / 2]
+  const p = smoothCursor(ev, t, 0.6) ?? ev.focus ?? [W / 2, H / 2]     // uploads have no cursor: rest on the speaker
   return clampCenter(p[0], p[1], vp.base, W, H, vp)
 }
 
@@ -49,8 +49,10 @@ export function buildCamera(ev: RecordingEvents, cfg: RenderConfig, vp: Viewport
       else groups.push({ clicks: [c], level: z, tail: TAIL })
     }
   }
-  // Manual zooms (spec §26) are groups of their own: hold on the target for `duration`, at their own level.
-  for (const m of zooms) groups.push({ clicks: [{ t: m.t, x: m.x, y: m.y }, { t: m.t + m.duration, x: m.x, y: m.y }], level: m.level, tail: 0.1 })
+  // Punch-ins (snap) are hard cuts in and out, laid over everything else at the end; manual zooms (spec §26) are groups
+  // of their own: hold on the target for `duration`, at their own level.
+  const snaps = zooms.filter((m) => m.snap)
+  for (const m of zooms.filter((x) => !x.snap)) groups.push({ clicks: [{ t: m.t, x: m.x, y: m.y }, { t: m.t + m.duration, x: m.x, y: m.y }], level: m.level, tail: 0.1 })
   groups.sort((a, b) => a.clicks[0].t - b.clicks[0].t)
   // a manual zoom wins over automatic groups that overlap it
   for (let i = groups.length - 1; i >= 0; i--) {
@@ -58,7 +60,7 @@ export function buildCamera(ev: RecordingEvents, cfg: RenderConfig, vp: Viewport
     const a = g.clicks[0].t - LEAD, b = g.clicks[g.clicks.length - 1].t + 1
     for (let k = groups.length - 1; k >= 0; k--) { const o = groups[k]; if (o !== g && o.tail !== 0.1 && o.clicks[0].t < b && o.clicks[o.clicks.length - 1].t + TAIL > a) groups.splice(k, 1) }
   }
-  if (!groups.length) return []
+  if (!groups.length) return withSnaps([], snaps, ev, vp)
   const rest = (t: number) => restCenter(ev, t, W, H, vp)
   const keys: CamKey[] = []
   let prevEnd = -Infinity
@@ -89,7 +91,23 @@ export function buildCamera(ev: RecordingEvents, cfg: RenderConfig, vp: Viewport
     keys.push({ t: Math.max(end, last.t + 0.05), scale: zoomed, cx: cxl, cy: cyl }, { t: Math.min(ev.videoDuration, end + EASE), scale: vp.base, cx: rx, cy: ry })
     prevEnd = end + EASE
   }
-  return keys
+  return withSnaps(keys, snaps, ev, vp)
+}
+
+/** Lay punch-ins over the eased keys: inside each one the camera jumps to its framing on the first frame and back on the last. */
+function withSnaps(keys: CamKey[], snaps: ManualZoom[], ev: RecordingEvents, vp: Viewport): CamKey[] {
+  if (!snaps.length) return keys
+  const W = ev.display.width, H = ev.display.height, J = 0.004   // less than a frame: a cut, not a move
+  const inside = (t: number) => snaps.some((z) => t >= z.t && t <= z.t + z.duration)
+  const out = keys.filter((k) => !inside(k.t))
+  for (const z of snaps) {
+    const scale = vp.base * z.level
+    const [cx, cy] = clampCenter(z.x, z.y, scale, W, H, vp)
+    const [r0x, r0y] = restCenter(ev, z.t, W, H, vp), [r1x, r1y] = restCenter(ev, z.t + z.duration, W, H, vp)
+    out.push({ t: z.t, scale: vp.base, cx: r0x, cy: r0y }, { t: z.t + J, scale, cx, cy },
+             { t: z.t + z.duration - J, scale, cx, cy }, { t: z.t + z.duration, scale: vp.base, cx: r1x, cy: r1y })
+  }
+  return out.sort((a, b) => a.t - b.t)
 }
 
 export function cameraAt(ev: RecordingEvents, keys: CamKey[], t: number, W: number, H: number, vp: Viewport): Camera {

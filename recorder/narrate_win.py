@@ -595,7 +595,7 @@ def main():
     set_dpi_aware()
     ap = argparse.ArgumentParser(prog="narrate")
     ap.add_argument("cmd", nargs="?", default="record")
-    ap.add_argument("--out"); ap.add_argument("--fps", type=int, default=60)
+    ap.add_argument("--out"); ap.add_argument("--src"); ap.add_argument("--fps", type=int, default=60)
     ap.add_argument("--screen", type=int, default=0); ap.add_argument("--mic", type=int); ap.add_argument("--no-mic", action="store_true")
     ap.add_argument("--camera", type=int); ap.add_argument("--system-audio", action="store_true")
     ap.add_argument("--model", default="base.en")
@@ -608,6 +608,7 @@ def main():
     if args.cmd == "analyze": analyze(args); return
     if args.cmd == "transcribe": transcribe(args); return
     if args.cmd == "enhance": enhance(args); return
+    if args.cmd == "import": import_video(args); return
     record(args)
 
 if __name__ == "__main__": main()

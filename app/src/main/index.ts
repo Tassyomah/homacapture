@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, screen, globalShortcut, clipboard } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, screen, globalShortcut, clipboard } from 'electron'
 import { join, resolve, basename } from 'node:path'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
@@ -153,6 +153,7 @@ recorder.on('transcribe', (ev: RecorderEvent) => {
   if (ev.event === 'transcribing') broadcast(ev)
   else if (ev.event === 'ready') broadcast({ event: 'transcribing', stage: 'done' })
 })
+recorder.on('import', (ev: RecorderEvent) => { if (ev.event === 'importing') broadcast(ev) })
 recorder.on('enhance', (ev: RecorderEvent) => {
   if (ev.event === 'enhancing') broadcast(ev)
   else if (ev.event === 'ready') broadcast({ event: 'enhancing', step: 'done' })
@@ -248,7 +249,7 @@ app.whenReady().then(async () => {
     const p = loadProject(process.env.NARRATE_OPEN)
     if (p) exportProject(APP_ROOT, p, { ...(await import('../shared/types')).defaultConfig, ...(p.file?.config ?? {}), outputHeight: 480 }, p.file?.cuts ?? [],
       (prog) => console.log('[dev] export', prog.stage, Math.round(prog.progress * 100) + '%', prog.message ?? ''), 'packaged-test', 'mp4', join(RESOURCES, 'remotion'),
-      { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [] })
+      { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [], texts: p.file?.texts ?? [] })
       .then(() => app.quit(), (e) => { console.log('[dev] export failed', e.message); app.quit() })
   }
   ipcMain.handle('share:settings', () => getShareSettings())
@@ -257,6 +258,23 @@ app.whenReady().then(async () => {
   ipcMain.handle('clipboard:write', (_e, t: string) => clipboard.writeText(t))
   ipcMain.handle('shell:reveal', (_e, p: string) => shell.showItemInFolder(p))
   ipcMain.handle('project:trash', (_e, dir: string) => shell.trashItem(dir))
+  // Upload: any video becomes a project in the recordings folder (the original file is only read, never moved).
+  ipcMain.handle('project:import', async (_e, path?: string): Promise<Project | null> => {
+    let src = path
+    if (!src) {
+      const r = await dialog.showOpenDialog(win!, { title: 'Upload a video', properties: ['openFile'],
+        filters: [{ name: 'Videos', extensions: ['mp4', 'mov', 'm4v', 'webm', 'mkv', 'avi'] }] })
+      if (r.canceled || !r.filePaths[0]) return null
+      src = r.filePaths[0]
+    }
+    if (!existsSync(src)) throw new Error('That file could not be found.')
+    const slug = basename(src).replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'video'
+    const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16)
+    const out = join(RECORDINGS, `${slug}-${stamp}`)
+    await recorder.importVideo(src, out)
+    const p = loadProject(out); if (!p) throw new Error('The video was read but no project was written.')
+    return p
+  })
 
   createWindow()
   app.on('activate', () => { if (!win) createWindow(); else win.show() })

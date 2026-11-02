@@ -126,10 +126,12 @@ export class Recorder extends EventEmitter {
   transcribe(dir: string): Promise<void> { return this.job('transcribe', dir) }
   /** Cleaned voice track: runs `enhance --out dir` → mic.clean.wav. */
   enhance(dir: string): Promise<void> { return this.job('enhance', dir) }
+  /** Upload: `import --src file --out dir` → a project folder shaped like a recording (screen.mp4, mic.wav, events.json). */
+  importVideo(src: string, dir: string): Promise<void> { return this.job('import', dir, ['--src', src]) }
 
-  private job(cmd: 'analyze' | 'transcribe' | 'enhance', dir: string): Promise<void> {
+  private job(cmd: 'analyze' | 'transcribe' | 'enhance' | 'import', dir: string, extra: string[] = []): Promise<void> {
     return new Promise((res, rej) => {
-      const p = spawn(PYTHON, [this.script, cmd, '--out', dir], SPAWN)
+      const p = spawn(PYTHON, [this.script, cmd, '--out', dir, ...extra], SPAWN)
       let buf = '', settled = false, err = ''
       p.stderr.on('data', (d) => { err += d; console.log(`[${cmd}]`, String(d).trim()) })
       p.stdout.on('data', (d) => {

@@ -1,11 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
-import { IconEyeOff, IconPlayerTrackNext, IconScissors, IconX, IconZoomIn } from '@tabler/icons-react'
-import type { Chapter, Cut, ManualZoom, Mask, RecordingEvents, SpeedRange, Transcript } from '../../shared/types'
+import { IconEyeOff, IconLetterT, IconPlayerTrackNext, IconScissors, IconX, IconZoomIn } from '@tabler/icons-react'
+import type { Chapter, Cut, ManualZoom, Mask, RecordingEvents, SpeedRange, TextPop, Transcript } from '../../shared/types'
 import { keptRanges, removedRanges, type Range } from '../../video/ranges'
 
 /** Something on the timeline the user can select and edit in the inspector. */
-export type Item = { kind: 'cut'; i: number } | { kind: 'zoom'; id: string } | { kind: 'speed'; i: number } | { kind: 'mask'; id: string }
-export type RangeAction = 'cut' | 'zoom' | 'speed' | 'mask'
+export type Item = { kind: 'cut'; i: number } | { kind: 'zoom'; id: string } | { kind: 'speed'; i: number } | { kind: 'mask'; id: string } | { kind: 'text'; id: string }
+export type RangeAction = 'cut' | 'zoom' | 'speed' | 'mask' | 'text'
 export const sameItem = (a: Item | null, b: Item | null) => !!a && !!b && a.kind === b.kind && ('id' in a ? a.id === (b as { id: string }).id : a.i === (b as { i: number }).i)
 
 /**
@@ -13,9 +13,9 @@ export const sameItem = (a: Item | null, b: Item | null) => !!a && !!b && a.kind
  * drag across any track to select a stretch (a toolbar offers Cut / Zoom / Speed / Blur), click a block to edit it.
  * Hovering anything says what it is.
  */
-export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [], speeds = [], masks = [], transcript, playhead, range, selected, editable,
+export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], transcript, playhead, range, selected, editable,
   onSeek, onRange, onSelect, onAction }: {
-  ev: RecordingEvents; cuts: Cut[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]
+  ev: RecordingEvents; cuts: Cut[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]
   transcript?: Transcript | null; playhead: number; range: [number, number] | null; selected: Item | null
   /** False while editing a derived version: only cuts belong to it, so zoom / speed / blur tracks are read-only. */
   editable: boolean
@@ -24,6 +24,7 @@ export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [],
   const dur = Math.max(0.001, ev.videoDuration)
   const kept = useMemo(() => keptRanges(ev, cuts), [ev, cuts])
   const pauses = useMemo(() => removedRanges(ev, []), [ev])
+  const upload = ev.source === 'import'
   const pct = (t: number) => `${(Math.max(0, Math.min(dur, t)) / dur) * 100}%`
   const w = (a: number, b: number) => `${(Math.max(0, Math.min(dur, b) - Math.max(0, a)) / dur) * 100}%`
   const width = (r: Range) => w(r.start, r.end)
@@ -88,9 +89,12 @@ export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [],
           {chapters.map((c, i) => <div key={'ch' + i} className="chap" style={{ left: pct(c.t) }} data-info={`Chapter: ${c.title} · ${fmt(c.t)}`} />)}
           {ev.clicks.filter((c) => c.type === 'down').map((c, i) => <i key={'d' + i} className="click" style={{ left: pct(c.t - ev.t0Video) }} />)}
         </>)}
-        {lane('Zoom', 'Zoom-ins you added. Automatic zoom follows your clicks on its own.', zooms.map((z) => (
+        {lane('Zoom', upload ? 'Punch-ins: closer framings on the speaker.' : 'Zoom-ins you added. Automatic zoom follows your clicks on its own.', zooms.map((z) => (
           <div key={z.id} className={'blk pill zoom' + on({ kind: 'zoom', id: z.id }) + (editable ? '' : ' ro')} style={{ left: pct(z.t), width: w(z.t, z.t + z.duration) }}
-            data-item={editable ? it({ kind: 'zoom', id: z.id }) : undefined} data-info={`Zoom ${z.level.toFixed(1)}× · ${fmt(z.t)}–${fmt(z.t + z.duration)} · click to edit`}><span>{z.level.toFixed(1)}×</span></div>)))}
+            data-item={editable ? it({ kind: 'zoom', id: z.id }) : undefined} data-info={`${z.snap ? 'Punch-in' : 'Zoom'} ${z.level.toFixed(1)}× · ${fmt(z.t)}–${fmt(z.t + z.duration)} · click to edit`}><span>{z.level.toFixed(1)}×</span></div>)))}
+        {(upload || texts.length > 0) && lane('Text', 'Words that pop up on screen. Click one to change it.', texts.map((x) => (
+          <div key={x.id} className={'blk pill text' + on({ kind: 'text', id: x.id }) + (editable ? '' : ' ro')} style={{ left: pct(x.t), width: w(x.t, x.t + x.duration) }}
+            data-item={editable ? it({ kind: 'text', id: x.id }) : undefined} data-info={`“${x.text}” · ${fmt(x.t)} · click to edit`}><span>{x.text}</span></div>)))}
         {lane('Speed', 'Stretches played faster or slower.', speeds.map((s, i) => (
           <div key={'s' + i} className={'blk pill speed' + on({ kind: 'speed', i }) + (editable ? '' : ' ro')} style={{ left: pct(s.start), width: w(s.start, s.end) }}
             data-item={editable ? it({ kind: 'speed', i }) : undefined} data-info={`${s.rate}× speed · ${fmt(s.start)}–${fmt(s.end)} · click to edit`}><span>{s.rate}×</span></div>)))}
@@ -106,7 +110,8 @@ export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [],
             <span className="len">{fmt(range[1] - range[0])}</span>
             <button data-tip="Remove this stretch · C" onClick={() => onAction('cut')}><IconScissors size={15} />Cut</button>
             {editable && <>
-              <button data-tip="Zoom in on the cursor · Z" onClick={() => onAction('zoom')}><IconZoomIn size={15} />Zoom</button>
+              <button data-tip={upload ? 'Punch in on the speaker · Z' : 'Zoom in on the cursor · Z'} onClick={() => onAction('zoom')}><IconZoomIn size={15} />Zoom</button>
+              <button data-tip="Pop up words from here · T" onClick={() => onAction('text')}><IconLetterT size={15} />Text</button>
               <button data-tip="Play faster · S" onClick={() => onAction('speed')}><IconPlayerTrackNext size={15} />Speed</button>
               <button data-tip="Hide something private · B" onClick={() => onAction('mask')}><IconEyeOff size={15} />Blur</button>
             </>}

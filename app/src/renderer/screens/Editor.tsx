@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
 import { Screencast, compositionSize } from '../../video/Screencast'
 import { keptDuration, keptRanges, outToSrc, srcToOut } from '../../video/ranges'
-import { ASPECTS, ASSET_LABEL, EXPORT_PRESETS, defaultConfig, type Analysis, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type Transcript, type TranscriptSegment } from '../../shared/types'
+import { ASPECTS, ASSET_LABEL, EXPORT_PRESETS, defaultConfig, type Analysis, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Transcript, type TranscriptSegment } from '../../shared/types'
 import { smoothCursor } from '../../video/motion'
 import { revealLabel } from '../platform'
-import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconDownload, IconLink, IconMicrophone, IconPalette, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconSparkles, IconTrash, IconUserCircle, IconX } from '@tabler/icons-react'
+import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconDownload, IconLink, IconMicrophone, IconPalette, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconSparkles, IconTrash, IconUserCircle, IconWand, IconX } from '@tabler/icons-react'
 import { Timeline, fmt, fmtShort, sameItem, type Item, type RangeAction } from './Timeline'
 import { Director, type DirectorState, type DirectorStatus } from './Director'
 import { TranscriptPanel, fillerRanges, type TranscribeStatus } from './TranscriptPanel'
@@ -15,6 +15,7 @@ import { SharePanel } from './SharePanel'
 import { niceName } from './Home'
 import { buildContent, thumbnailTimes } from '../content'
 import { generateAssets } from '../generate'
+import { autoEdit, keyPhrase } from '../autoedit'
 
 const FPS = 60
 const RATES = [0.5, 0.75, 1.25, 1.5, 2, 3]
@@ -29,17 +30,19 @@ const BGS: { id: Background; label: string; css: string }[] = [
 ]
 
 /** Everything the user can change; one snapshot per undo step. */
-type Edits = { config: RenderConfig; cuts: Cut[]; assets: DerivedAsset[]; zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; chapters: Chapter[]; highlights: [number, number][]; director: DirectorState }
+type Edits = { config: RenderConfig; cuts: Cut[]; assets: DerivedAsset[]; zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts: TextPop[]; chapters: Chapter[]; highlights: [number, number][]; director: DirectorState; autoEditedAt?: string }
 
 export function Editor({ project }: { project: Project }) {
   // Saved edits win; defaults fill in settings that did not exist when the project was last saved.
   const [edits, setEdits] = useState<Edits>(() => ({
     config: { ...defaultConfig, ...(project.file?.config ?? {}) }, cuts: project.file?.cuts ?? [],
     assets: project.file?.assets ?? [], zooms: project.file?.zooms ?? [], speeds: project.file?.speeds ?? [], masks: project.file?.masks ?? [],
+    texts: project.file?.texts ?? [], autoEditedAt: project.file?.autoEditedAt,
     chapters: project.file?.chapters ?? [], highlights: project.file?.highlights ?? [],
     director: project.file?.director ?? { accepted: [], rejected: [] },
   }))
-  const { assets, zooms, speeds, masks, chapters, highlights, director } = edits
+  const { assets, zooms, speeds, masks, texts, chapters, highlights, director } = edits
+  const upload = project.events.source === 'import'
   // Which asset is being edited: the master, or one derivative (add-on §5: derivatives stay editable).
   const [selected, setSelected] = useState<string>('master')
   const asset = assets.find((a) => a.id === selected) ?? null
@@ -96,11 +99,12 @@ export function Editor({ project }: { project: Project }) {
   useEffect(() => {
     if (!dirty.current) return
     const t = setTimeout(() => {
-      window.narrate.saveProject(project.dir, { version: 1, config: edits.config, cuts: edits.cuts, assets, zooms, speeds, masks, chapters, highlights, director, savedAt: new Date().toISOString() })
+      window.narrate.saveProject(project.dir, { version: 1, config: edits.config, cuts: edits.cuts, assets, zooms, speeds, masks, texts, autoEditedAt: edits.autoEditedAt,
+        chapters, highlights, director, savedAt: new Date().toISOString() })
         .catch((e) => console.warn('autosave failed', e))
     }, 400)
     return () => clearTimeout(t)
-  }, [edits, assets, zooms, speeds, masks, chapters, highlights, director, project.dir])
+  }, [edits, assets, zooms, speeds, masks, texts, chapters, highlights, director, project.dir])
 
   // Smart Director (add-on §7–9): analyse on first open (cached in analysis.json afterwards), show progress meanwhile.
   const runAnalysis = useCallback((force = false) => {
@@ -121,6 +125,23 @@ export function Editor({ project }: { project: Project }) {
     window.narrate.transcribeProject(project.dir).then((t) => { setTranscript(t); setTstatus({ kind: 'idle' }) })
       .catch((e: Error) => setTstatus({ kind: 'error', message: e.message }))
   }
+  // Uploads get an automatic first edit (cuts, punch-ins, text pops, captions) once there is a transcript. It runs once;
+  // "Auto-edit again" redoes it, replacing only what it made itself (ids "auto-…") and keeping the user's own additions.
+  const runAutoEdit = (tr: Transcript) => {
+    const r = autoEdit(project.events, tr)
+    apply((e) => ({ ...e, cuts: r.cuts, config: { ...e.config, ...r.config, voice: micClean || project.assets.micClean ? 'clean' : e.config.voice },
+      zooms: [...e.zooms.filter((z) => !z.id.startsWith('auto-')), ...r.zooms], texts: [...e.texts.filter((x) => !x.id.startsWith('auto-')), ...r.texts],
+      autoEditedAt: new Date().toISOString() }))
+  }
+  const autoStarted = useRef(false)
+  useEffect(() => {
+    if (!upload || edits.autoEditedAt || autoStarted.current) return
+    if (transcript) { autoStarted.current = true; runAutoEdit(transcript); return }
+    if (project.assets.mic && tstatus.kind === 'idle') transcribe()
+  }, [upload, transcript, tstatus.kind])
+  const autoState = upload && !edits.autoEditedAt
+    ? (tstatus.kind === 'running' ? `Auto-editing · ${tstatus.message.replace(/…$/, '')}` : tstatus.kind === 'error' ? null : 'Auto-editing…') : null
+
   const analysisWithFillers = useMemo<Analysis | null>(() => {
     if (!analysis) return null
     if (!transcript) return analysis
@@ -147,7 +168,7 @@ export function Editor({ project }: { project: Project }) {
   const makeThumbs = () => {
     setThumbStatus('running')
     const times = thumbnailTimes(project.events, edits.cuts, speeds, chapters, highlights, analysis)
-    window.narrate.renderThumbnails(project.dir, edits.config, edits.cuts, times, { zooms, speeds, masks })
+    window.narrate.renderThumbnails(project.dir, edits.config, edits.cuts, times, { zooms, speeds, masks, texts })
       .then((t) => { setThumbs(t); setThumbStatus('idle') })
       .catch((e: Error) => setThumbStatus(e.message))
   }
@@ -167,7 +188,7 @@ export function Editor({ project }: { project: Project }) {
   const onReject = (p: Proposal) => apply((e) => ({ ...e, director: { ...e.director, rejected: [...e.director.rejected, p.id], accepted: e.director.accepted.filter((id) => id !== p.id) } }))
   const onDismiss = () => apply((e) => ({ ...e, director: { ...e.director, dismissedAt: new Date().toISOString() } }))
 
-  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, micClean }, events: project.events, config, cuts, zooms, speeds, masks, transcript }), [project, micClean, config, cuts, zooms, speeds, masks, transcript])
+  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, micClean }, events: project.events, config, cuts, zooms, speeds, masks, texts, transcript }), [project, micClean, config, cuts, zooms, speeds, masks, texts, transcript])
   const size = compositionSize(props)
   const kept = useMemo(() => keptRanges(project.events, cuts, speeds), [project.events, cuts, speeds])
   const frames = Math.max(1, Math.ceil(keptDuration(project.events, cuts, speeds) * FPS))
@@ -202,9 +223,10 @@ export function Editor({ project }: { project: Project }) {
   // Whatever is created becomes the selection, so its settings open in the inspector straight away.
   const W = project.events.display.width, H = project.events.display.height
   const zoomAt = (t: number, duration: number) => {
-    const pos = smoothCursor(project.events, t) ?? [W / 2, H / 2]
+    const pos = smoothCursor(project.events, t) ?? project.events.focus ?? [W / 2, H / 2]
     const id = newId('z')
-    apply((e) => ({ ...e, zooms: [...e.zooms, { id, t, duration, x: Math.round(pos[0]), y: Math.round(pos[1]), level: Math.max(1.5, e.config.zoom) }] }))
+    apply((e) => ({ ...e, zooms: [...e.zooms, upload ? { id, t, duration, x: Math.round(pos[0]), y: Math.round(pos[1]), level: 1.3, snap: true }
+      : { id, t, duration, x: Math.round(pos[0]), y: Math.round(pos[1]), level: Math.max(1.5, e.config.zoom) }] }))
     setSel({ kind: 'zoom', id })
   }
   const maskAt = (start: number, end: number) => {
@@ -220,6 +242,16 @@ export function Editor({ project }: { project: Project }) {
     apply((e) => ({ ...e, speeds: next }))
     setSel({ kind: 'speed', i: next.length - 1 })
   }
+  const textAt = (a: number, b: number) => {
+    const ws = (transcript?.segments ?? []).flatMap((s) => s.words).filter((w) => w.start >= a - 0.05 && w.end <= b + 0.05)
+    const k = ws.length ? keyPhrase(ws) : null
+    const id = newId('t')
+    apply((e) => ({ ...e, texts: [...e.texts, { id, t: k?.start ?? a, duration: Math.max(1, Math.min(3, b - a)), text: k?.text ?? (ws.slice(0, 3).map((w) => w.word).join(' ') || 'Your words'), style: 'pop' as TextStyle }]
+      .sort((x, y) => x.t - y.t) }))
+    setSel({ kind: 'text', id })
+  }
+  const editText = (id: string, patch: Partial<TextPop>) => apply((e) => ({ ...e, texts: e.texts.map((x) => x.id === id ? { ...x, ...patch } : x) }))
+  const removeText = (id: string) => apply((e) => ({ ...e, texts: e.texts.filter((x) => x.id !== id) }))
   const zoomHere = () => zoomAt(playheadSrc, 2.5)
   const maskHere = () => maskAt(playheadSrc, Math.min(dur, playheadSrc + 5))
   const rangeAction = (act: RangeAction) => {
@@ -229,6 +261,7 @@ export function Editor({ project }: { project: Project }) {
     if (act === 'zoom') zoomAt(a, Math.max(0.5, b - a))
     if (act === 'speed') speedOver(a, b)
     if (act === 'mask') maskAt(a, Math.max(a + 0.5, b))
+    if (act === 'text') textAt(a, b)
     setRange(null)
   }
   const editZoom = (id: string, patch: Partial<ManualZoom>) => apply((e) => ({ ...e, zooms: e.zooms.map((z) => z.id === id ? { ...z, ...patch } : z) }))
@@ -243,7 +276,7 @@ export function Editor({ project }: { project: Project }) {
     ev: project.events, analysis, masterCuts: e.cuts, chapters: e.chapters, highlights: e.highlights, masterSavedAt: project.file?.savedAt ?? null }) }))
   const removeAsset = (id: string) => { if (selected === id) setSelected('master'); apply((e) => ({ ...e, assets: e.assets.filter((a) => a.id !== id) })) }
   const assetDuration = (a: DerivedAsset | null) => keptDuration(project.events, a ? a.cuts : edits.cuts, speeds)
-  const exportOne = (a: DerivedAsset | null) => window.narrate.exportProject(project.dir, a ? { ...edits.config, ...a.config } : edits.config, a ? a.cuts : edits.cuts, a ? a.name : 'master', format, { zooms, speeds, masks })
+  const exportOne = (a: DerivedAsset | null) => window.narrate.exportProject(project.dir, a ? { ...edits.config, ...a.config } : edits.config, a ? a.cuts : edits.cuts, a ? a.name : 'master', format, { zooms, speeds, masks, texts })
   const exportAll = async () => {
     const list: (DerivedAsset | null)[] = [null, ...assets]
     setQueue({ total: list.length, done: 0, current: 'Master' })
@@ -260,12 +293,14 @@ export function Editor({ project }: { project: Project }) {
     : sel.kind === 'cut' ? (cuts[sel.i] ? sel : null)
     : sel.kind === 'speed' ? (!asset && speeds[sel.i] ? sel : null)
     : sel.kind === 'zoom' ? (!asset && zooms.some((z) => z.id === sel.id) ? sel : null)
+    : sel.kind === 'text' ? (!asset && texts.some((x) => x.id === sel.id) ? sel : null)
     : (!asset && masks.some((m) => m.id === sel.id) ? sel : null)
   const removeItem = (it: Item) => {
     if (it.kind === 'cut') restore(it.i)
     if (it.kind === 'zoom') removeZoom(it.id)
     if (it.kind === 'speed') removeSpeed(it.i)
     if (it.kind === 'mask') removeMask(it.id)
+    if (it.kind === 'text') removeText(it.id)
     setSel(null)
   }
 
@@ -296,6 +331,7 @@ export function Editor({ project }: { project: Project }) {
       else if (range && !asset && k === 'z') rangeAction('zoom')
       else if (range && !asset && k === 's') rangeAction('speed')
       else if (range && !asset && k === 'b') rangeAction('mask')
+      else if (range && !asset && k === 't') rangeAction('text')
       else if (!range && !asset && k === 'z') zoomHere()
       else if (!range && !asset && k === 'b') maskHere()
     }
@@ -335,9 +371,19 @@ export function Editor({ project }: { project: Project }) {
         <div className="pane-foot"><button onClick={() => seekSrc(a)}>Jump to it</button>
           <button className="primary" onClick={() => removeItem(it)}><IconRestore size={15} />Restore this part</button></div></>
     }
+    if (it.kind === 'text') {
+      const x = texts.find((y) => y.id === it.id)!
+      return <>{paneHead('Text', `Pops up at ${fmt(x.t)} for ${x.duration.toFixed(1)} s.`, true)}
+        <div className="control"><div className="lbl"><span>Words</span></div>
+          <input type="text" value={x.text} maxLength={40} onChange={(e) => editText(x.id, { text: e.target.value })} /></div>
+        <div className="control"><div className="lbl"><span>Look</span></div>{seg(x.style, [['pop', 'Pop'], ['title', 'Title card']] as [TextStyle, string][], (v) => editText(x.id, { style: v }))}</div>
+        {slider('Show for', `${x.duration.toFixed(1)} s`, 0.6, 5, 0.1, x.duration, (v) => editText(x.id, { duration: v }))}
+        {slider('Starts at', fmt(x.t), 0, Math.max(0.1, dur - 0.5), 0.05, x.t, (v) => editText(x.id, { t: v }))}
+        {foot(x.t)}</>
+    }
     if (it.kind === 'zoom') {
       const z = zooms.find((x) => x.id === it.id)!
-      return <>{paneHead('Zoom', `From ${fmt(z.t)}, centred on where your cursor was.`, true)}
+      return <>{paneHead(z.snap ? 'Punch-in' : 'Zoom', z.snap ? `Cuts to a closer framing on the speaker from ${fmt(z.t)}.` : `From ${fmt(z.t)}, centred on where your cursor was.`, true)}
         {slider('Zoom level', `${z.level.toFixed(1)}×`, 1.2, 4, 0.1, z.level, (v) => editZoom(z.id, { level: v }))}
         {slider('Hold for', `${z.duration.toFixed(1)} s`, 0.5, 15, 0.5, z.duration, (v) => editZoom(z.id, { duration: v }))}
         {foot(z.t)}</>
@@ -366,15 +412,15 @@ export function Editor({ project }: { project: Project }) {
       <div className="control"><div className="lbl"><span>Shape</span><span>{config.aspect === 'source' ? `${W}×${H}` : config.aspect}</span></div>
         {seg(config.aspect, ASPECTS.map((a) => [a.id, a.label] as [typeof config.aspect, string]), (v) => set('aspect', v))}
         {config.aspect !== 'source' && ASPECTS.find((a) => a.id === config.aspect)!.ratio! < 1 &&
-          <span className="note">Vertical and square crops follow your cursor and clicks.</span>}</div>
+          <span className="note">{upload ? 'Vertical and square crops stay on the speaker.' : 'Vertical and square crops follow your cursor and clicks.'}</span>}</div>
       <div className="control"><div className="lbl"><span>Background</span></div>
         <div className="swatches">{BGS.map((b) => (
           <button key={b.id} className={config.background === b.id ? 'on' : ''} aria-label={b.label} data-tip={b.label} onClick={() => set('background', b.id)}>
             <span style={{ background: b.css }} /></button>))}</div></div>
-      {slider('Automatic zoom', config.zoom === 1 ? 'Off' : `${config.zoom.toFixed(1)}×`, 1, 3, 0.1, config.zoom, (v) => set('zoom', v), 'How far it zooms in when you click. 1× turns it off.')}
+      {!upload && slider('Automatic zoom', config.zoom === 1 ? 'Off' : `${config.zoom.toFixed(1)}×`, 1, 3, 0.1, config.zoom, (v) => set('zoom', v), 'How far it zooms in when you click. 1× turns it off.')}
       {slider('Padding', `${Math.round(config.padding * 100)}%`, 0, 0.2, 0.01, config.padding, (v) => set('padding', v), 'Space between the screen and the edge')}
       {slider('Corners', `${config.radius}px`, 0, 64, 2, config.radius, (v) => set('radius', v))}
-      {slider('Cursor size', `${config.cursorScale.toFixed(1)}×`, 1, 3, 0.1, config.cursorScale, (v) => set('cursorScale', v))}
+      {!upload && slider('Cursor size', `${config.cursorScale.toFixed(1)}×`, 1, 3, 0.1, config.cursorScale, (v) => set('cursorScale', v))}
       {!!project.events.keys?.length && <div className="control"><div className="lbl"><span>Keyboard shortcuts</span><span>{project.events.keys.length} pressed</span></div>
         {seg(config.keycaps, [[true, 'Show'], [false, 'Hide']], (v) => set('keycaps', v))}</div>}
     </>
@@ -407,6 +453,9 @@ export function Editor({ project }: { project: Project }) {
     </>
     if (shownTab === 'smart') return <>
       {paneHead('Smart', 'Suggestions, chapters, thumbnails and post copy, all from this recording.')}
+      {upload && <div className="control"><div className="lbl"><span>Auto-edit</span></div>
+        <button className="wide" disabled={!transcript} onClick={() => transcript && runAutoEdit(transcript)}><IconWand size={16} />{edits.autoEditedAt ? 'Auto-edit again' : 'Auto-edit now'}</button>
+        <span className="note">Cuts pauses and filler words, punches in on the speaker, pops key words on screen and turns captions on. Redoing it replaces the cuts and what it added before; your own text and zooms stay. Undo brings everything back.</span></div>}
       <Director analysis={analysisWithFillers} status={dstatus} state={director} onAccept={onAccept} onReject={onReject} onAcceptAll={onAcceptAll}
         onDismiss={onDismiss} onSeek={seekSrc} onRerun={() => runAnalysis(true)} />
       <ContentMap chapters={chapters} transcript={transcript} duration={dur} playhead={playheadSrc} onSeek={seekSrc}
@@ -482,11 +531,11 @@ export function Editor({ project }: { project: Project }) {
             <button className="small" onClick={trimStart} disabled={playheadSrc < 0.1} data-tip="Cut everything before the playhead">Trim start</button>
             <button className="small" onClick={trimEnd} disabled={playheadSrc < 0.5 || playheadSrc > dur - 0.1} data-tip="Cut everything after the playhead">Trim end</button>
             <span className="spacer" />
-            <span className="hint">{hint}</span>
+            <span className="hint">{autoState ?? hint}</span>
             {pendingCount > 0 && <button className="suggest" onClick={() => go('smart')} data-tip="Pauses, filler words and slow stretches worth tidying">
               <IconSparkles size={15} />{pendingCount} suggestion{pendingCount === 1 ? '' : 's'}</button>}
           </div>
-          <Timeline ev={project.events} cuts={cuts} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks}
+          <Timeline ev={project.events} cuts={cuts} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks} texts={texts}
             transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset}
             onSeek={seekSrc} onRange={setRange} onSelect={setSel} onAction={rangeAction} />
           <p className="tl-help">Click to move the playhead · drag to select a stretch · click a block to edit it · <kbd>Space</kbd> plays · <kbd>←</kbd><kbd>→</kbd> step</p>

@@ -36,6 +36,12 @@ export interface RecordingEvents {
   platform?: Platform
   encoder?: string
   files: { screen: string; mic: string | null; camera?: string | null; system?: string | null }
+  /** 'import' = an outside video brought in with Upload (no cursor, no clicks); absent for recordings. */
+  source?: 'import'
+  originalName?: string
+  /** Imports: where the speaker's face is (video pixels), for punch-ins and vertical crops; `face` is its size when found. */
+  focus?: [number, number]
+  face?: { w: number; h: number } | null
 }
 
 export interface Project {
@@ -56,7 +62,12 @@ export type Cut = [number, number]
 
 export interface Chapter { t: number; title: string }
 /** A zoom the user placed by hand (spec §26): zoom in before `t`, hold on (x, y) for `duration`, zoom out. Screen pixels. */
-export interface ManualZoom { id: string; t: number; duration: number; x: number; y: number; level: number }
+export interface ManualZoom { id: string; t: number; duration: number; x: number; y: number; level: number
+  /** Punch-in: jump straight in and out on a cut instead of easing (talking heads). */
+  snap?: boolean }
+/** Kinetic text (auto-edit): a key phrase that pops in big over the video from `t` for `duration` (source seconds). */
+export type TextStyle = 'pop' | 'title'
+export interface TextPop { id: string; t: number; duration: number; text: string; style: TextStyle }
 /** Playback speed for a stretch of the recording (spec §40); 1 = normal. Source seconds. */
 export interface SpeedRange { start: number; end: number; rate: number }
 /** Privacy mask (spec §49): a rectangle in screen pixels, blurred or painted over, from `start` to `end` (source seconds). */
@@ -88,6 +99,9 @@ export interface ProjectFile {
   zooms?: ManualZoom[]
   speeds?: SpeedRange[]
   masks?: Mask[]
+  texts?: TextPop[]
+  /** When the automatic first edit of an uploaded video ran (it runs once; "Auto-edit again" redoes it). */
+  autoEditedAt?: string
   chapters?: Chapter[]
   /** Stand-alone moments (source seconds) the user kept from the Smart Director; future clip sources (add-on §19). */
   highlights?: [number, number][]
@@ -152,9 +166,9 @@ export const defaultConfig: RenderConfig = {
   micVolume: 1, systemVolume: 0.8, captions: 'off', voice: 'raw', keycaps: true,
 }
 
-export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; transcript?: Transcript | null; [k: string]: unknown }
+export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; transcript?: Transcript | null; [k: string]: unknown }
 /** Master-level instructions every derivative inherits. */
-export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[] }
+export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[] }
 
 export type MicPermission = 'authorized' | 'denied' | 'restricted' | 'notDetermined' | 'unknown'
 export interface Permissions { screen: boolean; mic: MicPermission }
@@ -167,6 +181,7 @@ export type RecorderEvent =
   | { event: 'analyzing'; step: 'audio' | 'screen' | 'interaction' | 'done' }
   | { event: 'transcribing'; stage: 'installing' | 'loading' | 'transcribing' | 'done'; message?: string; done?: number; total?: number }
   | { event: 'enhancing'; step: 'measure' | 'render' | 'done' }
+  | { event: 'importing'; step: 'reading' | 'video' | 'audio' | 'framing' }
   | { event: 'ready'; out: string; project: Project }
   | { event: 'error'; code: string; message: string }
 export type RecState = 'idle' | 'countdown' | 'recording' | 'paused' | 'finalizing'
@@ -237,6 +252,11 @@ export interface NarrateApi {
   onExportProgress(cb: (p: ExportProgress) => void): () => void
   reveal(path: string): Promise<void>
   trashProject(dir: string): Promise<void>
+  /** Upload (spec add-on): bring an outside video in as a project. No path = show the file picker; null = cancelled.
+   *  Progress arrives via onRecorderEvent 'importing'. */
+  importVideo(path?: string): Promise<Project | null>
+  /** The file path of a file dropped on the window (Electron webUtils). */
+  pathForFile(file: File): string
   /** Developer screenshots only (NARRATE_OPEN): open a recording folder in the editor on launch. */
   onDevOpen(cb: (dir: string) => void): () => void
 }

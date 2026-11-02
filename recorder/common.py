@@ -221,6 +221,84 @@ def analyze(args):
     emit(event="ready", out=outdir, summary=analysis["summary"])
 
 # ---------------------------------------------------------------- audio enhancement (spec §16)
+def import_video(args):
+    """Bring an outside video in as a project (talking head, phone clip, podcast cut): screen.mp4 + mic.wav + events.json
+    in the same shape a recording has, so the editor, transcript, captions and export all work on it unchanged.
+    No cursor, no clicks; `source: "import"` tells the editor to frame it full-bleed and offer the auto-edit.
+    Phone videos are re-encoded upright (rotation metadata applied); plain H.264 files are copied without re-encoding."""
+    need_ffmpeg()
+    src, outdir = args.src, args.out
+    if not src or not os.path.isfile(src):
+        emit(event="error", code="no_source", message="That video file could not be found."); sys.exit(3)
+    os.makedirs(outdir, exist_ok=True)
+    emit(event="importing", step="reading")
+    try:
+        info = json.loads(run([FFPROBE, "-v", "error", "-show_entries",
+            "stream=index,codec_type,codec_name,width,height,avg_frame_rate,pix_fmt:stream_side_data=rotation:stream_tags=rotate:format=duration",
+            "-of", "json", src], timeout=60).stdout or "{}")
+    except Exception: info = {}
+    streams = info.get("streams", [])
+    v = next((x for x in streams if x.get("codec_type") == "video"), None)
+    a = next((x for x in streams if x.get("codec_type") == "audio"), None)
+    if not v:
+        emit(event="error", code="no_video", message="That file has no video in it. Choose a video file (MP4, MOV, M4V, WebM)."); sys.exit(3)
+    dur = float(info.get("format", {}).get("duration") or 0)
+    rot = 0
+    for sd in v.get("side_data_list", []) or []:
+        if "rotation" in sd: rot = int(round(float(sd["rotation"])))
+    if not rot and v.get("tags", {}).get("rotate"): rot = int(v["tags"]["rotate"])
+    w, h = int(v.get("width") or 0), int(v.get("height") or 0)
+    if abs(rot) % 180 == 90: w, h = h, w
+    try: n, d = (v.get("avg_frame_rate") or "30/1").split("/"); fps = float(n) / float(d or 1)
+    except Exception: fps = 30.0
+    fps = fps if 1 < fps < 121 else 30.0
+
+    screen = os.path.join(outdir, "screen.mp4"); tmp = screen + ".tmp.mp4"
+    copyable = v.get("codec_name") == "h264" and rot == 0 and v.get("pix_fmt") in ("yuv420p", "yuvj420p") and w % 2 == 0 and h % 2 == 0
+    emit(event="importing", step="video")
+    if copyable:
+        r = run([FFMPEG, "-v", "error", "-y", "-i", src, "-map", "0:v:0", "-c", "copy", "-an", "-movflags", "+faststart", tmp], timeout=3600)
+    else:
+        enc = ["-c:v", "h264_videotoolbox", "-b:v", f"{max(8, w * h * 6 // 1_000_000)}M"] if sys.platform == "darwin" else ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18"]
+        base = [FFMPEG, "-v", "error", "-y", "-i", src, "-map", "0:v:0", "-an", "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2,format=yuv420p", "-movflags", "+faststart"]
+        r = run(base + enc + [tmp], timeout=7200)
+        if r.returncode != 0 and sys.platform == "darwin":       # VideoToolbox can refuse odd sizes: software fallback
+            r = run(base + ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", tmp], timeout=7200)
+    if r.returncode != 0 or not os.path.exists(tmp):
+        emit(event="error", code="import_failed", message="The video could not be read. " + (r.stderr or "").strip()[-300:]); sys.exit(5)
+    os.replace(tmp, screen)
+    vid = probe(screen)
+    mic = None
+    if a:
+        emit(event="importing", step="audio")
+        r = run([FFMPEG, "-v", "error", "-y", "-i", src, "-map", f"0:{a['index']}", "-ac", "1", "-ar", "48000", "-c:a", "pcm_s16le", os.path.join(outdir, "mic.wav")], timeout=3600)
+        if r.returncode == 0: mic = "mic.wav"
+    # Where the speaker is (macOS Vision helper): punch-ins and vertical crops centre on the face. Elsewhere, or with no
+    # face found, the upper middle of the frame, where a talking head usually sits.
+    focus, face = [w / 2, h * 0.42], None
+    finder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mac", "homacapture-face")
+    if os.path.exists(finder):
+        emit(event="importing", step="framing")
+        try:
+            f = json.loads(run([finder, screen], timeout=180).stdout.strip().splitlines()[-1])
+            if f.get("found", 0) >= max(2, f.get("samples", 12) // 3): focus = [f["x"], f["y"]]; face = {"w": f["w"], "h": f["h"]}
+        except Exception as e: log(f"[import] face finder: {e}")
+    frames = int(vid.get("nb_frames", 0) or 0)
+    vdur = float(vid.get("duration", 0) or dur)
+    events = {"version": 2, "source": "import", "originalName": os.path.basename(src),
+              "display": {"id": 0, "scale": 1, "pointWidth": w, "pointHeight": h, "width": w, "height": h},
+              "fps": round(fps), "tLaunch": 0, "tEnd": vdur, "t0Video": 0.0, "t0Mic": 0.0 if mic else None, "t0Camera": None, "t0System": None,
+              "videoDuration": vdur, "videoFrames": frames or int(round(vdur * fps)),
+              "micOffset": 0.0 if mic else None, "cameraOffset": None, "camera": None, "systemOffset": None,
+              "pauses": [], "platform": "darwin" if sys.platform == "darwin" else "win32", "encoder": "copy" if copyable else "reencode", "capture": "import",
+              "recovered": False, "cursors": {}, "cursorChanges": [], "moves": [], "clicks": [], "scrolls": [], "keys": [],
+              "focus": focus, "face": face,
+              "files": {"screen": "screen.mp4", "mic": mic, "camera": None, "system": None}}
+    tmpj = os.path.join(outdir, "events.json.tmp")
+    with open(tmpj, "w") as fh: json.dump(events, fh)
+    os.replace(tmpj, os.path.join(outdir, "events.json"))
+    emit(event="ready", out=outdir, duration=vdur, width=w, height=h, audio=bool(mic))
+
 def enhance(args):
     """mic.wav → mic.clean.wav, same length and start. Chain (spec §16): rumble high-pass, hum notches (50/60 Hz mains),
     adaptive FFT noise reduction, gentle de-ess, light speech compression, two-pass EBU loudness to -16 LUFS, true-peak

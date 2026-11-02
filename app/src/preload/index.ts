@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type { NarrateApi, ExportProgress, RecorderEvent } from '../shared/types'
 
 const listen = <T,>(channel: string) => (cb: (p: T) => void) => {
@@ -39,5 +39,7 @@ const api: NarrateApi = {
   reveal: (p) => ipcRenderer.invoke('shell:reveal', p),
   onDevOpen: listen<string>('dev:open'),
   trashProject: (dir) => ipcRenderer.invoke('project:trash', dir),
+  importVideo: (path) => ipcRenderer.invoke('project:import', path),
+  pathForFile: (file) => webUtils.getPathForFile(file),
 }
 contextBridge.exposeInMainWorld('narrate', api)
