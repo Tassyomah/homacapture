@@ -125,22 +125,20 @@ export function Editor({ project }: { project: Project }) {
     window.narrate.transcribeProject(project.dir).then((t) => { setTranscript(t); setTstatus({ kind: 'idle' }) })
       .catch((e: Error) => setTstatus({ kind: 'error', message: e.message }))
   }
-  // Uploads get an automatic first edit (cuts, punch-ins, text pops, captions) once there is a transcript. It runs once;
-  // "Auto-edit again" redoes it, replacing only what it made itself (ids "auto-…") and keeping the user's own additions.
+  // Smart edit (uploads): a first edit made on request, never on its own: cuts, punch-ins, text pops, captions. Running it
+  // again replaces only what it made itself (ids "auto-…") and keeps the user's own additions. Undo takes it all back.
   const runAutoEdit = (tr: Transcript) => {
     const r = autoEdit(project.events, tr)
     apply((e) => ({ ...e, cuts: r.cuts, config: { ...e.config, ...r.config, voice: micClean || project.assets.micClean ? 'clean' : e.config.voice },
       zooms: [...e.zooms.filter((z) => !z.id.startsWith('auto-')), ...r.zooms], texts: [...e.texts.filter((x) => !x.id.startsWith('auto-')), ...r.texts],
       autoEditedAt: new Date().toISOString() }))
   }
-  const autoStarted = useRef(false)
-  useEffect(() => {
-    if (!upload || edits.autoEditedAt || autoStarted.current) return
-    if (transcript) { autoStarted.current = true; runAutoEdit(transcript); return }
-    if (project.assets.mic && tstatus.kind === 'idle') transcribe()
-  }, [upload, transcript, tstatus.kind])
-  const autoState = upload && !edits.autoEditedAt
-    ? (tstatus.kind === 'running' ? `Auto-editing · ${tstatus.message.replace(/…$/, '')}` : tstatus.kind === 'error' ? null : 'Auto-editing…') : null
+  const [smartWanted, setSmartWanted] = useState(false)     // pressed before the transcript existed: run once it arrives
+  const smartEdit = () => { if (transcript) runAutoEdit(transcript); else { setSmartWanted(true); if (tstatus.kind !== 'running') transcribe() } }
+  useEffect(() => { if (smartWanted && transcript) { setSmartWanted(false); runAutoEdit(transcript) } }, [smartWanted, transcript])
+  useEffect(() => { if (tstatus.kind === 'error') setSmartWanted(false) }, [tstatus.kind])
+  const smartBusy = smartWanted && tstatus.kind === 'running'
+  const autoState = smartBusy ? `Smart edit · ${tstatus.message.replace(/…$/, '')}` : null
 
   const analysisWithFillers = useMemo<Analysis | null>(() => {
     if (!analysis) return null
@@ -453,9 +451,9 @@ export function Editor({ project }: { project: Project }) {
     </>
     if (shownTab === 'smart') return <>
       {paneHead('Smart', 'Suggestions, chapters, thumbnails and post copy, all from this recording.')}
-      {upload && <div className="control"><div className="lbl"><span>Auto-edit</span></div>
-        <button className="wide" disabled={!transcript} onClick={() => transcript && runAutoEdit(transcript)}><IconWand size={16} />{edits.autoEditedAt ? 'Auto-edit again' : 'Auto-edit now'}</button>
-        <span className="note">Cuts pauses and filler words, punches in on the speaker, pops key words on screen and turns captions on. Redoing it replaces the cuts and what it added before; your own text and zooms stay. Undo brings everything back.</span></div>}
+      {upload && <div className="control"><div className="lbl"><span>Smart edit</span></div>
+        <button className="wide" disabled={smartBusy || !project.assets.mic} onClick={smartEdit}><IconWand size={16} />{smartBusy ? 'Working…' : edits.autoEditedAt ? 'Smart edit again' : 'Smart edit'}</button>
+        <span className="note">Cuts pauses and filler words, punches in on the speaker, pops key words on screen and turns captions on. Running it again replaces the cuts and what it added before; your own text and zooms stay. Undo brings everything back.</span></div>}
       <Director analysis={analysisWithFillers} status={dstatus} state={director} onAccept={onAccept} onReject={onReject} onAcceptAll={onAcceptAll}
         onDismiss={onDismiss} onSeek={seekSrc} onRerun={() => runAnalysis(true)} />
       <ContentMap chapters={chapters} transcript={transcript} duration={dur} playhead={playheadSrc} onSeek={seekSrc}
@@ -512,6 +510,9 @@ export function Editor({ project }: { project: Project }) {
             <IconPlus size={15} />{assets.length ? 'Remake versions' : 'Make versions'}</button>
         </div>
         <span className="spacer" />
+        {upload && project.assets.mic && <button className="smart-btn" disabled={smartBusy} onClick={smartEdit}
+          data-tip="Cuts pauses and fillers, punches in on you, pops key words, adds captions. You can change or undo all of it.">
+          <IconWand size={16} />{smartBusy ? 'Smart editing…' : edits.autoEditedAt ? 'Smart edit again' : 'Smart edit'}</button>}
         <button className="icon" aria-label="Undo" data-tip="Undo · Ctrl+Z" disabled={history.current.past.length === 0} onClick={undo}><IconArrowBackUp size={18} /></button>
         <button className="icon" aria-label="Redo" data-tip="Redo · Ctrl+Y" disabled={history.current.future.length === 0} onClick={redo}><IconArrowForwardUp size={18} /></button>
         <button onClick={() => go('export')} data-tip="Export, then get a link anyone can watch"><IconLink size={16} />Share</button>

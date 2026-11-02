@@ -24,7 +24,7 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
   const [dragging, setDragging] = useState(false)
   const UPLOAD_STEP: Record<string, string> = { reading: 'Reading the video…', video: 'Bringing in the picture…', audio: 'Bringing in the sound…', framing: 'Finding the speaker…' }
   useEffect(() => window.narrate.onRecorderEvent((e) => { if (e.event === 'importing') setImporting(UPLOAD_STEP[e.step] ?? 'Bringing it in…') }), [])
-  /** Upload: any video becomes a project, then opens in the editor, where the automatic first edit runs. */
+  /** Upload: any video becomes a project and opens in the editor; Smart edit there is the user's choice. */
   const upload = (path?: string) => {
     if (importing) return
     setError(null); setImporting(path ? 'Reading the video…' : null)
@@ -194,11 +194,11 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
 
       <section className="up-card">
         <span className="up-icon" aria-hidden="true"><IconWand size={22} stroke={1.6} /></span>
-        <div className="up-text"><b>Already have a video? Upload it and it edits itself.</b>
-          <span>Pauses and filler words cut, punch-ins on the speaker, key words popping on screen, captions. Then change anything you like.</span></div>
+        <div className="up-text"><b>Already have a video? Upload it and edit it here.</b>
+          <span>Press Smart edit for a first cut in one go: pauses and filler words out, punch-ins on you, key words on screen, captions. Or edit it all yourself.</span></div>
         <button className="primary" disabled={!!importing} onClick={() => upload()}><IconUpload size={16} />{importing ?? 'Upload a video'}</button>
       </section>
-      {dragging && <div className="drop-hint" aria-hidden="true"><IconUpload size={28} stroke={1.6} /><b>Drop to upload</b><span>It opens in the editor and edits itself.</span></div>}
+      {dragging && <div className="drop-hint" aria-hidden="true"><IconUpload size={28} stroke={1.6} /><b>Drop to upload</b><span>It opens in the editor, ready for you or Smart edit.</span></div>}
 
       <div className="list-head"><h2>Your recordings</h2>{projects.length > 0 && <span>{projects.length}</span>}</div>
       {projects.length === 0 ? <div className="empty">Your recordings will appear here. Press Start recording to make the first one.</div> : (
