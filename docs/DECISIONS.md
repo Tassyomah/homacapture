@@ -41,3 +41,6 @@
 - **Effects tab:** Looks (Warm, Cool, Punchy, Soft, Film, B&W) and brightness / contrast / saturation, applied to the video only (never text, captions or stickers).
 - **Transitions:** Zoom, Flash, Blur, Whip into the stretch after a cut; "Big cuts only" (> 2 s removed, default) keeps pause trims as clean jump cuts; whoosh when effects are on.
 - **Progress bar:** thin coral bar, top or bottom, fills with output time.
+
+## 2026-11-02 · Clean redesign (exa.ai + Aether direction)
+Tassy: "my tool looks ugly", pointing at exa.ai and her Aether proposal-builder screens (Figma "Aetherr 2", proposal builder page). Applied as a redesign layer at the end of `renderer/styles.css`: white panels split by 1 px hairlines instead of floating rounded cards; soft grey canvas behind the video; one ink primary button (Export, Start recording, Upload); segmented controls as grey wells with a raised white pill; mono uppercase eyebrows for labels, lanes and times; tinted, quiet timeline blocks; coral only as the accent (playhead, record dot, Smart edit icon, selection); serif hero on Home (Exa). Before/after: `docs/redesign-before-after.png`.
