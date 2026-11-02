@@ -2,10 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
 import { Screencast, compositionSize } from '../../video/Screencast'
 import { keptDuration, keptRanges, outToSrc, srcToOut } from '../../video/ranges'
-import { ASPECTS, ASSET_LABEL, CAPTION_STYLES, EXPORT_PRESETS, defaultConfig, type Analysis, type BackdropFill, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type MusicTrack, type Overlay, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Transcript, type TranscriptSegment } from '../../shared/types'
+import { ASPECTS, ASSET_LABEL, CAPTION_STYLES, EXPORT_PRESETS, LOOKS, STICKER_EMOJI, STICKER_SHAPES, defaultConfig, type Look, type Sticker, type TextAnim, type Transition, type Analysis, type BackdropFill, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type MusicTrack, type Overlay, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Transcript, type TranscriptSegment } from '../../shared/types'
 import { smoothCursor } from '../../video/motion'
 import { revealLabel } from '../platform'
-import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconDownload, IconLink, IconMicrophone, IconMusic, IconPalette, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconSparkles, IconTrash, IconUserCircle, IconWand, IconX } from '@tabler/icons-react'
+import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconDownload, IconLink, IconColorFilter, IconMicrophone, IconMusic, IconPalette, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconSparkles, IconTrash, IconUserCircle, IconWand, IconX } from '@tabler/icons-react'
 import { Timeline, fmt, fmtShort, sameItem, type Item, type RangeAction } from './Timeline'
 import { Director, type DirectorState, type DirectorStatus } from './Director'
 import { TranscriptPanel, fillerRanges, type TranscribeStatus } from './TranscriptPanel'
@@ -19,7 +19,7 @@ import { autoEdit, keyPhrase } from '../autoedit'
 
 const FPS = 60
 const RATES = [0.5, 0.75, 1.25, 1.5, 2, 3]
-type Tab = 'style' | 'camera' | 'sound' | 'words' | 'smart' | 'export'
+type Tab = 'style' | 'effects' | 'camera' | 'sound' | 'words' | 'smart' | 'export'
 const newId = (p: string) => `${p}-${Math.random().toString(36).slice(2, 8)}`
 const SHAPE: Record<CameraShape, string> = { off: 'Hidden', circle: 'Circle', rounded: 'Rounded' }
 const BGS: { id: Background; label: string; css: string }[] = [
@@ -30,18 +30,18 @@ const BGS: { id: Background; label: string; css: string }[] = [
 ]
 
 /** Everything the user can change; one snapshot per undo step. */
-type Edits = { config: RenderConfig; cuts: Cut[]; assets: DerivedAsset[]; zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; music: MusicTrack | null; chapters: Chapter[]; highlights: [number, number][]; director: DirectorState; autoEditedAt?: string }
+type Edits = { config: RenderConfig; cuts: Cut[]; assets: DerivedAsset[]; zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; music: MusicTrack | null; chapters: Chapter[]; highlights: [number, number][]; director: DirectorState; autoEditedAt?: string }
 
 export function Editor({ project }: { project: Project }) {
   // Saved edits win; defaults fill in settings that did not exist when the project was last saved.
   const [edits, setEdits] = useState<Edits>(() => ({
     config: { ...defaultConfig, ...(project.file?.config ?? {}) }, cuts: project.file?.cuts ?? [],
     assets: project.file?.assets ?? [], zooms: project.file?.zooms ?? [], speeds: project.file?.speeds ?? [], masks: project.file?.masks ?? [],
-    texts: project.file?.texts ?? [], overlays: project.file?.overlays ?? [], music: project.file?.music ?? null, autoEditedAt: project.file?.autoEditedAt,
+    texts: project.file?.texts ?? [], overlays: project.file?.overlays ?? [], stickers: project.file?.stickers ?? [], music: project.file?.music ?? null, autoEditedAt: project.file?.autoEditedAt,
     chapters: project.file?.chapters ?? [], highlights: project.file?.highlights ?? [],
     director: project.file?.director ?? { accepted: [], rejected: [] },
   }))
-  const { assets, zooms, speeds, masks, texts, overlays, music, chapters, highlights, director } = edits
+  const { assets, zooms, speeds, masks, texts, overlays, stickers, music, chapters, highlights, director } = edits
   const [media, setMedia] = useState<Record<string, string>>(project.assets.media ?? {})
   const [cutout, setCutout] = useState<string | null>(project.assets.cutout ?? null)
   const [matting, setMatting] = useState<string | null>(null)
@@ -102,12 +102,12 @@ export function Editor({ project }: { project: Project }) {
   useEffect(() => {
     if (!dirty.current) return
     const t = setTimeout(() => {
-      window.narrate.saveProject(project.dir, { version: 1, config: edits.config, cuts: edits.cuts, assets, zooms, speeds, masks, texts, overlays, music, autoEditedAt: edits.autoEditedAt,
+      window.narrate.saveProject(project.dir, { version: 1, config: edits.config, cuts: edits.cuts, assets, zooms, speeds, masks, texts, overlays, stickers, music, autoEditedAt: edits.autoEditedAt,
         chapters, highlights, director, savedAt: new Date().toISOString() })
         .catch((e) => console.warn('autosave failed', e))
     }, 400)
     return () => clearTimeout(t)
-  }, [edits, assets, zooms, speeds, masks, texts, overlays, music, chapters, highlights, director, project.dir])
+  }, [edits, assets, zooms, speeds, masks, texts, overlays, stickers, music, chapters, highlights, director, project.dir])
 
   // Smart Director (add-on §7–9): analyse on first open (cached in analysis.json afterwards), show progress meanwhile.
   const runAnalysis = useCallback((force = false) => {
@@ -169,7 +169,7 @@ export function Editor({ project }: { project: Project }) {
   const makeThumbs = () => {
     setThumbStatus('running')
     const times = thumbnailTimes(project.events, edits.cuts, speeds, chapters, highlights, analysis)
-    window.narrate.renderThumbnails(project.dir, edits.config, edits.cuts, times, { zooms, speeds, masks, texts, overlays, music })
+    window.narrate.renderThumbnails(project.dir, edits.config, edits.cuts, times, { zooms, speeds, masks, texts, overlays, stickers, music })
       .then((t) => { setThumbs(t); setThumbStatus('idle') })
       .catch((e: Error) => setThumbStatus(e.message))
   }
@@ -189,8 +189,8 @@ export function Editor({ project }: { project: Project }) {
   const onReject = (p: Proposal) => apply((e) => ({ ...e, director: { ...e.director, rejected: [...e.director.rejected, p.id], accepted: e.director.accepted.filter((id) => id !== p.id) } }))
   const onDismiss = () => apply((e) => ({ ...e, director: { ...e.director, dismissedAt: new Date().toISOString() } }))
 
-  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, micClean, media, cutout }, events: project.events, config, cuts, zooms, speeds, masks, texts, overlays, music, transcript }),
-    [project, micClean, media, cutout, config, cuts, zooms, speeds, masks, texts, overlays, music, transcript])
+  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, micClean, media, cutout }, events: project.events, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, transcript }),
+    [project, micClean, media, cutout, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, transcript])
   const size = compositionSize(props)
   const kept = useMemo(() => keptRanges(project.events, cuts, speeds), [project.events, cuts, speeds])
   const frames = Math.max(1, Math.ceil(keptDuration(project.events, cuts, speeds) * FPS))
@@ -267,6 +267,13 @@ export function Editor({ project }: { project: Project }) {
     apply((e) => ({ ...e, overlays: [...e.overlays, { id, t: a, duration, file: m.file, kind, name: m.name, fit: 'full', length: m.duration } as Overlay].sort((x, y) => x.t - y.t) }))
     setSel({ kind: 'broll', id })
   }
+  const stickerAt = (a: number, b: number) => {
+    const id = newId('k')
+    apply((e) => ({ ...e, stickers: [...e.stickers, { id, t: a, duration: Math.max(0.8, Math.min(4, b - a < 0.5 ? 2 : b - a)), emoji: '🔥', x: 0.78, y: 0.2, size: 0.2, rotate: -8 }].sort((x, y) => x.t - y.t) }))
+    setSel({ kind: 'sticker', id })
+  }
+  const editSticker = (id: string, patch: Partial<Sticker>) => apply((e) => ({ ...e, stickers: e.stickers.map((x) => x.id === id ? { ...x, ...patch } : x) }))
+  const removeSticker = (id: string) => apply((e) => ({ ...e, stickers: e.stickers.filter((x) => x.id !== id) }))
   const editOverlay = (id: string, patch: Partial<Overlay>) => apply((e) => ({ ...e, overlays: e.overlays.map((o) => o.id === id ? { ...o, ...patch } : o) }))
   const removeOverlay = (id: string) => apply((e) => ({ ...e, overlays: e.overlays.filter((o) => o.id !== id) }))
   const addMusic = async () => {
@@ -294,6 +301,7 @@ export function Editor({ project }: { project: Project }) {
     if (act === 'mask') maskAt(a, Math.max(a + 0.5, b))
     if (act === 'text') textAt(a, b)
     if (act === 'broll') void brollAt(a, b)
+    if (act === 'sticker') stickerAt(a, b)
     setRange(null)
   }
   const editZoom = (id: string, patch: Partial<ManualZoom>) => apply((e) => ({ ...e, zooms: e.zooms.map((z) => z.id === id ? { ...z, ...patch } : z) }))
@@ -308,7 +316,7 @@ export function Editor({ project }: { project: Project }) {
     ev: project.events, analysis, masterCuts: e.cuts, chapters: e.chapters, highlights: e.highlights, masterSavedAt: project.file?.savedAt ?? null }) }))
   const removeAsset = (id: string) => { if (selected === id) setSelected('master'); apply((e) => ({ ...e, assets: e.assets.filter((a) => a.id !== id) })) }
   const assetDuration = (a: DerivedAsset | null) => keptDuration(project.events, a ? a.cuts : edits.cuts, speeds)
-  const exportOne = (a: DerivedAsset | null) => window.narrate.exportProject(project.dir, a ? { ...edits.config, ...a.config } : edits.config, a ? a.cuts : edits.cuts, a ? a.name : 'master', format, { zooms, speeds, masks, texts, overlays, music })
+  const exportOne = (a: DerivedAsset | null) => window.narrate.exportProject(project.dir, a ? { ...edits.config, ...a.config } : edits.config, a ? a.cuts : edits.cuts, a ? a.name : 'master', format, { zooms, speeds, masks, texts, overlays, stickers, music })
   const exportAll = async () => {
     const list: (DerivedAsset | null)[] = [null, ...assets]
     setQueue({ total: list.length, done: 0, current: 'Master' })
@@ -327,6 +335,7 @@ export function Editor({ project }: { project: Project }) {
     : sel.kind === 'zoom' ? (!asset && zooms.some((z) => z.id === sel.id) ? sel : null)
     : sel.kind === 'text' ? (!asset && texts.some((x) => x.id === sel.id) ? sel : null)
     : sel.kind === 'broll' ? (!asset && overlays.some((x) => x.id === sel.id) ? sel : null)
+    : sel.kind === 'sticker' ? (!asset && stickers.some((x) => x.id === sel.id) ? sel : null)
     : (!asset && masks.some((m) => m.id === sel.id) ? sel : null)
   const removeItem = (it: Item) => {
     if (it.kind === 'cut') restore(it.i)
@@ -335,6 +344,7 @@ export function Editor({ project }: { project: Project }) {
     if (it.kind === 'mask') removeMask(it.id)
     if (it.kind === 'text') removeText(it.id)
     if (it.kind === 'broll') removeOverlay(it.id)
+    if (it.kind === 'sticker') removeSticker(it.id)
     setSel(null)
   }
 
@@ -367,6 +377,7 @@ export function Editor({ project }: { project: Project }) {
       else if (range && !asset && k === 'b') rangeAction('mask')
       else if (range && !asset && k === 't') rangeAction('text')
       else if (range && !asset && k === 'r') rangeAction('broll')
+      else if (range && !asset && k === 'k') rangeAction('sticker')
       else if (!range && !asset && k === 'z') zoomHere()
       else if (!range && !asset && k === 'b') maskHere()
     }
@@ -377,6 +388,7 @@ export function Editor({ project }: { project: Project }) {
     ? analysisWithFillers.proposals.filter((p) => p.type !== 'ZOOM' && !director.accepted.includes(p.id) && !director.rejected.includes(p.id)).length : 0
   const tabs: { id: Tab; label: string; Icon: typeof IconPalette; show: boolean; badge?: number }[] = [
     { id: 'style', label: 'Style', Icon: IconPalette, show: true },
+    { id: 'effects', label: 'Effects', Icon: IconColorFilter, show: true },
     { id: 'camera', label: 'Camera', Icon: IconUserCircle, show: !!project.assets.camera },
     { id: 'sound', label: 'Sound', Icon: IconMicrophone, show: true },
     { id: 'words', label: 'Transcript', Icon: IconBadgeCc, show: !!project.assets.mic },
@@ -418,9 +430,29 @@ export function Editor({ project }: { project: Project }) {
         <div className="control"><div className="lbl"><span>Words</span></div>
           <input type="text" value={x.text} maxLength={40} onChange={(e) => editText(x.id, { text: e.target.value })} /></div>
         <div className="control"><div className="lbl"><span>Look</span></div>{seg(x.style, [['pop', 'Pop'], ['title', 'Title card']] as [TextStyle, string][], (v) => editText(x.id, { style: v }))}</div>
+        <div className="control"><div className="lbl"><span>Comes in</span></div>{seg(x.anim ?? 'pop', [['pop', 'Pop'], ['slide', 'Slide up'], ['type', 'Typewriter'], ['slam', 'Slam']] as [TextAnim, string][], (v) => editText(x.id, { anim: v }))}</div>
         {slider('Show for', `${x.duration.toFixed(1)} s`, 0.6, 5, 0.1, x.duration, (v) => editText(x.id, { duration: v }))}
         {slider('Starts at', fmt(x.t), 0, Math.max(0.1, dur - 0.5), 0.05, x.t, (v) => editText(x.id, { t: v }))}
         {foot(x.t)}</>
+    }
+    if (it.kind === 'sticker') {
+      const k = stickers.find((y) => y.id === it.id)!
+      const SPOTS: [string, number, number][] = [['Top left', 0.22, 0.2], ['Top', 0.5, 0.2], ['Top right', 0.78, 0.2], ['Left', 0.22, 0.5], ['Middle', 0.5, 0.5], ['Right', 0.78, 0.5], ['Bottom left', 0.22, 0.72], ['Bottom', 0.5, 0.72], ['Bottom right', 0.78, 0.72]]
+      return <>{paneHead('Sticker', `Pops up at ${fmt(k.t)} for ${k.duration.toFixed(1)} s.`, true)}
+        <div className="control"><div className="lbl"><span>Sticker</span></div>
+          <div className="stickers">{STICKER_EMOJI.map((em) => <button key={em} className={k.emoji === em ? 'on' : ''} onClick={() => editSticker(k.id, { emoji: em, shape: undefined })}>{em}</button>)}
+            {STICKER_SHAPES.map((sh) => <button key={sh} className={!k.emoji && k.shape === sh ? 'on' : ''} aria-label={sh} data-tip={sh} onClick={() => editSticker(k.id, { emoji: undefined, shape: sh, color: k.color ?? 'coral' })}><i className={'shape ' + sh} /></button>)}</div></div>
+        {!k.emoji && <div className="control"><div className="lbl"><span>Colour</span></div>
+          <div className="swatches">{BGS.map((b) => <button key={b.id} className={(k.color ?? 'coral') === b.id ? 'on' : ''} aria-label={b.label} data-tip={b.label} onClick={() => editSticker(k.id, { color: b.id })}><span style={{ background: b.css }} /></button>)}</div></div>}
+        <div className="control"><div className="lbl"><span>Where</span></div>
+          <div className="spots">{SPOTS.map(([l, x, y]) => <button key={l} aria-label={l} data-tip={l} className={Math.abs(k.x - x) < 0.02 && Math.abs(k.y - y) < 0.02 ? 'on' : ''} onClick={() => editSticker(k.id, { x, y })}><i /></button>)}</div></div>
+        {slider('Size', `${Math.round(k.size * 100)}%`, 0.08, 0.5, 0.01, k.size, (v) => editSticker(k.id, { size: v }))}
+        {slider('Tilt', `${Math.round(k.rotate)}°`, -45, 45, 1, k.rotate, (v) => editSticker(k.id, { rotate: v }))}
+        {slider('Left – right', `${Math.round(k.x * 100)}%`, 0.05, 0.95, 0.01, k.x, (v) => editSticker(k.id, { x: v }))}
+        {slider('Up – down', `${Math.round(k.y * 100)}%`, 0.05, 0.95, 0.01, k.y, (v) => editSticker(k.id, { y: v }))}
+        {slider('Show for', `${k.duration.toFixed(1)} s`, 0.5, 8, 0.1, k.duration, (v) => editSticker(k.id, { duration: v }))}
+        {slider('Starts at', fmt(k.t), 0, Math.max(0.1, dur - 0.5), 0.05, k.t, (v) => editSticker(k.id, { t: v }))}
+        {foot(k.t)}</>
     }
     if (it.kind === 'broll') {
       const o = overlays.find((y) => y.id === it.id)!
@@ -485,6 +517,24 @@ export function Editor({ project }: { project: Project }) {
       {!upload && slider('Cursor size', `${config.cursorScale.toFixed(1)}×`, 1, 3, 0.1, config.cursorScale, (v) => set('cursorScale', v))}
       {!!project.events.keys?.length && <div className="control"><div className="lbl"><span>Keyboard shortcuts</span><span>{project.events.keys.length} pressed</span></div>
         {seg(config.keycaps, [[true, 'Show'], [false, 'Hide']], (v) => set('keycaps', v))}</div>}
+    </>
+    if (shownTab === 'effects') return <>
+      {paneHead('Effects', 'Colour, transitions and a progress bar. Captions, text and stickers stay untouched by the colour.')}
+      <div className="control"><div className="lbl"><span>Look</span></div>
+        <div className="looks">{LOOKS.map((l) => (
+          <button key={l.id} className={config.look === l.id ? 'on' : ''} onClick={() => set('look', l.id as Look)}>
+            <span className="look-swatch" style={{ filter: l.css || undefined }} /><span>{l.label}</span></button>))}</div></div>
+      {slider('Brightness', `${Math.round(config.brightness * 100)}%`, 0.6, 1.4, 0.02, config.brightness, (v) => set('brightness', v))}
+      {slider('Contrast', `${Math.round(config.contrast * 100)}%`, 0.6, 1.4, 0.02, config.contrast, (v) => set('contrast', v))}
+      {slider('Saturation', `${Math.round(config.saturation * 100)}%`, 0, 1.8, 0.02, config.saturation, (v) => set('saturation', v))}
+      {(config.brightness !== 1 || config.contrast !== 1 || config.saturation !== 1) && <button onClick={() => apply((e) => ({ ...e, config: { ...e.config, brightness: 1, contrast: 1, saturation: 1 } }))}><IconRestore size={15} />Reset adjustments</button>}
+      <div className="control"><div className="lbl"><span>Transitions</span></div>
+        {seg(config.transition, [['none', 'None'], ['zoom', 'Zoom'], ['flash', 'Flash'], ['blur', 'Blur'], ['whip', 'Whip']] as [Transition, string][], (v) => set('transition', v))}
+        {config.transition !== 'none' && seg(config.transitionAt, [['big', 'Big cuts only'], ['all', 'Every cut']] as ['big' | 'all', string][], (v) => set('transitionAt', v))}
+        <span className="note">{config.transition === 'none' ? 'Cuts go straight from one moment to the next.' : config.transitionAt === 'big' ? 'Plays where more than 2 seconds were cut. Small pause trims stay clean.' : 'Plays at every cut, including small pause trims.'}</span></div>
+      <div className="control"><div className="lbl"><span>Progress bar</span></div>
+        {seg(config.progressBar, [['off', 'Off'], ['top', 'Top'], ['bottom', 'Bottom']] as ['off' | 'top' | 'bottom', string][], (v) => set('progressBar', v))}
+        <span className="note">A thin coral bar that fills as the video plays, so people stay to the end.</span></div>
     </>
     if (shownTab === 'camera') return <>
       {paneHead('Camera', 'Your face in a corner of the video.')}
@@ -610,7 +660,7 @@ export function Editor({ project }: { project: Project }) {
               <IconSparkles size={15} />{pendingCount} suggestion{pendingCount === 1 ? '' : 's'}</button>}
           </div>
           <Timeline ev={project.events} cuts={cuts} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks} texts={texts}
-            overlays={overlays} music={music} transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset}
+            overlays={overlays} stickers={stickers} music={music} transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset}
             onSeek={seekSrc} onRange={setRange} onSelect={setSel} onAction={rangeAction} />
           <p className="tl-help">Click to move the playhead · drag to select a stretch · click a block to edit it · <kbd>Space</kbd> plays · <kbd>←</kbd><kbd>→</kbd> step</p>
         </div>

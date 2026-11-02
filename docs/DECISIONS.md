@@ -34,3 +34,10 @@
 - **Music + auto-duck:** one track per project (`media/`), looped, dips to 28 % around every spoken word that survives the cuts, 0.35 s ramps, fades in/out. A note points to the YouTube Audio Library (EP1 Content ID lesson).
 - **B-roll:** pictures or clips over a selected stretch (range toolbar "B-roll", key R), own lane. Full screen (pictures drift Ken Burns style) or Card (above the face on vertical, beside it on landscape). Non-MP4 clips are converted on add.
 - **Remove / blur background (macOS):** `homacapture-matte` (Vision person segmentation, temporally smoothed) between two ffmpeg pipes makes `screen.cutout.webm`, VP9 with alpha, 30 fps, long side ≤ 1920. Behind the speaker: blurred copy, brand colour or a picture. Made once on request (~0.5× real time on the test clip).
+
+## 2026-11-02 · Second CapCut batch
+- **Text animations:** each text pop comes in as Pop, Slide up, Typewriter or Slam (inspector "Comes in").
+- **Stickers:** 12 emoji plus five flat brand shapes (arrow, star, sparkle, heart, burst) in brand colours; 9-spot placement grid plus sliders, tilt, gentle bob, pop-in; own lane, range toolbar "Sticker" (key K); pop sound when effects are on.
+- **Effects tab:** Looks (Warm, Cool, Punchy, Soft, Film, B&W) and brightness / contrast / saturation, applied to the video only (never text, captions or stickers).
+- **Transitions:** Zoom, Flash, Blur, Whip into the stretch after a cut; "Big cuts only" (> 2 s removed, default) keeps pause trims as clean jump cuts; whoosh when effects are on.
+- **Progress bar:** thin coral bar, top or bottom, fills with output time.

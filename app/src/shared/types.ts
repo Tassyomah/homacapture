@@ -67,7 +67,15 @@ export interface ManualZoom { id: string; t: number; duration: number; x: number
   snap?: boolean }
 /** Kinetic text (auto-edit): a key phrase that pops in big over the video from `t` for `duration` (source seconds). */
 export type TextStyle = 'pop' | 'title'
-export interface TextPop { id: string; t: number; duration: number; text: string; style: TextStyle }
+export type TextAnim = 'pop' | 'slide' | 'type' | 'slam'
+export interface TextPop { id: string; t: number; duration: number; text: string; style: TextStyle
+  /** How it comes in: pop (springs up), slide (rises in), type (typewriter), slam (drops in big). Default pop. */
+  anim?: TextAnim }
+/** Stickers: an emoji or a flat brand shape on top of the video. x/y = centre as a fraction of the frame; size = fraction of frame width. */
+export type StickerShape = 'arrow' | 'star' | 'sparkle' | 'heart' | 'burst'
+export interface Sticker { id: string; t: number; duration: number; emoji?: string; shape?: StickerShape; color?: Background; x: number; y: number; size: number; rotate: number }
+export const STICKER_EMOJI = ['🔥', '👀', '💯', '🚀', '✨', '😂', '🤯', '👏', '❤️', '✅', '💡', '📌']
+export const STICKER_SHAPES: StickerShape[] = ['arrow', 'star', 'sparkle', 'heart', 'burst']
 /** B-roll (CapCut-style overlay): a picture or clip shown over the video from `t` for `duration` (source seconds).
  *  `file` is relative to the project folder (media/…). 'full' covers the frame; 'card' floats a rounded card above the speaker. */
 export interface Overlay { id: string; t: number; duration: number; file: string; kind: 'image' | 'video'; name: string; fit: 'full' | 'card'
@@ -110,6 +118,7 @@ export interface ProjectFile {
   masks?: Mask[]
   texts?: TextPop[]
   overlays?: Overlay[]
+  stickers?: Sticker[]
   music?: MusicTrack | null
   /** When the automatic first edit of an uploaded video ran (it runs once; "Auto-edit again" redoes it). */
   autoEditedAt?: string
@@ -187,17 +196,36 @@ export interface RenderConfig {
   backdrop: BackdropFill
   backdropColor: Background
   backdropImage: string | null  // media/… file
+  progressBar: 'off' | 'top' | 'bottom'
+  /** Colour look on the video (CapCut "filters") plus three fine adjustments, 1 = unchanged. */
+  look: Look
+  brightness: number; contrast: number; saturation: number
+  /** Transition at each cut: 'big' = only where more than 2 s was removed (pause trims stay clean jump cuts). */
+  transition: Transition
+  transitionAt: 'big' | 'all'
 }
+export type Look = 'none' | 'warm' | 'cool' | 'punchy' | 'soft' | 'film' | 'mono'
+export const LOOKS: { id: Look; label: string; css: string }[] = [
+  { id: 'none', label: 'None', css: '' },
+  { id: 'warm', label: 'Warm', css: 'sepia(0.16) saturate(1.12) hue-rotate(-6deg) brightness(1.02)' },
+  { id: 'cool', label: 'Cool', css: 'saturate(0.95) hue-rotate(8deg) brightness(1.02) contrast(1.03)' },
+  { id: 'punchy', label: 'Punchy', css: 'contrast(1.14) saturate(1.3)' },
+  { id: 'soft', label: 'Soft', css: 'contrast(0.9) brightness(1.06) saturate(0.92)' },
+  { id: 'film', label: 'Film', css: 'sepia(0.22) contrast(1.08) saturate(0.85) brightness(0.98)' },
+  { id: 'mono', label: 'B&W', css: 'grayscale(1) contrast(1.12)' },
+]
+export type Transition = 'none' | 'zoom' | 'flash' | 'blur' | 'whip'
 export const defaultConfig: RenderConfig = {
   aspect: 'source', zoom: 2, padding: 0.06, radius: 24, background: 'indigo', cursorScale: 1.6, outputHeight: 1080, outputFps: 60,
   cameraShape: 'circle', cameraSize: 0.2, cameraCorner: 'br', cameraMirror: true,
   micVolume: 1, systemVolume: 0.8, captions: 'off', voice: 'raw', keycaps: true,
   sfx: false, sfxVolume: 0.55, backdrop: 'off', backdropColor: 'paper', backdropImage: null,
+  progressBar: 'off', look: 'none', brightness: 1, contrast: 1, saturation: 1, transition: 'none', transitionAt: 'big',
 }
 
-export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; music?: MusicTrack | null; transcript?: Transcript | null; [k: string]: unknown }
+export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; transcript?: Transcript | null; [k: string]: unknown }
 /** Master-level instructions every derivative inherits. */
-export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; music?: MusicTrack | null }
+export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null }
 
 export type MicPermission = 'authorized' | 'denied' | 'restricted' | 'notDetermined' | 'unknown'
 export interface Permissions { screen: boolean; mic: MicPermission }

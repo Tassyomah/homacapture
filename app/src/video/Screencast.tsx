@@ -1,6 +1,6 @@
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion'
 import { useMemo } from 'react'
-import { ASPECTS, type Mask, type MusicTrack, type Overlay, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type TextPop, type Transcript } from '../shared/types'
+import { ASPECTS, LOOKS, type Mask, type Sticker, type MusicTrack, type Overlay, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type TextPop, type Transcript } from '../shared/types'
 import { buildCamera, cameraAt, cursorIdAt, smoothCursor, type CamKey, type Viewport } from './motion'
 import { keptRanges, srcToOut, type Range } from './ranges'
 import { POP, WHOOSH } from './sfx'
@@ -39,8 +39,8 @@ export function layout(ev: RecordingEvents, cfg: RenderConfig): Layout {
 }
 
 /** One kept range of the recording, rendered at source time = srcStart + local frame. */
-const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[]; overlays: Overlay[] }> =
-  ({ ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts, overlays }) => {
+const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; transIn: boolean }> =
+  ({ ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts, overlays, stickers, transIn }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = srcStart + (frame / fps) * rate
@@ -59,6 +59,17 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
   const sysStart = srcStart - (ev.systemOffset ?? 0)
   // The camera starts a moment after the screen; show the overlay only once it has frames (no black box at the start).
   const cameraHasFrames = t - (ev.cameraOffset ?? 0) >= 0 && (!ev.camera?.duration || t - (ev.cameraOffset ?? 0) <= ev.camera.duration)
+  // Colour look (filter preset + brightness / contrast / saturation) on the video only, never on text or captions.
+  const lookCss = [LOOKS.find((l) => l.id === cfg.look)?.css ?? '', cfg.brightness !== 1 ? `brightness(${cfg.brightness})` : '',
+    cfg.contrast !== 1 ? `contrast(${cfg.contrast})` : '', cfg.saturation !== 1 ? `saturate(${cfg.saturation})` : ''].filter(Boolean).join(' ') || undefined
+  // Transition into this segment (it starts right after a cut): the frame zooms, flashes, blurs or whips in.
+  const age = frame / fps
+  const tr = transIn && cfg.transition !== 'none' ? cfg.transition : null
+  const tp = tr ? Math.min(1, age / (tr === 'flash' ? 0.22 : tr === 'whip' ? 0.22 : 0.3)) : 1
+  const q = 1 - tp
+  const frameFx: React.CSSProperties = tr === 'zoom' ? { transform: `scale(${1 + 0.14 * q * q})`, filter: q > 0 ? `blur(${(8 * q).toFixed(2)}px)` : undefined }
+    : tr === 'blur' ? { filter: q > 0 ? `blur(${(16 * q).toFixed(2)}px)` : undefined }
+    : tr === 'whip' ? { transform: `translateX(${(F.w * 0.14 * q ** 3).toFixed(1)}px)`, filter: q > 0 ? `blur(${(12 * q).toFixed(2)}px)` : undefined } : {}
   const backdropImage = cfg.backdrop === 'image' && cfg.backdropImage ? assets.media?.[cfg.backdropImage] ?? null : null
   const cutout = assets.cutout && cfg.backdrop !== 'off' && (cfg.backdrop !== 'image' || backdropImage) ? assets.cutout : null
   const webcam = assets.camera && ev.camera && cfg.cameraShape !== 'off' && cameraHasFrames ? cameraRect(cfg, ev.camera, F.w, F.h) : null
@@ -66,8 +77,8 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
   return (
     <>
       <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, borderRadius: cfg.radius,
-                    overflow: 'hidden', boxShadow: '0 40px 120px rgba(20,20,15,0.35)', background: '#14140F' }}>
-        <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${cam.scale})` }}>
+                    overflow: 'hidden', boxShadow: '0 40px 120px rgba(20,20,15,0.35)', background: '#14140F', ...frameFx }}>
+        <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${cam.scale})`, filter: lookCss }}>
           {cutout ? <>
             {/* Remove / blur background: what sits behind the speaker, then the speaker cut out (transparent video) on top. */}
             {cfg.backdrop === 'blur' && <OffthreadVideo src={assets.screen} muted startFrom={Math.round(srcStart * fps)} playbackRate={rate}
@@ -104,6 +115,8 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
       )}
       {overlays.filter((o) => t >= o.t && t < o.t + o.duration && assets.media?.[o.file]).map((o) => (
         <BRoll key={o.id} o={o} src={assets.media![o.file]} t={t} srcStart={srcStart} fps={fps} rate={rate} F={F} faceLeft={(ev.focus?.[0] ?? W / 2) < W / 2} />))}
+      {tr === 'flash' && q > 0 && <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, background: '#EFEEE8', opacity: 0.85 * q * q, pointerEvents: 'none' }} />}
+      {stickers.filter((s) => t >= s.t && t < s.t + s.duration).map((s) => <StickerView key={s.id} s={s} t={t} F={F} />)}
       {cfg.keycaps && ev.keys && ev.keys.length > 0 && <Keycaps keys={ev.keys} t={t} t0={ev.t0Video} F={F} />}
       {texts.length > 0 && <KineticText texts={texts} t={t} F={F} portrait={F.h > F.w} />}
       {transcript && cfg.captions !== 'off' && (
@@ -148,16 +161,20 @@ const KineticText: React.FC<{ texts: TextPop[]; t: number; F: { x: number; y: nu
   if (!on.length) return null
   const tp = on[on.length - 1]
   const age = t - tp.t, left = tp.t + tp.duration - t
-  const p = Math.min(1, age / 0.24)
-  const scale = 0.62 + 0.38 * easeOutBack(p)
-  const alpha = Math.min(1, age / 0.08, left / 0.16)
-  const text = tp.text.toUpperCase()
+  const anim = tp.anim ?? 'pop'
+  const full = tp.text.toUpperCase()
+  // pop: springs up from 62 %; slide: rises 40 % of its height; slam: drops in from 180 % and lands; type: letters appear one by one.
+  const p = Math.min(1, age / (anim === 'slam' ? 0.18 : anim === 'slide' ? 0.3 : 0.24))
+  const scale = anim === 'pop' ? 0.62 + 0.38 * easeOutBack(p) : anim === 'slam' ? 1 + 0.8 * (1 - p) ** 2 : 1
+  const lift = anim === 'slide' ? (1 - (1 - (1 - p) ** 3)) * 0.4 : 0
+  const alpha = Math.min(1, age / (anim === 'type' ? 0.02 : 0.08), left / 0.16)
+  const text = anim === 'type' ? full.slice(0, Math.max(1, Math.ceil(full.length * Math.min(1, age / Math.min(0.9, 0.05 * full.length))))) : full
   const title = tp.style === 'title'
   const base = F.w * (portrait ? (title ? 0.075 : 0.12) : (title ? 0.045 : 0.07))
   const fontSize = Math.round(Math.min(base, (F.w * (portrait ? 0.84 : 0.7)) / Math.max(4, Math.min(text.length, 14) * 0.6)))
   return (
     <div style={{ position: 'absolute', left: F.x, top: F.y + Math.round(F.h * (portrait ? 0.13 : 0.1)), width: F.w, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-      <div style={{ transform: `scale(${scale}) rotate(${title ? 0 : -2}deg)`, opacity: alpha, transformOrigin: '50% 60%', maxWidth: portrait ? '86%' : '72%', textAlign: 'center',
+      <div style={{ transform: `translateY(${(lift * 100).toFixed(1)}%) scale(${scale}) rotate(${title ? 0 : -2}deg)`, opacity: alpha, transformOrigin: '50% 60%', maxWidth: portrait ? '86%' : '72%', textAlign: 'center',
                     fontFamily: 'Aeonik, Archivo, Inter, system-ui, sans-serif', fontWeight: 800, fontSize, lineHeight: 1.02, letterSpacing: '-0.01em', textWrap: 'balance' as never,
                     color: title ? '#14140F' : '#FB8B73', background: title ? '#EFEEE8' : 'transparent', borderRadius: title ? fontSize * 0.45 : 0,
                     padding: title ? `${Math.round(fontSize * 0.4)}px ${Math.round(fontSize * 0.7)}px` : 0,
@@ -192,6 +209,31 @@ const BRoll: React.FC<{ o: Overlay; src: string; t: number; srcStart: number; fp
     <div style={{ position: 'absolute', left: F.x + x, top: F.y + y, width: w, height: h, borderRadius: Math.round(w * 0.05), overflow: 'hidden',
                   opacity: alpha, transform: `scale(${scale}) rotate(-1.5deg)`, boxShadow: '0 30px 90px rgba(20,20,15,0.45)', background: '#14140F' }}>
       {media({ width: '100%', height: '100%', objectFit: 'cover', display: 'block' })}
+    </div>)
+}
+
+const SOLID: Record<string, string> = { indigo: '#6E71E8', coral: '#FB8B73', ink: '#14140F', paper: '#EFEEE8' }
+/** Flat brand shapes for stickers, drawn in a 100×100 box. */
+const SHAPES: Record<string, string> = {
+  arrow: 'M6 40 H58 V18 L96 50 L58 82 V60 H6 Z',
+  star: 'M50 4 L62 36 L96 37 L69 58 L79 92 L50 72 L21 92 L31 58 L4 37 L38 36 Z',
+  sparkle: 'M50 2 C54 36 64 46 98 50 C64 54 54 64 50 98 C46 64 36 54 2 50 C36 46 46 36 50 2 Z',
+  heart: 'M50 90 C20 68 4 52 4 32 C4 16 16 6 30 6 C40 6 46 12 50 20 C54 12 60 6 70 6 C84 6 96 16 96 32 C96 52 80 68 50 90 Z',
+  burst: Array.from({ length: 24 }, (_, i) => { const r = i % 2 ? 34 : 48, a = (i / 24) * Math.PI * 2; return `${i ? 'L' : 'M'}${(50 + r * Math.cos(a)).toFixed(1)} ${(50 + r * Math.sin(a)).toFixed(1)}` }).join(' ') + ' Z',
+}
+/** A sticker: pops in, bobs gently while it is up, fades out. Sits on the frame, so punch-ins never move it. */
+const StickerView: React.FC<{ s: Sticker; t: number; F: { x: number; y: number; w: number; h: number } }> = ({ s, t, F }) => {
+  const age = t - s.t, left = s.t + s.duration - t
+  const scale = 0.4 + 0.6 * easeOutBack(Math.min(1, age / 0.3))
+  const alpha = Math.min(1, age / 0.06, left / 0.15)
+  const size = F.w * s.size
+  const rot = s.rotate + Math.sin(age * 4) * 3
+  return (
+    <div style={{ position: 'absolute', left: F.x + F.w * s.x - size / 2, top: F.y + F.h * s.y - size / 2, width: size, height: size, opacity: alpha,
+                  transform: `scale(${scale}) rotate(${rot}deg)`, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
+                  filter: 'drop-shadow(0 8px 18px rgba(20,20,15,0.3))' }}>
+      {s.emoji ? <span style={{ fontSize: size * 0.82, lineHeight: 1 }}>{s.emoji}</span>
+        : <svg viewBox="0 0 100 100" width={size} height={size}><path d={SHAPES[s.shape ?? 'star']} fill={SOLID[s.color ?? 'coral']} /></svg>}
     </div>)
 }
 
@@ -230,6 +272,16 @@ const Music: React.FC<{ src: string; music: MusicTrack; spans: [number, number][
   return <Audio src={src} loop volume={volume} />
 }
 
+/** How far through the video we are: a flat coral bar along the top or bottom edge. */
+const ProgressBar: React.FC<{ where: 'top' | 'bottom'; W: number; H: number }> = ({ where, W, H }) => {
+  const frame = useCurrentFrame(), { durationInFrames } = useVideoConfig()
+  const h = Math.max(6, Math.round(Math.min(W, H) * 0.012))
+  return (
+    <div style={{ position: 'absolute', left: 0, [where]: 0, width: W, height: h, background: 'rgba(20,20,15,0.18)', pointerEvents: 'none' }}>
+      <div style={{ width: `${(Math.min(1, (frame + 1) / durationInFrames) * 100).toFixed(3)}%`, height: '100%', background: '#FB8B73' }} />
+    </div>)
+}
+
 /** A video whose own time axis starts `start` seconds into this segment (negative = it begins later than the segment). */
 const TimedVideo: React.FC<{ src: string; start: number; fps: number; rate: number; style: React.CSSProperties }> = ({ src, start, fps, rate, style }) =>
   start >= 0
@@ -259,7 +311,7 @@ export function cameraRect(cfg: RenderConfig, camera: { width: number; height: n
  * so the exporter can pick any integer output size without the layout maths changing.
  */
 export const Screencast: React.FC<ScreencastProps> = (props) => {
-  const { assets, events: ev, config: cfg, cuts = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], music = null, transcript = null } = props
+  const { assets, events: ev, config: cfg, cuts = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, transcript = null } = props
   const { fps, width: VW } = useVideoConfig()
   const L = useMemo(() => layout(ev, cfg), [ev, cfg])
   const keys = useMemo(() => buildCamera(ev, cfg, L.vp, zooms), [ev, cfg, L, zooms])
@@ -267,13 +319,16 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
   const total = ranges.reduce((s, r) => s + Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps)), 0) / fps
   const spans = useMemo(() => (music?.duck ? speechSpans(transcript, ranges) : []), [music?.duck, transcript, ranges])
   // Sound effects (output seconds): a whoosh that peaks on each zoom / punch-in and B-roll, a pop on each text.
+  // A transition plays where a cut joins two kept stretches ('big' = more than 2 s was removed there).
+  const transIn = useMemo(() => ranges.map((r, i) => i > 0 && r.start - ranges[i - 1].end > (cfg.transitionAt === 'all' ? 0.01 : 2)), [ranges, cfg.transitionAt])
   const sfx = useMemo(() => {
     if (!cfg.sfx) return []
     const kept = (t: number) => ranges.some((r) => t >= r.start - 0.01 && t < r.end)
-    const list = [...zooms.map((z) => ({ t: z.t, src: WHOOSH, lead: 0.26 })), ...overlays.map((o) => ({ t: o.t, src: WHOOSH, lead: 0.26 })), ...texts.map((x) => ({ t: x.t, src: POP, lead: 0 }))]
-      .filter((e) => kept(e.t)).map((e) => ({ at: Math.max(0, srcToOut(ranges, e.t) - e.lead), src: e.src })).sort((a, b) => a.at - b.at)
+    const list = [...zooms.map((z) => ({ t: z.t, src: WHOOSH, lead: 0.26 })), ...overlays.map((o) => ({ t: o.t, src: WHOOSH, lead: 0.26 })), ...texts.map((x) => ({ t: x.t, src: POP, lead: 0 })), ...stickers.map((x) => ({ t: x.t, src: POP, lead: 0 }))]
+      .filter((e) => kept(e.t)).map((e) => ({ at: Math.max(0, srcToOut(ranges, e.t) - e.lead), src: e.src }))
+      .concat(cfg.transition !== 'none' ? ranges.flatMap((r, i) => transIn[i] ? [{ at: Math.max(0, srcToOut(ranges, r.start) - 0.2), src: WHOOSH }] : []) : []).sort((a, b) => a.at - b.at)
     return list.filter((e, i) => !list.slice(0, i).some((p) => p.src === e.src && e.at - p.at < 0.15))
-  }, [cfg.sfx, zooms, overlays, texts, ranges])
+  }, [cfg.sfx, cfg.transition, zooms, overlays, texts, stickers, ranges, transIn])
   const musicSrc = music ? assets.media?.[music.file] ?? null : null
   let from = 0
   return (
@@ -283,12 +338,13 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
           const len = Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps))
           const seq = (
             <Sequence key={i} from={from} durationInFrames={len}>
-              <Segment ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} overlays={overlays} />
+              <Segment ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} overlays={overlays} stickers={stickers} transIn={transIn[i]} />
             </Sequence>
           )
           from += len
           return seq
         })}
+        {cfg.progressBar !== 'off' && <ProgressBar where={cfg.progressBar} W={L.width} H={L.height} />}
       </div>
       {music && musicSrc && <Music src={musicSrc} music={music} spans={spans} total={total} hasVoice={!!assets.mic} />}
       {sfx.map((e, i) => (

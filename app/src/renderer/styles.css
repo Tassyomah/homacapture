@@ -384,3 +384,24 @@ button.wide { width: 100%; }
 .broll-thumb { border-radius: 10px; overflow: hidden; background: var(--ink); aspect-ratio: 16 / 9; }
 .broll-thumb img, .broll-thumb video { width: 100%; height: 100%; object-fit: contain; display: block; }
 .row-btns { display: flex; gap: 8px; }
+
+/* Second batch (2026-11-02): stickers, looks, sticker spots */
+.blk.sticker { background: var(--mustard); color: var(--ink); }
+.stickers { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+.stickers button { aspect-ratio: 1; border-radius: 10px; background: var(--ink-10); font-size: 20px; display: flex; align-items: center; justify-content: center; padding: 0; }
+.stickers button.on { background: var(--ink); }
+.stickers .shape { width: 20px; height: 20px; background: var(--coral); display: block; }
+.stickers button.on .shape { background: var(--paper); }
+.shape.arrow { clip-path: polygon(6% 40%, 58% 40%, 58% 18%, 96% 50%, 58% 82%, 58% 60%, 6% 60%); }
+.shape.star { clip-path: polygon(50% 4%, 62% 36%, 96% 37%, 69% 58%, 79% 92%, 50% 72%, 21% 92%, 31% 58%, 4% 37%, 38% 36%); }
+.shape.sparkle { clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%); }
+.shape.heart { clip-path: path('M10 18 C4 13.6 0.8 10.4 0.8 6.4 C0.8 3.2 3.2 1.2 6 1.2 C8 1.2 9.2 2.4 10 4 C10.8 2.4 12 1.2 14 1.2 C16.8 1.2 19.2 3.2 19.2 6.4 C19.2 10.4 16 13.6 10 18 Z'); }
+.shape.burst { clip-path: polygon(50% 2%, 59% 17%, 76% 10%, 77% 27%, 94% 31%, 85% 46%, 98% 58%, 82% 65%, 86% 82%, 69% 81%, 62% 97%, 50% 85%, 38% 97%, 31% 81%, 14% 82%, 18% 65%, 2% 58%, 15% 46%, 6% 31%, 23% 27%, 24% 10%, 41% 17%); }
+.spots { display: grid; grid-template-columns: repeat(3, 34px); gap: 4px; padding: 6px; border-radius: 10px; background: var(--ink-10); width: max-content; }
+.spots button { width: 34px; height: 28px; border-radius: 6px; padding: 0; background: transparent; display: flex; align-items: center; justify-content: center; }
+.spots button i { width: 8px; height: 8px; border-radius: 50%; background: var(--ink-60); }
+.spots button.on { background: #fff; } .spots button.on i { background: var(--coral); }
+.looks { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.looks button { display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 6px 4px; border-radius: 10px; background: var(--ink-10); font-size: 12px; }
+.looks button.on { background: var(--ink); color: var(--paper); }
+.look-swatch { width: 100%; aspect-ratio: 4 / 3; border-radius: 6px; background: linear-gradient(160deg, #9ec6e8 0%, #9ec6e8 38%, #e8b48c 38%, #c97b5a 70%, #5a6b3a 70%); }
