@@ -307,12 +307,14 @@ app.whenReady().then(async () => {
     return { file: `media/${name}`, url: server.url(dest), kind: isVideo ? 'video' : isAudio ? 'audio' : 'image', name: basename(src), duration }
   })
   // Voiceover from text: the Mac's own voices via `say` (offline, free), saved as m4a in the project's media/.
+  // Joke and sound-effect voices that ship with macOS; never offered for a voiceover.
+  const NOVELTY = new Set(['Albert', 'Bad News', 'Bahh', 'Bells', 'Boing', 'Bubbles', 'Cellos', 'Good News', 'Jester', 'Organ', 'Superstar', 'Trinoids', 'Whisper', 'Wobble', 'Zarvox', 'Fred', 'Junior', 'Kathy', 'Ralph'])
   ipcMain.handle('voices:list', async (): Promise<{ name: string; lang: string }[]> => {
     if (process.platform !== 'darwin') return []
     try {
       const out = execFileSync('/usr/bin/say', ['-v', '?'], { encoding: 'utf8' })
       return out.split('\n').map((l) => /^(.+?)\s+([a-z]{2}_[A-Z]{2})\s+#/.exec(l)).filter(Boolean)
-        .map((m) => ({ name: m![1].trim(), lang: m![2] })).filter((v) => v.lang.startsWith('en_'))
+        .map((m) => ({ name: m![1].trim(), lang: m![2] })).filter((v) => v.lang.startsWith('en_') && !NOVELTY.has(v.name.replace(/ \(.*$/, '')))
     } catch { return [] }
   })
   ipcMain.handle('project:speak', async (_e, dir: string, text: string, voice: string): Promise<{ file: string; url: string; duration: number }> => {
@@ -328,6 +330,7 @@ app.whenReady().then(async () => {
     let duration = 0
     const probe = ff.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'))
     try { duration = Number(execFileSync(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', dest], { encoding: 'utf8' }).trim()) || 0 } catch { /* unknown */ }
+    if (!duration) duration = text.trim().split(/\s+/).length / 2.6 + 0.5   // ~156 words a minute, so it is never cut short
     return { file: `media/${name}`, url: server.url(dest), duration }
   })
   ipcMain.handle('project:matte', async (_e, dir: string): Promise<Project> => {

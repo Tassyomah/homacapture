@@ -132,8 +132,11 @@ export function Editor({ project }: { project: Project }) {
   // again replaces only what it made itself (ids "auto-…") and keeps the user's own additions. Undo takes it all back.
   const runAutoEdit = (tr: Transcript) => {
     const r = autoEdit(project.events, tr)
-    apply((e) => ({ ...e, cuts: r.cuts, config: { ...e.config, ...r.config, sfx: true, voice: micClean || project.assets.micClean ? 'clean' : e.config.voice },
-      zooms: [...e.zooms.filter((z) => !z.id.startsWith('auto-')), ...r.zooms], texts: [...e.texts.filter((x) => !x.id.startsWith('auto-')), ...r.texts],
+    // On a re-run the user's own caption look and sound-effects choice stay; the first run sets them.
+    apply((e) => ({ ...e, cuts: r.cuts, config: { ...e.config, ...r.config,
+      captions: e.autoEditedAt && e.config.captions !== 'off' ? e.config.captions : r.config.captions ?? e.config.captions,
+      sfx: e.autoEditedAt ? e.config.sfx : true, voice: micClean || project.assets.micClean ? 'clean' : e.config.voice },
+      zooms: [...e.zooms.filter((z) => !z.id.startsWith('auto-')), ...r.zooms], texts: [...e.texts.filter((x) => !x.id.startsWith('auto-') || x.style === 'name'), ...r.texts],
       autoEditedAt: new Date().toISOString() }))
   }
   const [smartWanted, setSmartWanted] = useState(false)     // pressed before the transcript existed: run once it arrives
@@ -353,6 +356,7 @@ export function Editor({ project }: { project: Project }) {
     : sel.kind === 'text' ? (!asset && texts.some((x) => x.id === sel.id) ? sel : null)
     : sel.kind === 'broll' ? (!asset && overlays.some((x) => x.id === sel.id) ? sel : null)
     : sel.kind === 'sticker' ? (!asset && stickers.some((x) => x.id === sel.id) ? sel : null)
+    : sel.kind === 'voice' ? (!asset && voiceovers.some((x) => x.id === sel.id) ? sel : null)
     : (!asset && masks.some((m) => m.id === sel.id) ? sel : null)
   const removeItem = (it: Item) => {
     if (it.kind === 'cut') restore(it.i)
@@ -447,8 +451,8 @@ export function Editor({ project }: { project: Project }) {
     }
     if (it.kind === 'text') {
       const x = texts.find((y) => y.id === it.id)!
-      return <>{paneHead('Text', `Pops up at ${fmt(x.t)} for ${x.duration.toFixed(1)} s.`, true)}
-        <div className="control"><div className="lbl"><span>Words</span></div>
+      return <>{paneHead(x.style === 'name' ? 'Name tag' : 'Text', `${x.style === 'name' ? 'Slides in' : 'Pops up'} at ${fmt(x.t)} for ${x.duration.toFixed(1)} s.`, true)}
+        <div className="control"><div className="lbl"><span>{x.style === 'name' ? 'Name' : 'Words'}</span></div>
           <input type="text" value={x.text} maxLength={40} onChange={(e) => editText(x.id, { text: e.target.value })} /></div>
         <div className="control"><div className="lbl"><span>Look</span></div>{seg(x.style, [['pop', 'Pop'], ['title', 'Title card'], ['name', 'Name tag']] as [TextStyle, string][], (v) => editText(x.id, { style: v, ...(v === 'name' && x.duration < 3 ? { duration: 4 } : {}) }))}</div>
         {x.style === 'name' && <div className="control"><div className="lbl"><span>Role</span></div>
@@ -570,7 +574,7 @@ export function Editor({ project }: { project: Project }) {
         <div className="toggles">{([['vignette', 'Dark edges'], ['grain', 'Film grain'], ['bars', 'Movie bars'], ['shake', 'Shake on punch-ins']] as ['vignette' | 'grain' | 'bars' | 'shake', string][]).map(([k, l]) => (
           <button key={k} className={config[k] ? 'on' : ''} aria-pressed={config[k]} onClick={() => set(k, !config[k])}>{l}</button>))}</div></div>
       <div className="control"><div className="lbl"><span>Opening title</span></div>
-        {seg(config.intro, [[false, 'Off'], [true, 'On']], (v) => set('intro', v))}
+        {seg(config.intro, [[false, 'Off'], [true, 'On']], (v) => { set('intro', v); if (v && !config.introTitle.trim()) set('introTitle', niceName(project.name)) })}
         {config.intro && <>
           <input type="text" value={config.introTitle} maxLength={40} placeholder="What this video is about" onChange={(e) => set('introTitle', e.target.value)} />
           <input type="text" value={config.introSub} maxLength={48} placeholder="Second line (optional)" onChange={(e) => set('introSub', e.target.value)} /></>}
