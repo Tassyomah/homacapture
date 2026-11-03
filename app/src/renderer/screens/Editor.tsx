@@ -651,7 +651,7 @@ export function Editor({ project }: { project: Project }) {
       <div className="control"><div className="lbl"><span>File</span></div>{seg(format, [['mp4', 'Video (MP4)'], ['gif', 'GIF']], setFormat)}
         {format === 'gif' && <span className="note">Silent, 15 fps, small. Best for clips under 15 seconds.</span>}</div>
       {format === 'mp4' && <div className="control"><div className="lbl"><span>Quality</span></div>
-        {seg(config.outputHeight, [[1080, '1080p'], [1440, '1440p'], [0, 'Original']], (v) => set('outputHeight', v))}</div>}
+        {seg(config.outputHeight, [[1080, '1080p'], [1440, '1440p'], [2160, '4K'], [0, 'Original']], (v) => set('outputHeight', v))}</div>}
       {format === 'mp4' && <div className="control"><div className="lbl"><span>Smoothness</span></div>
         {seg(config.outputFps ?? 60, [[60, '60 fps'], [30, '30 fps']] as [30 | 60, string][], (v) => set('outputFps', v))}
         <span className="note">{(config.outputFps ?? 60) === 60 ? 'Smoothest motion. 30 fps exports about twice as fast.' : 'Exports about twice as fast. Fine for most social posts.'}</span></div>}
