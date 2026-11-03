@@ -109,6 +109,8 @@ export async function exportProject(appRoot: string, project: Project, config: R
       crf: 16, pixelFormat: 'yuv420p', audioBitrate: '320k', muted: format === 'gif',
       // Use every core: frame rendering is the bottleneck, and Remotion defaults to half of them.
       concurrency: Math.max(1, cpus().length),
+      // A busy frame (grain + blur cards + video seek near the end) can take longer than Remotion's 30 s default on a loaded Mac.
+      timeoutInMilliseconds: 120000,
       onProgress: ({ progress }) => send({ stage: 'rendering', progress: format === 'gif' ? progress * 0.85 : progress, suffix: safe }),
     })
     let output = mp4
