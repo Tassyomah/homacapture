@@ -1,10 +1,10 @@
 import { useMemo, useRef, useState } from 'react'
 import { IconEyeOff, IconLetterT, IconMoodSmile, IconPhoto, IconPlayerTrackNext, IconScissors, IconX, IconZoomIn } from '@tabler/icons-react'
-import type { Chapter, Cut, ManualZoom, Mask, MusicTrack, Overlay, Sticker, RecordingEvents, SpeedRange, TextPop, Transcript } from '../../shared/types'
+import type { Chapter, Cut, ManualZoom, Mask, MusicTrack, Overlay, Sticker, RecordingEvents, SpeedRange, TextPop, Transcript, Voiceover } from '../../shared/types'
 import { keptRanges, removedRanges, type Range } from '../../video/ranges'
 
 /** Something on the timeline the user can select and edit in the inspector. */
-export type Item = { kind: 'cut'; i: number } | { kind: 'zoom'; id: string } | { kind: 'speed'; i: number } | { kind: 'mask'; id: string } | { kind: 'text'; id: string } | { kind: 'broll'; id: string } | { kind: 'sticker'; id: string }
+export type Item = { kind: 'cut'; i: number } | { kind: 'zoom'; id: string } | { kind: 'speed'; i: number } | { kind: 'mask'; id: string } | { kind: 'text'; id: string } | { kind: 'broll'; id: string } | { kind: 'sticker'; id: string } | { kind: 'voice'; id: string }
 export type RangeAction = 'cut' | 'zoom' | 'speed' | 'mask' | 'text' | 'broll' | 'sticker'
 export const sameItem = (a: Item | null, b: Item | null) => !!a && !!b && a.kind === b.kind && ('id' in a ? a.id === (b as { id: string }).id : a.i === (b as { i: number }).i)
 
@@ -13,9 +13,9 @@ export const sameItem = (a: Item | null, b: Item | null) => !!a && !!b && a.kind
  * drag across any track to select a stretch (a toolbar offers Cut / Zoom / Speed / Blur), click a block to edit it.
  * Hovering anything says what it is.
  */
-export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, transcript, playhead, range, selected, editable,
+export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, voiceovers = [], transcript, playhead, range, selected, editable,
   onSeek, onRange, onSelect, onAction }: {
-  ev: RecordingEvents; cuts: Cut[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null
+  ev: RecordingEvents; cuts: Cut[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]
   transcript?: Transcript | null; playhead: number; range: [number, number] | null; selected: Item | null
   /** False while editing a derived version: only cuts belong to it, so zoom / speed / blur tracks are read-only. */
   editable: boolean
@@ -101,6 +101,9 @@ export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [],
         {(upload || overlays.length > 0) && lane('B-roll', 'Pictures and clips shown over the video. Drag across the timeline, then B-roll.', overlays.map((o) => (
           <div key={o.id} className={'blk pill broll' + on({ kind: 'broll', id: o.id }) + (editable ? '' : ' ro')} style={{ left: pct(o.t), width: w(o.t, o.t + o.duration) }}
             data-item={editable ? it({ kind: 'broll', id: o.id }) : undefined} data-info={`${o.name} · ${fmt(o.t)}–${fmt(o.t + o.duration)} · click to edit`}><span>{o.name}</span></div>)))}
+        {voiceovers.length > 0 && lane('Voice', 'Voiceovers made from text. Click one to change it.', voiceovers.map((v) => (
+          <div key={v.id} className={'blk pill voice' + on({ kind: 'voice', id: v.id }) + (editable ? '' : ' ro')} style={{ left: pct(v.t), width: w(v.t, v.t + v.duration) }}
+            data-item={editable ? it({ kind: 'voice', id: v.id }) : undefined} data-info={`“${v.text}” · ${v.voice} · click to edit`}><span>{v.text}</span></div>)))}
         {music && lane('Music', 'Music under the whole video. Change it in the Sound tab.', <div className="blk pill music" style={{ left: 0, width: '100%' }} data-info={`${music.name} · ${Math.round(music.volume * 100)}%${music.duck ? ' · quieter when you talk' : ''}`}><span>{music.name}</span></div>)}
         {lane('Speed', 'Stretches played faster or slower.', speeds.map((s, i) => (
           <div key={'s' + i} className={'blk pill speed' + on({ kind: 'speed', i }) + (editable ? '' : ' ro')} style={{ left: pct(s.start), width: w(s.start, s.end) }}

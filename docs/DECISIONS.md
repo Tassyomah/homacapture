@@ -44,3 +44,10 @@
 
 ## 2026-11-02 · Clean redesign (exa.ai + Aether direction)
 Tassy: "my tool looks ugly", pointing at exa.ai and her Aether proposal-builder screens (Figma "Aetherr 2", proposal builder page). Applied as a redesign layer at the end of `renderer/styles.css`: white panels split by 1 px hairlines instead of floating rounded cards; soft grey canvas behind the video; one ink primary button (Export, Start recording, Upload); segmented controls as grey wells with a raised white pill; mono uppercase eyebrows for labels, lanes and times; tinted, quiet timeline blocks; coral only as the accent (playhead, record dot, Smart edit icon, selection); serif hero on Home (Exa). Before/after: `docs/redesign-before-after.png`.
+
+## 2026-11-02 · Third CapCut batch
+- **Opening title and closing card** (Effects tab): title over the first 2.5 s with the video blurred and darkened behind it; a coral "Follow for more" pill plus handle over the last 3 s. Overlays, so the timeline and every output time stay unchanged.
+- **Name tag (lower third):** a text pop style ('name', with a role line `sub`): flat paper card, coral bar, ink name, indigo role, slides in from the left. It sits just above where captions start, so it stays clear of the speaker's chin on vertical video.
+- **Caption highlights and emoji:** numbers, money, names mid-sentence and strong words in mustard; one matching emoji at the end of the line (keyword table in `video/Captions.tsx`). Applies to every caption style.
+- **Cinematic:** dark edges (radial vignette), film grain (SVG turbulence, new seed every frame, overlay blend), movie bars, and a 0.32 s decaying shake at the start of every punch-in. All sit under text, captions and stickers.
+- **Voiceover from text (macOS):** `say` with the Mac's own English voices → `media/voiceover-N.m4a`, placed at the playhead on its own Voice lane, plays in output time, and music ducks under it. Offline and free, no licence questions.

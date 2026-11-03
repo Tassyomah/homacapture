@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, screen, globalShortcut, clipboard } from 'electron'
 import { join, resolve, basename, extname } from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { Analysis, Cut, Devices, ExportFormat, ExportProgress, MasterExtras, MediaFile, Project, ProjectFile, RecorderEvent, RenderConfig, StartOptions, Transcript, UnfinishedRecording } from '../shared/types'
@@ -253,7 +253,7 @@ app.whenReady().then(async () => {
     const p = loadProject(process.env.NARRATE_OPEN)
     if (p) exportProject(APP_ROOT, p, { ...(await import('../shared/types')).defaultConfig, ...(p.file?.config ?? {}), outputHeight: 480 }, p.file?.cuts ?? [],
       (prog) => console.log('[dev] export', prog.stage, Math.round(prog.progress * 100) + '%', prog.message ?? ''), 'packaged-test', 'mp4', join(RESOURCES, 'remotion'),
-      { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [], texts: p.file?.texts ?? [], overlays: p.file?.overlays ?? [], stickers: p.file?.stickers ?? [], music: p.file?.music ?? null })
+      { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [], texts: p.file?.texts ?? [], overlays: p.file?.overlays ?? [], stickers: p.file?.stickers ?? [], music: p.file?.music ?? null, voiceovers: p.file?.voiceovers ?? [] })
       .then(() => app.quit(), (e) => { console.log('[dev] export failed', e.message); app.quit() })
   }
   ipcMain.handle('share:settings', () => getShareSettings())
@@ -305,6 +305,30 @@ app.whenReady().then(async () => {
       try { duration = Number(execFileSync(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', dest], { encoding: 'utf8' }).trim()) || undefined } catch { /* unknown length */ }
     }
     return { file: `media/${name}`, url: server.url(dest), kind: isVideo ? 'video' : isAudio ? 'audio' : 'image', name: basename(src), duration }
+  })
+  // Voiceover from text: the Mac's own voices via `say` (offline, free), saved as m4a in the project's media/.
+  ipcMain.handle('voices:list', async (): Promise<{ name: string; lang: string }[]> => {
+    if (process.platform !== 'darwin') return []
+    try {
+      const out = execFileSync('/usr/bin/say', ['-v', '?'], { encoding: 'utf8' })
+      return out.split('\n').map((l) => /^(.+?)\s+([a-z]{2}_[A-Z]{2})\s+#/.exec(l)).filter(Boolean)
+        .map((m) => ({ name: m![1].trim(), lang: m![2] })).filter((v) => v.lang.startsWith('en_'))
+    } catch { return [] }
+  })
+  ipcMain.handle('project:speak', async (_e, dir: string, text: string, voice: string): Promise<{ file: string; url: string; duration: number }> => {
+    if (process.platform !== 'darwin') throw new Error('Voiceover works on macOS for now.')
+    const ff = findFfmpeg(); if (!ff) throw new Error('ffmpeg is needed for voiceovers.')
+    mkdirSync(join(dir, 'media'), { recursive: true })
+    let name = 'voiceover.m4a'
+    for (let i = 2; existsSync(join(dir, 'media', name)); i++) name = `voiceover-${i}.m4a`
+    const aiff = join(dir, 'media', name.replace('.m4a', '.aiff')), dest = join(dir, 'media', name)
+    execFileSync('/usr/bin/say', ['-v', voice, '-o', aiff, '--', text])
+    await new Promise<void>((res, rej) => { const p = spawn(ff, ['-v', 'error', '-y', '-i', aiff, '-ar', '48000', '-c:a', 'aac', '-b:a', '192k', dest]); p.on('error', rej); p.on('close', (c) => c === 0 ? res() : rej(new Error('The voiceover could not be saved.'))) })
+    rmSync(aiff, { force: true })
+    let duration = 0
+    const probe = ff.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'))
+    try { duration = Number(execFileSync(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', dest], { encoding: 'utf8' }).trim()) || 0 } catch { /* unknown */ }
+    return { file: `media/${name}`, url: server.url(dest), duration }
   })
   ipcMain.handle('project:matte', async (_e, dir: string): Promise<Project> => {
     if (process.platform !== 'darwin') throw new Error('Removing the background works on macOS for now.')

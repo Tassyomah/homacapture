@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
 import { Screencast, compositionSize } from '../../video/Screencast'
 import { keptDuration, keptRanges, outToSrc, srcToOut } from '../../video/ranges'
-import { ASPECTS, ASSET_LABEL, CAPTION_STYLES, EXPORT_PRESETS, LOOKS, STICKER_EMOJI, STICKER_SHAPES, defaultConfig, type Look, type Sticker, type TextAnim, type Transition, type Analysis, type BackdropFill, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type MusicTrack, type Overlay, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Transcript, type TranscriptSegment } from '../../shared/types'
+import { ASPECTS, ASSET_LABEL, CAPTION_STYLES, EXPORT_PRESETS, LOOKS, STICKER_EMOJI, STICKER_SHAPES, defaultConfig, type Look, type Sticker, type TextAnim, type Transition, type Analysis, type BackdropFill, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type MusicTrack, type Overlay, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Voiceover, type Transcript, type TranscriptSegment } from '../../shared/types'
 import { smoothCursor } from '../../video/motion'
 import { revealLabel } from '../platform'
 import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconDownload, IconLink, IconColorFilter, IconMicrophone, IconMusic, IconPalette, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconSparkles, IconTrash, IconUserCircle, IconWand, IconX } from '@tabler/icons-react'
@@ -30,18 +30,18 @@ const BGS: { id: Background; label: string; css: string }[] = [
 ]
 
 /** Everything the user can change; one snapshot per undo step. */
-type Edits = { config: RenderConfig; cuts: Cut[]; assets: DerivedAsset[]; zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; music: MusicTrack | null; chapters: Chapter[]; highlights: [number, number][]; director: DirectorState; autoEditedAt?: string }
+type Edits = { config: RenderConfig; cuts: Cut[]; assets: DerivedAsset[]; zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; music: MusicTrack | null; voiceovers: Voiceover[]; chapters: Chapter[]; highlights: [number, number][]; director: DirectorState; autoEditedAt?: string }
 
 export function Editor({ project }: { project: Project }) {
   // Saved edits win; defaults fill in settings that did not exist when the project was last saved.
   const [edits, setEdits] = useState<Edits>(() => ({
     config: { ...defaultConfig, ...(project.file?.config ?? {}) }, cuts: project.file?.cuts ?? [],
     assets: project.file?.assets ?? [], zooms: project.file?.zooms ?? [], speeds: project.file?.speeds ?? [], masks: project.file?.masks ?? [],
-    texts: project.file?.texts ?? [], overlays: project.file?.overlays ?? [], stickers: project.file?.stickers ?? [], music: project.file?.music ?? null, autoEditedAt: project.file?.autoEditedAt,
+    texts: project.file?.texts ?? [], overlays: project.file?.overlays ?? [], stickers: project.file?.stickers ?? [], music: project.file?.music ?? null, voiceovers: project.file?.voiceovers ?? [], autoEditedAt: project.file?.autoEditedAt,
     chapters: project.file?.chapters ?? [], highlights: project.file?.highlights ?? [],
     director: project.file?.director ?? { accepted: [], rejected: [] },
   }))
-  const { assets, zooms, speeds, masks, texts, overlays, stickers, music, chapters, highlights, director } = edits
+  const { assets, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, chapters, highlights, director } = edits
   const [media, setMedia] = useState<Record<string, string>>(project.assets.media ?? {})
   const [cutout, setCutout] = useState<string | null>(project.assets.cutout ?? null)
   const [matting, setMatting] = useState<string | null>(null)
@@ -102,12 +102,12 @@ export function Editor({ project }: { project: Project }) {
   useEffect(() => {
     if (!dirty.current) return
     const t = setTimeout(() => {
-      window.narrate.saveProject(project.dir, { version: 1, config: edits.config, cuts: edits.cuts, assets, zooms, speeds, masks, texts, overlays, stickers, music, autoEditedAt: edits.autoEditedAt,
+      window.narrate.saveProject(project.dir, { version: 1, config: edits.config, cuts: edits.cuts, assets, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, autoEditedAt: edits.autoEditedAt,
         chapters, highlights, director, savedAt: new Date().toISOString() })
         .catch((e) => console.warn('autosave failed', e))
     }, 400)
     return () => clearTimeout(t)
-  }, [edits, assets, zooms, speeds, masks, texts, overlays, stickers, music, chapters, highlights, director, project.dir])
+  }, [edits, assets, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, chapters, highlights, director, project.dir])
 
   // Smart Director (add-on §7–9): analyse on first open (cached in analysis.json afterwards), show progress meanwhile.
   const runAnalysis = useCallback((force = false) => {
@@ -169,7 +169,7 @@ export function Editor({ project }: { project: Project }) {
   const makeThumbs = () => {
     setThumbStatus('running')
     const times = thumbnailTimes(project.events, edits.cuts, speeds, chapters, highlights, analysis)
-    window.narrate.renderThumbnails(project.dir, edits.config, edits.cuts, times, { zooms, speeds, masks, texts, overlays, stickers, music })
+    window.narrate.renderThumbnails(project.dir, edits.config, edits.cuts, times, { zooms, speeds, masks, texts, overlays, stickers, music, voiceovers })
       .then((t) => { setThumbs(t); setThumbStatus('idle') })
       .catch((e: Error) => setThumbStatus(e.message))
   }
@@ -189,8 +189,8 @@ export function Editor({ project }: { project: Project }) {
   const onReject = (p: Proposal) => apply((e) => ({ ...e, director: { ...e.director, rejected: [...e.director.rejected, p.id], accepted: e.director.accepted.filter((id) => id !== p.id) } }))
   const onDismiss = () => apply((e) => ({ ...e, director: { ...e.director, dismissedAt: new Date().toISOString() } }))
 
-  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, micClean, media, cutout }, events: project.events, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, transcript }),
-    [project, micClean, media, cutout, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, transcript])
+  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, micClean, media, cutout }, events: project.events, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, transcript }),
+    [project, micClean, media, cutout, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, transcript])
   const size = compositionSize(props)
   const kept = useMemo(() => keptRanges(project.events, cuts, speeds), [project.events, cuts, speeds])
   const frames = Math.max(1, Math.ceil(keptDuration(project.events, cuts, speeds) * FPS))
@@ -280,6 +280,23 @@ export function Editor({ project }: { project: Project }) {
     const m = await pickMedia('music'); if (!m) return
     apply((e) => ({ ...e, music: { file: m.file, name: m.name, volume: e.music?.volume ?? 0.3, duck: e.music?.duck ?? true } }))
   }
+  // Voiceover from typed text with one of the Mac's own voices, placed at the playhead.
+  const [voiceList, setVoiceList] = useState<{ name: string; lang: string }[]>([])
+  const [vo, setVo] = useState<{ text: string; voice: string; busy: boolean }>({ text: '', voice: 'Samantha', busy: false })
+  useEffect(() => { if (window.narrate.platform === 'darwin') window.narrate.listVoices().then((v) => { setVoiceList(v); if (v.length && !v.some((x) => x.name === 'Samantha')) setVo((o) => ({ ...o, voice: v[0].name })) }).catch(() => {}) }, [])
+  const addVoice = async () => {
+    const text = vo.text.trim(); if (!text) return
+    setVo((o) => ({ ...o, busy: true }))
+    try {
+      const r = await window.narrate.speak(project.dir, text, vo.voice)
+      setMedia((x) => ({ ...x, [r.file]: r.url }))
+      const id = newId('v'), t = playheadSrc
+      apply((e) => ({ ...e, voiceovers: [...e.voiceovers, { id, t, text, voice: vo.voice, file: r.file, duration: r.duration, volume: 1 }].sort((a, b) => a.t - b.t) }))
+      setVo((o) => ({ ...o, text: '', busy: false })); setSel({ kind: 'voice', id })
+    } catch (err) { setVo((o) => ({ ...o, busy: false })); alert((err as Error).message) }
+  }
+  const editVoice = (id: string, patch: Partial<Voiceover>) => apply((e) => ({ ...e, voiceovers: e.voiceovers.map((x) => x.id === id ? { ...x, ...patch } : x) }))
+  const removeVoice = (id: string) => apply((e) => ({ ...e, voiceovers: e.voiceovers.filter((x) => x.id !== id) }))
   const setMusic = (patch: Partial<MusicTrack>) => apply((e) => ({ ...e, music: e.music ? { ...e.music, ...patch } : null }))
   const removeBackground = () => {
     setMatting('Cutting you out…')
@@ -316,7 +333,7 @@ export function Editor({ project }: { project: Project }) {
     ev: project.events, analysis, masterCuts: e.cuts, chapters: e.chapters, highlights: e.highlights, masterSavedAt: project.file?.savedAt ?? null }) }))
   const removeAsset = (id: string) => { if (selected === id) setSelected('master'); apply((e) => ({ ...e, assets: e.assets.filter((a) => a.id !== id) })) }
   const assetDuration = (a: DerivedAsset | null) => keptDuration(project.events, a ? a.cuts : edits.cuts, speeds)
-  const exportOne = (a: DerivedAsset | null) => window.narrate.exportProject(project.dir, a ? { ...edits.config, ...a.config } : edits.config, a ? a.cuts : edits.cuts, a ? a.name : 'master', format, { zooms, speeds, masks, texts, overlays, stickers, music })
+  const exportOne = (a: DerivedAsset | null) => window.narrate.exportProject(project.dir, a ? { ...edits.config, ...a.config } : edits.config, a ? a.cuts : edits.cuts, a ? a.name : 'master', format, { zooms, speeds, masks, texts, overlays, stickers, music, voiceovers })
   const exportAll = async () => {
     const list: (DerivedAsset | null)[] = [null, ...assets]
     setQueue({ total: list.length, done: 0, current: 'Master' })
@@ -345,6 +362,7 @@ export function Editor({ project }: { project: Project }) {
     if (it.kind === 'text') removeText(it.id)
     if (it.kind === 'broll') removeOverlay(it.id)
     if (it.kind === 'sticker') removeSticker(it.id)
+    if (it.kind === 'voice') removeVoice(it.id)
     setSel(null)
   }
 
@@ -409,7 +427,10 @@ export function Editor({ project }: { project: Project }) {
       <div className="capstyles">{CAPTION_STYLES.map((c) => (
         <button key={c.id} className={'cap-' + c.id + (config.captions === c.id ? ' on' : '')} onClick={() => set('captions', c.id as CaptionStyle)}>
           <span className="cap-sample">{c.id === 'off' ? '—' : c.id === 'word' ? <b>THIS</b> : c.id === 'box' ? <>THIS <b>ONE</b></> : c.id === 'karaoke' ? <>THIS <b>ONE</b></> : <>This <b>one</b></>}</span>
-          <span>{c.label}</span></button>))}</div></div>)
+          <span>{c.label}</span></button>))}</div>
+      {config.captions !== 'off' && <div className="row-btns">
+        <button className={config.capHighlight ? 'on' : ''} aria-pressed={config.capHighlight} onClick={() => set('capHighlight', !config.capHighlight)}>Highlight key words</button>
+        <button className={config.capEmoji ? 'on' : ''} aria-pressed={config.capEmoji} onClick={() => set('capEmoji', !config.capEmoji)}>Add emoji</button></div>}</div>)
   const paneHead = (title: string, sub: string, close?: boolean) => (
     <div className="pane-head"><div><h3>{title}</h3><p className="note">{sub}</p></div>
       {close && <button className="icon" aria-label="Close" data-tip="Close · Esc" onClick={() => setSel(null)}><IconX size={16} /></button>}</div>)
@@ -429,11 +450,21 @@ export function Editor({ project }: { project: Project }) {
       return <>{paneHead('Text', `Pops up at ${fmt(x.t)} for ${x.duration.toFixed(1)} s.`, true)}
         <div className="control"><div className="lbl"><span>Words</span></div>
           <input type="text" value={x.text} maxLength={40} onChange={(e) => editText(x.id, { text: e.target.value })} /></div>
-        <div className="control"><div className="lbl"><span>Look</span></div>{seg(x.style, [['pop', 'Pop'], ['title', 'Title card']] as [TextStyle, string][], (v) => editText(x.id, { style: v }))}</div>
-        <div className="control"><div className="lbl"><span>Comes in</span></div>{seg(x.anim ?? 'pop', [['pop', 'Pop'], ['slide', 'Slide up'], ['type', 'Typewriter'], ['slam', 'Slam']] as [TextAnim, string][], (v) => editText(x.id, { anim: v }))}</div>
-        {slider('Show for', `${x.duration.toFixed(1)} s`, 0.6, 5, 0.1, x.duration, (v) => editText(x.id, { duration: v }))}
+        <div className="control"><div className="lbl"><span>Look</span></div>{seg(x.style, [['pop', 'Pop'], ['title', 'Title card'], ['name', 'Name tag']] as [TextStyle, string][], (v) => editText(x.id, { style: v, ...(v === 'name' && x.duration < 3 ? { duration: 4 } : {}) }))}</div>
+        {x.style === 'name' && <div className="control"><div className="lbl"><span>Role</span></div>
+          <input type="text" value={x.sub ?? ''} maxLength={48} placeholder="Principal engineer, Microsoft" onChange={(e) => editText(x.id, { sub: e.target.value })} /></div>}
+        {x.style !== 'name' && <div className="control"><div className="lbl"><span>Comes in</span></div>{seg(x.anim ?? 'pop', [['pop', 'Pop'], ['slide', 'Slide up'], ['type', 'Typewriter'], ['slam', 'Slam']] as [TextAnim, string][], (v) => editText(x.id, { anim: v }))}</div>}
+        {slider('Show for', `${x.duration.toFixed(1)} s`, 0.6, 8, 0.1, x.duration, (v) => editText(x.id, { duration: v }))}
         {slider('Starts at', fmt(x.t), 0, Math.max(0.1, dur - 0.5), 0.05, x.t, (v) => editText(x.id, { t: v }))}
         {foot(x.t)}</>
+    }
+    if (it.kind === 'voice') {
+      const v = voiceovers.find((y) => y.id === it.id)!
+      return <>{paneHead('Voiceover', `${v.voice} · ${v.duration.toFixed(1)} s from ${fmt(v.t)}.`, true)}
+        <p className="vo-quote">“{v.text}”</p>
+        {slider('Volume', `${Math.round(v.volume * 100)}%`, 0.1, 1.5, 0.05, v.volume, (n) => editVoice(v.id, { volume: n }))}
+        {slider('Starts at', fmt(v.t), 0, Math.max(0.1, dur - 0.5), 0.05, v.t, (n) => editVoice(v.id, { t: n }))}
+        {foot(v.t)}</>
     }
     if (it.kind === 'sticker') {
       const k = stickers.find((y) => y.id === it.id)!
@@ -535,6 +566,21 @@ export function Editor({ project }: { project: Project }) {
       <div className="control"><div className="lbl"><span>Progress bar</span></div>
         {seg(config.progressBar, [['off', 'Off'], ['top', 'Top'], ['bottom', 'Bottom']] as ['off' | 'top' | 'bottom', string][], (v) => set('progressBar', v))}
         <span className="note">A thin coral bar that fills as the video plays, so people stay to the end.</span></div>
+      <div className="control"><div className="lbl"><span>Cinematic</span></div>
+        <div className="toggles">{([['vignette', 'Dark edges'], ['grain', 'Film grain'], ['bars', 'Movie bars'], ['shake', 'Shake on punch-ins']] as ['vignette' | 'grain' | 'bars' | 'shake', string][]).map(([k, l]) => (
+          <button key={k} className={config[k] ? 'on' : ''} aria-pressed={config[k]} onClick={() => set(k, !config[k])}>{l}</button>))}</div></div>
+      <div className="control"><div className="lbl"><span>Opening title</span></div>
+        {seg(config.intro, [[false, 'Off'], [true, 'On']], (v) => set('intro', v))}
+        {config.intro && <>
+          <input type="text" value={config.introTitle} maxLength={40} placeholder="What this video is about" onChange={(e) => set('introTitle', e.target.value)} />
+          <input type="text" value={config.introSub} maxLength={48} placeholder="Second line (optional)" onChange={(e) => set('introSub', e.target.value)} /></>}
+        <span className="note">Sits over the first 2.5 seconds with the video blurred behind it.</span></div>
+      <div className="control"><div className="lbl"><span>Closing card</span></div>
+        {seg(config.outro, [[false, 'Off'], [true, 'On']], (v) => set('outro', v))}
+        {config.outro && <>
+          <input type="text" value={config.outroText} maxLength={32} placeholder="Follow for more" onChange={(e) => set('outroText', e.target.value)} />
+          <input type="text" value={config.outroSub} maxLength={48} placeholder="@yourhandle (optional)" onChange={(e) => set('outroSub', e.target.value)} /></>}
+        <span className="note">Covers the last 3 seconds, so the video ends on what to do next.</span></div>
     </>
     if (shownTab === 'camera') return <>
       {paneHead('Camera', 'Your face in a corner of the video.')}
@@ -564,6 +610,12 @@ export function Editor({ project }: { project: Project }) {
         {seg(config.sfx, [[true, 'On'], [false, 'Off']], (v) => set('sfx', v))}
         {config.sfx && slider('Effects volume', `${Math.round(config.sfxVolume * 100)}%`, 0.05, 1, 0.05, config.sfxVolume, (v) => set('sfxVolume', v))}
         <span className="note">A whoosh on every zoom and B-roll, a pop on every text. Made in HomaCapture, so they never get copyright claims.</span></div>
+      {voiceList.length > 0 && <div className="control"><div className="lbl"><span>Voiceover</span><span>{voiceovers.length ? `${voiceovers.length} added` : ''}</span></div>
+        <textarea rows={3} value={vo.text} maxLength={600} placeholder="Type what the voice should say" onChange={(e) => setVo((o) => ({ ...o, text: e.target.value }))} />
+        <select value={vo.voice} onChange={(e) => setVo((o) => ({ ...o, voice: e.target.value }))}>
+          {voiceList.map((v) => <option key={v.name} value={v.name}>{v.name} · {v.lang.replace('en_', '')}</option>)}</select>
+        <button disabled={!vo.text.trim() || vo.busy} onClick={addVoice}><IconMicrophone size={15} />{vo.busy ? 'Making the voice…' : `Add at ${fmt(playheadSrc)}`}</button>
+        <span className="note">Uses your Mac's own voices, offline and free. Music dips under it like it does for you.</span></div>}
       {project.assets.system && slider('Computer sound', config.systemVolume === 0 ? 'Muted' : `${Math.round(config.systemVolume * 100)}%`, 0, 1.5, 0.05, config.systemVolume, (v) => set('systemVolume', v))}
     </>
     if (shownTab === 'words') return <>
@@ -660,7 +712,7 @@ export function Editor({ project }: { project: Project }) {
               <IconSparkles size={15} />{pendingCount} suggestion{pendingCount === 1 ? '' : 's'}</button>}
           </div>
           <Timeline ev={project.events} cuts={cuts} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks} texts={texts}
-            overlays={overlays} stickers={stickers} music={music} transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset}
+            overlays={overlays} stickers={stickers} music={music} voiceovers={voiceovers} transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset}
             onSeek={seekSrc} onRange={setRange} onSelect={setSel} onAction={rangeAction} />
           <p className="tl-help">Click to move the playhead · drag to select a stretch · click a block to edit it · <kbd>Space</kbd> plays · <kbd>←</kbd><kbd>→</kbd> step</p>
         </div>

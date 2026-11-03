@@ -66,9 +66,11 @@ export interface ManualZoom { id: string; t: number; duration: number; x: number
   /** Punch-in: jump straight in and out on a cut instead of easing (talking heads). */
   snap?: boolean }
 /** Kinetic text (auto-edit): a key phrase that pops in big over the video from `t` for `duration` (source seconds). */
-export type TextStyle = 'pop' | 'title'
+export type TextStyle = 'pop' | 'title' | 'name'
 export type TextAnim = 'pop' | 'slide' | 'type' | 'slam'
 export interface TextPop { id: string; t: number; duration: number; text: string; style: TextStyle
+  /** Second line of a name tag ('name' style): the person's role, e.g. "Principal engineer, Microsoft". */
+  sub?: string
   /** How it comes in: pop (springs up), slide (rises in), type (typewriter), slam (drops in big). Default pop. */
   anim?: TextAnim }
 /** Stickers: an emoji or a flat brand shape on top of the video. x/y = centre as a fraction of the frame; size = fraction of frame width. */
@@ -83,6 +85,8 @@ export interface Overlay { id: string; t: number; duration: number; file: string
   length?: number }
 /** Background music: one track under the whole video, looped, ducked while anyone speaks. `file` is relative (media/…). */
 export interface MusicTrack { file: string; name: string; volume: number; duck: boolean }
+/** A spoken line made from typed text with one of the computer's own voices (macOS `say`), placed at source time t. */
+export interface Voiceover { id: string; t: number; text: string; voice: string; file: string; duration: number; volume: number }
 /** A file the user added to a project (copied into <project>/media). */
 export interface MediaFile { file: string; url: string; kind: 'image' | 'video' | 'audio'; name: string; duration?: number }
 /** Playback speed for a stretch of the recording (spec §40); 1 = normal. Source seconds. */
@@ -120,6 +124,7 @@ export interface ProjectFile {
   overlays?: Overlay[]
   stickers?: Sticker[]
   music?: MusicTrack | null
+  voiceovers?: Voiceover[]
   /** When the automatic first edit of an uploaded video ran (it runs once; "Auto-edit again" redoes it). */
   autoEditedAt?: string
   chapters?: Chapter[]
@@ -203,6 +208,13 @@ export interface RenderConfig {
   /** Transition at each cut: 'big' = only where more than 2 s was removed (pause trims stay clean jump cuts). */
   transition: Transition
   transitionAt: 'big' | 'all'
+  /** Opening title card over the first seconds (blurred video behind it) and a follow card over the last seconds. */
+  intro: boolean; introTitle: string; introSub: string
+  outro: boolean; outroText: string; outroSub: string
+  /** Captions: key words (numbers, names, strong words) in mustard, and a matching emoji after the line. */
+  capHighlight: boolean; capEmoji: boolean
+  /** Cinematic finish: dark edges, film grain, letterbox bars, a short shake on every punch-in. */
+  vignette: boolean; grain: boolean; bars: boolean; shake: boolean
 }
 export type Look = 'none' | 'warm' | 'cool' | 'punchy' | 'soft' | 'film' | 'mono'
 export const LOOKS: { id: Look; label: string; css: string }[] = [
@@ -221,11 +233,13 @@ export const defaultConfig: RenderConfig = {
   micVolume: 1, systemVolume: 0.8, captions: 'off', voice: 'raw', keycaps: true,
   sfx: false, sfxVolume: 0.55, backdrop: 'off', backdropColor: 'paper', backdropImage: null,
   progressBar: 'off', look: 'none', brightness: 1, contrast: 1, saturation: 1, transition: 'none', transitionAt: 'big',
+  intro: false, introTitle: '', introSub: '', outro: false, outroText: 'Follow for more', outroSub: '',
+  capHighlight: false, capEmoji: false, vignette: false, grain: false, bars: false, shake: false,
 }
 
-export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; transcript?: Transcript | null; [k: string]: unknown }
+export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; transcript?: Transcript | null; [k: string]: unknown }
 /** Master-level instructions every derivative inherits. */
-export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null }
+export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[] }
 
 export type MicPermission = 'authorized' | 'denied' | 'restricted' | 'notDetermined' | 'unknown'
 export interface Permissions { screen: boolean; mic: MicPermission }
@@ -319,6 +333,9 @@ export interface NarrateApi {
   addMedia(dir: string, kind: 'music' | 'broll' | 'image'): Promise<MediaFile | null>
   /** Cut the speaker out (screen.cutout.webm) for Remove / blur background. Progress via onRecorderEvent 'matting'. */
   matteProject(dir: string): Promise<Project>
+  /** The computer's own voices for voiceovers (macOS), and a spoken file made from text into the project's media/. */
+  listVoices(): Promise<{ name: string; lang: string }[]>
+  speak(dir: string, text: string, voice: string): Promise<{ file: string; url: string; duration: number }>
   /** Developer screenshots only (NARRATE_OPEN): open a recording folder in the editor on launch. */
   onDevOpen(cb: (dir: string) => void): () => void
 }
