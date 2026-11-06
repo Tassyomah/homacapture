@@ -11,6 +11,8 @@ const api: NarrateApi = {
   platform: process.platform as NarrateApi['platform'],
   listDevices: () => ipcRenderer.invoke('devices:list'),
   repairScreen: () => ipcRenderer.invoke('permissions:repairScreen'),
+  pickArea: (displayId) => ipcRenderer.invoke('area:pick', displayId),
+  areaDone: (rect) => ipcRenderer.send('area:done', rect),
   relaunch: () => ipcRenderer.invoke('app:relaunch'),
   checkPermissions: (request) => ipcRenderer.invoke('permissions:check', request),
   openSettings: (which) => ipcRenderer.invoke('settings:open', which),

@@ -739,3 +739,15 @@ details.more[open] summary { margin-bottom: 8px; }
 details.more .control { padding-left: 0; padding-right: 0; border: 0; }
 .brand { display: inline-flex; align-items: center; gap: 8px; }
 .brand img { width: 20px; height: 20px; display: block; }
+
+/* Choosing what to record */
+html.overlay-page, html.overlay-page body, html.overlay-page #root { background: transparent !important; }
+.area-page { position: fixed; inset: 0; cursor: crosshair; background: rgba(20,20,15,.35); touch-action: none; user-select: none; }
+.area-rect { position: absolute; box-shadow: 0 0 0 2px var(--coral), 0 0 0 9999px rgba(20,20,15,.4); background: transparent; cursor: move; }
+.area-page:has(.area-rect) { background: transparent; }
+.area-rect span { position: absolute; left: 8px; top: 8px; font-family: var(--mono); font-size: 12px; color: #fff; background: rgba(20,20,15,.75); padding: 3px 7px; border-radius: 6px; }
+.area-hint { position: absolute; left: 50%; top: 42%; transform: translateX(-50%); margin: 0; color: #fff; font-size: 18px; font-weight: 500; pointer-events: none; text-shadow: 0 1px 8px rgba(20,20,15,.6); }
+.area-bar { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; padding: 8px; border-radius: 12px; background: var(--bg); box-shadow: var(--shadow-pop); cursor: default; }
+.area-live { position: fixed; outline: 2px dashed var(--coral); pointer-events: none; }
+.area-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.area-pick .link { background: none; box-shadow: none; padding: 0; font-size: 12.5px; color: var(--muted); text-decoration: underline; }

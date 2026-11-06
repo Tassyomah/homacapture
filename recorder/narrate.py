@@ -72,8 +72,8 @@ def check_permissions(request=False):
 # ---------------------------------------------------------------- cursor + keyboard logs
 class CursorLog:
     """Cursor position/buttons/shape by polling. No Accessibility permission needed. Journaled for crash recovery."""
-    def __init__(self, screen, scale, outdir, journal, hz=120):
-        self.f = screen.frame(); self.scale = scale; self.hz = hz; self.journal = journal
+    def __init__(self, screen, scale, outdir, journal, hz=120, offset=(0, 0)):
+        self.f = screen.frame(); self.scale = scale; self.hz = hz; self.journal = journal; self.offset = offset
         self.moves, self.clicks, self.cursorChanges = [], [], []
         self.cursors = {}
         self.outdir = outdir; os.makedirs(os.path.join(outdir, "cursors"), exist_ok=True)
@@ -81,8 +81,8 @@ class CursorLog:
         self.stop = threading.Event()
 
     def to_px(self, p):
-        return (round((p.x - self.f.origin.x) * self.scale, 2),
-                round((self.f.origin.y + self.f.size.height - p.y) * self.scale, 2))
+        return (round((p.x - self.f.origin.x) * self.scale - self.offset[0], 2),
+                round((self.f.origin.y + self.f.size.height - p.y) * self.scale - self.offset[1], 2))
 
     def cursor_id(self):
         c = NSCursor.currentSystemCursor()
@@ -221,6 +221,15 @@ def record(args):
     f = nsscreen.frame(); scale = float(nsscreen.backingScaleFactor())
     disp = {"id": int(nsscreen.deviceDescription()["NSScreenNumber"]), "scale": scale, "pointWidth": f.size.width, "pointHeight": f.size.height,
             "width": int(round(f.size.width * scale)), "height": int(round(f.size.height * scale))}
+    # Recording part of the screen: only that area is captured, and everything downstream sees it as the whole display.
+    crop = None
+    if args.crop:
+        cx, cy, cw, ch = [int(v) // 2 * 2 for v in args.crop.split(",")]
+        cx = max(0, min(cx, disp["width"] - 2)); cy = max(0, min(cy, disp["height"] - 2))
+        cw = min(cw, (disp["width"] - cx) // 2 * 2); ch = min(ch, (disp["height"] - cy) // 2 * 2)
+        if cw < 64 or ch < 64: emit(event="error", code="bad_area", message="That area is too small to record."); sys.exit(3)
+        crop = (cx, cy, cw, ch)
+        disp.update(width=cw, height=ch, pointWidth=cw / scale, pointHeight=ch / scale, crop={"x": cx, "y": cy})
 
     t_launch = now()
     setup = {"version": 1, "display": disp, "fps": args.fps, "tLaunch": t_launch, "encoder": "h264_videotoolbox", "mic": mic_name,
@@ -234,7 +243,7 @@ def record(args):
            "-f", "avfoundation", "-framerate", str(args.fps), "-pixel_format", "nv12", "-capture_cursor", "0", "-i", f"{screen_idx}:none"]
     ff_mic = mic_idx is not None and not MicAudio.available()          # fallback only: ffmpeg drops mic audio on this hardware
     if ff_mic: cmd += ["-f", "avfoundation", "-i", f"none:{mic_idx}"]
-    cmd += ["-copyts", "-map", "0:v", "-c:v", "h264_videotoolbox", "-b:v", f"{mbps}M", "-realtime", "1", "-g", str(args.fps), *flush, raw_video]
+    cmd += ["-copyts", "-map", "0:v", *(["-vf", f"crop={crop[2]}:{crop[3]}:{crop[0]}:{crop[1]}"] if crop else []), "-c:v", "h264_videotoolbox", "-b:v", f"{mbps}M", "-realtime", "1", "-g", str(args.fps), *flush, raw_video]
     if ff_mic: cmd += ["-map", "1:a", "-c:a", "pcm_s16le", "-ar", "48000", *flush, mic_path]
     mic = None
     if mic_idx is not None and not ff_mic:
@@ -284,7 +293,7 @@ def record(args):
             warning = ((warning + "\n") if warning else "") + f"Computer sound could not be recorded ({e}); recording without it."
 
     journal = Journal(os.path.join(outdir, "events.partial.jsonl"))
-    cl = CursorLog(nsscreen, scale, outdir, journal); th = threading.Thread(target=cl.run, daemon=True); th.start()
+    cl = CursorLog(nsscreen, scale, outdir, journal, offset=(crop[0], crop[1]) if crop else (0, 0)); th = threading.Thread(target=cl.run, daemon=True); th.start()
     kl = KeyLog(journal); kth = threading.Thread(target=kl.run, daemon=True); kth.start()
     pauses = []
     emit(event="started", out=outdir, display=disp, tLaunch=t_launch, encoder="h264_videotoolbox", capture="avfoundation",
@@ -348,7 +357,7 @@ def meter(args):
 def main():
     ap = argparse.ArgumentParser(prog="narrate")
     ap.add_argument("cmd", nargs="?", default="record")
-    ap.add_argument("--out"); ap.add_argument("--src"); ap.add_argument("--fps", type=int, default=60)
+    ap.add_argument("--out"); ap.add_argument("--src"); ap.add_argument("--crop"); ap.add_argument("--fps", type=int, default=60)
     ap.add_argument("--screen", type=int, default=0); ap.add_argument("--mic", type=int); ap.add_argument("--no-mic", action="store_true")
     ap.add_argument("--camera", type=int); ap.add_argument("--system-audio", action="store_true"); ap.add_argument("--model", default="base.en")
     ap.add_argument("--list", action="store_true"); ap.add_argument("--check", action="store_true"); ap.add_argument("--request", action="store_true")

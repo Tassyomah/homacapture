@@ -4,7 +4,7 @@ import { execFileSync, spawn } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import type { Analysis, BrandKit, ClipOp, Cut, Devices, ExportFormat, ExportProgress, MasterExtras, MediaFile, Project, ProjectFile, RecorderEvent, RecordingEvents, RenderConfig, StartOptions, Transcript, UnfinishedRecording, VoiceFx } from '../shared/types'
+import type { Analysis, BrandKit, CaptureArea, ClipOp, Cut, Devices, ExportFormat, ExportProgress, MasterExtras, MediaFile, Project, ProjectFile, RecorderEvent, RecordingEvents, RenderConfig, StartOptions, Transcript, UnfinishedRecording, VoiceFx } from '../shared/types'
 import { Recorder } from './recorder'
 import { AssetServer } from './assetServer'
 import { exportProject, findFfmpeg, renderThumbnails } from './exporter'
@@ -37,7 +37,7 @@ let bar: BrowserWindow | null = null
 let server: AssetServer
 const recorder = new Recorder(RECORDER)
 
-function load(w: BrowserWindow, hash = '') {
+function load(w: BrowserWindow, hash = process.env.NARRATE_SCREENSHOT ? process.env.NARRATE_DEV_HASH ?? '' : '') {
   if (process.env.ELECTRON_RENDERER_URL) w.loadURL(process.env.ELECTRON_RENDERER_URL + hash)
   else w.loadFile(join(__dirname, '../renderer/index.html'), { hash: hash.replace('#', '') })
 }
@@ -101,7 +101,24 @@ function showBar() {
   bar.setAlwaysOnTop(true, 'screen-saver'); bar.setVisibleOnAllWorkspaces(true)
   load(bar, '#bar')
 }
-function hideBar() { bar?.close(); bar = null }
+function hideBar() { bar?.close(); bar = null; areaFrame?.close(); areaFrame = null }
+
+const overlay = (d: Electron.Display, clickable: boolean) => {
+  const w = new BrowserWindow({ ...d.bounds, frame: false, transparent: true, hasShadow: false, resizable: false, movable: false, skipTaskbar: true, fullscreenable: false, enableLargerThanScreen: true,
+    focusable: clickable, webPreferences: { preload: join(__dirname, '../preload/index.mjs'), sandbox: false } })
+  w.setAlwaysOnTop(true, 'screen-saver'); w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  return w
+}
+/** The dashed line around the area while recording. It sits outside the area and is kept out of captures, so it never shows in the video. */
+let areaFrame: BrowserWindow | null = null
+function showAreaFrame(displayId: number | undefined, a: CaptureArea) {
+  const d = screen.getAllDisplays().find((x) => x.id === displayId) ?? screen.getPrimaryDisplay()
+  const k = d.scaleFactor
+  areaFrame = overlay(d, false)
+  areaFrame.setIgnoreMouseEvents(true); areaFrame.setContentProtection(true)
+  const at = areaFrame.getContentBounds()
+  load(areaFrame, `#frame=${[a.x / k - (at.x - d.bounds.x), a.y / k - (at.y - d.bounds.y), a.w / k, a.h / k].map(Math.round).join(',')}`)
+}
 
 function broadcast(ev: RecorderEvent) { for (const w of BrowserWindow.getAllWindows()) w.webContents.send('recorder:event', ev) }
 
@@ -182,6 +199,19 @@ app.whenReady().then(async () => {
   server = await AssetServer.start(RECORDINGS)
 
   ipcMain.handle('devices:list', (): Promise<Devices> => recorder.listDevices())
+  // Drag to choose the part of a screen to record. Points in, even pixels out.
+  ipcMain.handle('area:pick', (_e, displayId: number) => new Promise<CaptureArea | null>((res) => {
+    const d = screen.getAllDisplays().find((x) => x.id === displayId) ?? screen.getPrimaryDisplay()
+    const w = overlay(d, true); let finished = false
+    const finish = (a: CaptureArea | null) => { if (finished) return; finished = true; ipcMain.removeAllListeners('area:done'); if (!w.isDestroyed()) w.close(); win?.show(); res(a) }
+    ipcMain.once('area:done', (_ev, r: CaptureArea | null) => {
+      // macOS may keep the layer below the menu bar, so its own position counts towards where the area really is.
+      const k = d.scaleFactor, even = (n: number) => Math.floor((n * k) / 2) * 2, at = w.getContentBounds()
+      finish(r ? { x: even(r.x + at.x - d.bounds.x), y: even(r.y + at.y - d.bounds.y), w: even(r.w), h: even(r.h) } : null)
+    })
+    w.on('closed', () => finish(null))
+    win?.hide(); load(w, '#area'); w.show(); w.focus()
+  }))
   ipcMain.handle('app:relaunch', () => { app.relaunch(); app.exit(0) })
   // macOS keeps a Screen Recording entry tied to the build it was granted to, and toggling it in System Settings does not
   // update that. Clearing HomaCapture's own entry and asking again gives a fresh one for this build. Runs only on the user's click.
@@ -198,6 +228,7 @@ app.whenReady().then(async () => {
     const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19)
     await recorder.start({ ...opts, out: join(RECORDINGS, stamp) })
     win?.hide(); showBar()
+    if (opts.area) showAreaFrame(opts.displayId, opts.area)
     globalShortcut.register('CommandOrControl+Shift+S', () => recorder.stop())
     globalShortcut.register('CommandOrControl+Shift+P', () => (recorder.state === 'paused' ? recorder.resume() : recorder.pause()))
   })

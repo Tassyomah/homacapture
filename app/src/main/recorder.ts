@@ -69,6 +69,7 @@ export class Recorder extends EventEmitter {
     if (opts.mic === null) args.push('--no-mic'); else args.push('--mic', String(opts.mic))
     if (opts.camera !== null && opts.camera !== undefined) args.push('--camera', String(opts.camera))
     if (opts.systemAudio) args.push('--system-audio')
+    if (opts.area) args.push('--crop', [opts.area.x, opts.area.y, opts.area.w, opts.area.h].join(','))
     return new Promise((res, rej) => {
       const p = spawn(PYTHON, args, { stdio: ['pipe', 'pipe', 'pipe'], ...SPAWN })
       this.proc = p

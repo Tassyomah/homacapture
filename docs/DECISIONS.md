@@ -67,3 +67,6 @@ Tassy: everything built at the studio is a Homa-something derived from the Homal
 
 ## 2026-11-06 · First-use pass
 Tested from a brand-new upload, not an edited project: uploads open full frame; a Start here guide (Smart edit, Add captions, Add text); clicking the video plays it; the video track shows real frames and the sound shape; hover info moved to the status line; Framing folded away; Smart edit uses short captions.
+
+## 2026-11-06 · Choose what to record
+Tassy: "select a screen or area to record". Home has Whole screen / Choose area under Screen. The area layer (`AreaPicker.tsx`, one window over the chosen display) takes a drag, moves it, and offers Free, 16:9, 9:16, 1:1, 4:5. `--crop x,y,w,h` crops inside the capture command, so screen.mp4 is only that area; `display` in events becomes the area and cursor positions are offset, so everything downstream treats it as a whole screen. A dashed line shows the area while recording, sits outside it and is excluded from capture. macOS only for now.

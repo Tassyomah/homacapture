@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Devices, Permissions, Project, UnfinishedRecording } from '../../shared/types'
-import { IconCamera, IconClock, IconDeviceDesktop, IconMicrophone, IconPlayerPlay, IconTrash, IconUpload, IconVolume, IconWand } from '@tabler/icons-react'
+import type { CaptureArea, Devices, Permissions, Project, UnfinishedRecording } from '../../shared/types'
+import { IconCamera, IconClock, IconCrop, IconDeviceDesktop, IconMicrophone, IconPlayerPlay, IconTrash, IconUpload, IconVolume, IconWand } from '@tabler/icons-react'
 import { isWin, keys, machine } from '../platform'
 
 type Phase = { kind: 'idle' } | { kind: 'countdown'; n: number } | { kind: 'starting' }
@@ -100,11 +100,17 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
     setUnfinished((l) => l.filter((x) => x.dir !== u.dir))
   }
 
+  const [area, setArea] = useState<CaptureArea | null>(null)
+  const chooseArea = async () => {
+    const id = devices?.displays.find((d) => d.ordinal === screen)?.id; if (id == null) return
+    const a = await window.narrate.pickArea(id); if (a) setArea(a)
+  }
+  useEffect(() => { setArea(null) }, [screen])     // an area belongs to the screen it was drawn on
   const begin = async () => {
     setError(null)
     for (let n = countdown; n > 0; n--) { setPhase({ kind: 'countdown', n }); await new Promise((r) => setTimeout(r, 1000)) }
     setPhase({ kind: 'starting' })
-    try { await window.narrate.startRecording({ screen, mic, camera, systemAudio, fps: 60 }) }
+    try { await window.narrate.startRecording({ screen, mic, camera, systemAudio, fps: 60, area, displayId: devices?.displays.find((d) => d.ordinal === screen)?.id }) }
     catch (e) { setError(friendly((e as Error).message)); setPhase({ kind: 'idle' }) }
   }
 
@@ -164,6 +170,14 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
                 {!devices && <option>Looking for screens…</option>}
                 {devices?.displays.map((d) => <option key={d.ordinal} value={d.ordinal}>{d.name} · {d.width}×{d.height}</option>)}
               </select></div>
+            {!isWin && <div className="opt"><span className="opt-name"><IconCrop size={18} stroke={1.6} />Record</span>
+              <div className="opt-ctl area-pick">
+                <div className="seg">
+                  <button className={!area ? 'on' : ''} onClick={() => setArea(null)}>Whole screen</button>
+                  <button className={area ? 'on' : ''} onClick={() => void chooseArea()}>Choose area</button>
+                </div>
+                {area && <button className="link" onClick={() => void chooseArea()}>{area.w}×{area.h} · Change</button>}
+              </div></div>}
             <div className="opt"><span className="opt-name"><IconMicrophone size={18} stroke={1.6} />Microphone</span>
               <div className="opt-ctl">
                 <select value={mic ?? ''} onChange={(e) => setMic(e.target.value === '' ? null : Number(e.target.value))}>

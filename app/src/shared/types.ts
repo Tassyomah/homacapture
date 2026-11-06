@@ -293,7 +293,9 @@ export interface Devices {
   cameras?: { index: number; name: string }[]
   displays: { ordinal: number; id: number; width: number; height: number; name: string }[]
 }
-export interface StartOptions { screen: number; mic: number | null; camera?: number | null; systemAudio?: boolean; fps: number }
+/** Part of a screen to record, in that screen's pixels. */
+export interface CaptureArea { x: number; y: number; w: number; h: number }
+export interface StartOptions { screen: number; mic: number | null; camera?: number | null; systemAudio?: boolean; fps: number; area?: CaptureArea | null; displayId?: number }
 /** A recording folder whose recorder died before writing events.json (recording.json still present). */
 export interface UnfinishedRecording { dir: string; name: string; startedAt: string; display: DisplayInfo; mic: string | null }
 export type ExportFormat = 'mp4' | 'gif'
@@ -317,6 +319,9 @@ export interface NarrateApi {
   platform: Platform
   listDevices(): Promise<Devices>
   relaunch(): Promise<void>
+  /** Opens the drag-to-select layer over a screen; null if cancelled. */
+  pickArea(displayId: number): Promise<CaptureArea | null>
+  areaDone(rect: { x: number; y: number; w: number; h: number } | null): void
   /** Clears HomaCapture's stale Screen Recording entry and asks macOS again. */
   repairScreen(): Promise<Permissions>
   checkPermissions(request: boolean): Promise<Permissions>
