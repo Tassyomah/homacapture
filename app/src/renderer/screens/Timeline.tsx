@@ -32,7 +32,7 @@ export function piecesOf(ranges: Range[], splits: number[]): Range[] {
  * stays in place when the cut changes.
  */
 export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, voiceovers = [], inserts = [], transcript, playhead, range, selected, editable, scale = 1,
-  onSeek, onRange, onSelect, onAction, onDragStart, onDragItem, onDragEnd, onMenu }: {
+  onSeek, onRange, onSelect, onAction, onDragStart, onDragItem, onDragEnd, onMenu, onHover, strip }: {
   ev: RecordingEvents; cuts: Cut[]; ranges: Range[]; splits?: number[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[]
   transcript?: Transcript | null; playhead: number; range: [number, number] | null; selected: Item | null
   /** False while editing a derived version: only cuts belong to it, so the other tracks are read-only. */
@@ -42,6 +42,9 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
   onSeek: (tSrc: number) => void; onRange: (r: [number, number] | null) => void; onSelect: (it: Item | null) => void; onAction: (a: RangeAction) => void
   onDragStart: (it: Item) => void; onDragItem: (it: Item, mode: DragMode, tOut: number) => void; onDragEnd: (it: Item, mode: DragMode, tOut: number) => void
   onMenu: (it: Item, x: number, y: number) => void
+  /** What the pointer is over, for the status line. */
+  onHover: (text: string | null) => void
+  strip?: { strip: string; frames: number; aspect: number; wave: string | null } | null
 }) {
   const total = useMemo(() => Math.max(0.001, ranges.reduce((s, r) => s + playLen(r), 0)), [ranges])
   const pieces = useMemo(() => piecesOf(ranges, splits), [ranges, splits])
@@ -54,6 +57,12 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
   const [hover, setHover] = useState<{ x: number; t: number; info: string | null } | null>(null)
   const [snap, setSnap] = useState<number | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
+  const [areaW, setAreaW] = useState(0)
+  useEffect(() => {
+    const a = area.current; if (!a) return
+    const ro = new ResizeObserver(() => setAreaW(a.clientWidth)); ro.observe(a); setAreaW(a.clientWidth)
+    return () => ro.disconnect()
+  }, [])
   // Zoomed in: the view follows the playhead.
   useEffect(() => {
     const v = scroller.current, a = area.current; if (!v || !a || scale <= 1) return
@@ -96,6 +105,7 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
     const t = timeAt(e.clientX)
     const info = (e.target as HTMLElement).closest?.('[data-info]')?.getAttribute('data-info') ?? null
     setHover({ x: e.clientX - area.current!.getBoundingClientRect().left, t: outAt(e.clientX), info })
+    onHover(info)
     const d = drag.current; if (!d) return
     if (d.scrub) { onSeek(t); return }
     if (!d.moved && Math.abs(e.clientX - d.x) > 4) {
@@ -150,6 +160,17 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
     if (!box || !view) return { display: 'none' }
     return { position: 'fixed', top: view.top - above, left: Math.max(view.left + 130, Math.min(view.right - 130, box.left + box.width * fraction)) }
   }
+  // The video track shows the video: frames across, the shape of the sound along the bottom.
+  const film = (p: Range) => {
+    if (!strip || !areaW) return null
+    const pieceW = (playLen(p) / total) * areaW, tileW = Math.max(24, 52 * strip.aspect), n = Math.min(240, Math.ceil(pieceW / tileW)), rec = ev.videoDuration
+    const sound = strip.wave && <i className="wave" style={{ width: pieceW * (rec / Math.max(0.01, p.end - p.start)), left: -(p.start / Math.max(0.01, p.end - p.start)) * pieceW, backgroundImage: `url("${strip.wave}")` }} />
+    return <>{Array.from({ length: n }, (_, i) => {
+      const t = p.start + ((i + 0.5) * tileW / Math.max(1, pieceW)) * (p.end - p.start)
+      const f = Math.max(0, Math.min(strip.frames - 1, Math.floor((t / rec) * strip.frames)))
+      return <i key={i} className="frame" style={{ left: i * tileW, width: tileW, backgroundImage: `url("${strip.strip}")`, backgroundSize: `${strip.frames * tileW}px 100%`, backgroundPosition: `${-f * tileW}px 0` }} />
+    })}{sound}</>
+  }
   const it = (x: Item) => JSON.stringify(x)
   const on = (x: Item) => (selected && sameItem(selected, x) ? ' on' : '')
   const ends = (show: boolean) => show ? <><i className="edge l" /><i className="edge r" /></> : null
@@ -162,7 +183,7 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
 
   return (
     <div className="tl" onContextMenu={menu}>
-      <div className="tl-scroll" ref={scroller}><div className="tl-area" ref={area} style={{ width: `${scale * 100}%` }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => setHover(null)}>
+      <div className="tl-scroll" ref={scroller}><div className="tl-area" ref={area} style={{ width: `${scale * 100}%` }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => { setHover(null); onHover(null) }}>
         <div className="ruler" data-info="Drag here to scrub">
           {ticks.map((t) => <span key={t} style={{ left: `${(t / total) * 100}%` }}>{fmtShort(t)}</span>)}
         </div>
@@ -172,6 +193,7 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
             const from = pieces.slice(0, i).reduce((s, q) => s + playLen(q), 0)
             return <div key={'k' + i} className={'blk kept' + (p.ins ? ' ins' : '') + on(x)} style={{ left: `${(from / total) * 100}%`, width: `${(playLen(p) / total) * 100}%` }} data-item={it(x)}
               data-info={`${p.ins ? p.ins.name : 'Clip'} · ${fmt(playLen(p))}${p.rate !== 1 ? ` · ${p.rate}× speed` : ''} · click to edit`}>
+              {!p.ins && film(p)}
               {p.ins && <span className="blk-name">{p.ins.name}</span>}{p.rate !== 1 && <span className="blk-name">{p.rate}×</span>}{ends(true)}</div>
           })}
           {cuts.map((c, i) => <div key={'c' + i} className={'blk joint' + on({ kind: 'cut', i })} style={{ left: pct(Math.min(...c)) }}
@@ -215,7 +237,6 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
         {snap != null && <div className="snap" style={{ left: `${(snap / total) * 100}%` }} />}
         <div className="playhead" style={{ left: pct(playhead) }} />
         {hover && <div className="ghost" style={{ left: hover.x }} />}
-        {hover && <div className="bubble" style={floating(hover.x / (area.current?.clientWidth || 1), 30)}>{hover.info ? <><b>{fmt(hover.t)}</b> {hover.info}</> : fmt(hover.t)}</div>}
       </div></div>
       <div className="tl-labels">{labels.map((l) => <span key={l.name} style={l.rows > 1 ? { height: 22 * l.rows } : undefined}>{l.name}</span>)}</div>
     </div>

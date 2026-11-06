@@ -712,3 +712,28 @@ h2 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; color: v
 .ed-top .rail { padding: 8px 6px; scrollbar-width: none; } .ed-top .rail::-webkit-scrollbar { display: none; }
 .ed-top .rail button { padding: 7px 0 6px; }
 .stickers.big button { font-size: 24px; aspect-ratio: 1; }
+
+/* First-use clarity (2026-11-06): real pictures on the video track, a place to start, fewer settings up front. */
+.ruler + .lane { height: 56px; }
+.tl-labels span:first-child { height: 56px; }
+.blk.kept { background: #2A2A25; box-shadow: none; }
+.blk.kept:hover { background: #2A2A25; filter: brightness(1.08); }
+.blk.kept.on { background: #2A2A25; box-shadow: none; outline: 2px solid var(--coral); outline-offset: -2px; z-index: 1; }
+.blk.kept.ins { background: #E8EFE9; }
+.blk.kept .frame { position: absolute; top: 0; bottom: 0; background-repeat: no-repeat; pointer-events: none; }
+.blk.kept .wave { position: absolute; bottom: 0; height: 16px; background-size: 100% 100%; background-repeat: no-repeat; opacity: .85; pointer-events: none; }
+.blk-name { background: rgba(255,255,255,.9); border-radius: 3px; padding: 0 4px; left: 5px; z-index: 1; }
+.blk.kept .edge { color: #fff; z-index: 2; }
+.blk.joint { top: 14px; bottom: 14px; z-index: 2; opacity: .9; }
+.start { display: flex; flex-direction: column; gap: 6px; margin-bottom: 6px; }
+.start-title { margin: 0; font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.start button { justify-content: flex-start; text-align: left; gap: 10px; padding: 10px; background: var(--well); box-shadow: none; border-radius: 8px; color: var(--text); }
+.start button:hover { background: var(--line); }
+.start button svg { flex: none; color: var(--coral); }
+.start button span { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.start button b { font-size: 13.5px; font-weight: 600; }
+.start button i { font-style: normal; font-size: 11.5px; color: var(--muted); line-height: 1.3; white-space: normal; }
+details.more { padding: 12px 20px; }
+details.more summary { cursor: pointer; font-size: 13px; color: var(--muted); }
+details.more[open] summary { margin-bottom: 8px; }
+details.more .control { padding-left: 0; padding-right: 0; border: 0; }

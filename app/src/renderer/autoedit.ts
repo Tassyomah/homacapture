@@ -79,7 +79,7 @@ export function autoEdit(ev: RecordingEvents, tr: Transcript, level = 1.28): Aut
     texts.push({ id: `auto-t${texts.length}`, t: pick.start, duration, text: pick.text, style: 'pop' })
   })
 
-  return { cuts, zooms, texts, config: { padding: 0, radius: 0, zoom: 1, background: 'ink', captions: 'bold', voice: 'clean' } }
+  return { cuts, zooms, texts, config: { padding: 0, radius: 0, zoom: 1, background: 'ink', captions: 'karaoke', voice: 'clean' } }
 }
 
 /** The most "poppable" 1–3 words of a sentence: numbers (with the word they count), names, strong words, long words. */

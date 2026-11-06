@@ -48,7 +48,8 @@ type Edits = { config: RenderConfig; cuts: Cut[]; assets: DerivedAsset[]; zooms:
 export function Editor({ project }: { project: Project }) {
   // Saved edits win; defaults fill in settings that did not exist when the project was last saved.
   const [edits, setEdits] = useState<Edits>(() => ({
-    config: { ...defaultConfig, ...(project.file?.config ?? {}) }, cuts: project.file?.cuts ?? [],
+    // A new upload opens as it was filmed: full frame. The padded, rounded look is for screen recordings.
+    config: { ...defaultConfig, ...(project.events.source === 'import' && !project.file ? { padding: 0, radius: 0, background: 'ink' as Background } : {}), ...(project.file?.config ?? {}) }, cuts: project.file?.cuts ?? [],
     assets: project.file?.assets ?? [], zooms: project.file?.zooms ?? [], speeds: project.file?.speeds ?? [], masks: project.file?.masks ?? [],
     texts: project.file?.texts ?? [], overlays: project.file?.overlays ?? [], stickers: project.file?.stickers ?? [], music: project.file?.music ?? null, voiceovers: project.file?.voiceovers ?? [], inserts: project.file?.inserts ?? [], splits: project.file?.splits ?? [], autoEditedAt: project.file?.autoEditedAt,
     chapters: project.file?.chapters ?? [], highlights: project.file?.highlights ?? [],
@@ -78,6 +79,9 @@ export function Editor({ project }: { project: Project }) {
   const [format, setFormat] = useState<'mp4' | 'gif'>('mp4')
   const [playheadSrc, setPlayheadSrc] = useState(0)
   const [panel, setPanel] = useState<Panel>('media')
+  const [hoverInfo, setHoverInfo] = useState<string | null>(null)
+  const [strip, setStrip] = useState<{ strip: string; frames: number; aspect: number; wave: string | null } | null>(null)
+  useEffect(() => { void window.narrate.timelineStrip(project.dir).then(setStrip).catch(() => {}) }, [project.dir])
   const [exporting, setExporting] = useState(false)
   const [tlScale, setTlScale] = useState(1)
   const [working, setWorking] = useState<string | null>(null)
@@ -863,9 +867,9 @@ export function Editor({ project }: { project: Project }) {
 
   /** Nothing selected: how the whole video is framed. */
   const videoPane = () => <>
-    {paneHead('Video', 'Click anything on the video or the timeline to edit it.')}
+    {paneHead('Video', 'Select something to edit it here.')}
     <div className="control"><div className="lbl"><span>Shape</span><span>{config.aspect === 'source' ? `${W}×${H}` : config.aspect}</span></div>
-      {seg(config.aspect, ASPECTS.map((a) => [a.id, a.label] as [typeof config.aspect, string]), (v) => set('aspect', v))}
+      {seg(config.aspect, ASPECTS.map((a) => [a.id, upload && a.id === 'source' ? 'Original' : a.label] as [typeof config.aspect, string]), (v) => set('aspect', v))}
       {config.aspect !== 'source' && ASPECTS.find((a) => a.id === config.aspect)!.ratio! < 1 &&
         <span className="note">{upload ? 'Vertical and square crops stay on the speaker.' : 'Vertical and square crops follow your cursor and clicks.'}</span>}</div>
     <div className="control"><div className="lbl"><span>Background</span></div>
@@ -874,7 +878,7 @@ export function Editor({ project }: { project: Project }) {
           <span style={{ background: b.css }} /></button>))}</div></div>
     {upload && window.narrate.platform === 'darwin' && <div className="control"><div className="lbl"><span>Background behind you</span></div>
       {!cutout ? <><button className="wide" disabled={!!matting} onClick={removeBackground}><IconWand size={16} />{matting ?? 'Remove background'}</button>
-        <span className="note">Cuts you out of the video so you can blur what is behind you or swap it for a colour or a picture. Takes about half the video’s length, once.</span></>
+        </>
         : <>{seg(config.backdrop, [['off', 'As filmed'], ['blur', 'Blur'], ['color', 'Colour'], ['image', 'Picture']] as [BackdropFill, string][], (v) => {
             if (v === 'image' && !config.backdropImage) { void pickMedia('image').then((m) => { if (m) apply((e) => ({ ...e, config: { ...e.config, backdrop: 'image', backdropImage: m.file } })) }); return }
             set('backdrop', v) })}
@@ -884,8 +888,10 @@ export function Editor({ project }: { project: Project }) {
           {config.backdrop === 'image' && <button onClick={() => void pickMedia('image').then((m) => { if (m) set('backdropImage', m.file) })}><IconPhoto size={15} />Choose another picture</button>}</>}
     </div>}
     {!upload && slider('Automatic zoom', config.zoom === 1 ? 'Off' : `${config.zoom.toFixed(1)}×`, 1, 3, 0.1, config.zoom, (v) => set('zoom', v), 'How far it zooms in when you click. 1× turns it off.')}
-    {slider('Padding', `${Math.round(config.padding * 100)}%`, 0, 0.2, 0.01, config.padding, (v) => set('padding', v), 'Space between the screen and the edge')}
-    {slider('Corners', `${config.radius}px`, 0, 64, 2, config.radius, (v) => set('radius', v))}
+    <details className="more"><summary>Framing</summary>
+      {slider('Padding', `${Math.round(config.padding * 100)}%`, 0, 0.2, 0.01, config.padding, (v) => set('padding', v), 'Space between the video and the edge')}
+      {slider('Corners', `${config.radius}px`, 0, 64, 2, config.radius, (v) => set('radius', v))}
+    </details>
     {!upload && slider('Cursor size', `${config.cursorScale.toFixed(1)}×`, 1, 3, 0.1, config.cursorScale, (v) => set('cursorScale', v))}
     {!!project.events.keys?.length && <div className="control"><div className="lbl"><span>Keyboard shortcuts</span><span>{project.events.keys.length} pressed</span></div>
       {seg(config.keycaps, [[true, 'Show'], [false, 'Hide']], (v) => set('keycaps', v))}</div>}
@@ -928,11 +934,18 @@ export function Editor({ project }: { project: Project }) {
   </>
 
   // ---------- Left panel: what you can add. One click adds it at the playhead.
+  const firstRun = !edits.autoEditedAt && !cuts.length && !texts.length && !stickers.length && !overlays.length && !inserts.length && config.captions === 'off'
   const library = Object.keys(media).filter((f) => { const n = f.split('/').pop() ?? ''; return !n.startsWith('.') && (isPicture(f) || isClip(f)) })
   const addPanel = () => {
     if (shownPanel === 'media') return <>
       <h3 className="drawer-title">Media</h3>
-      <button className="wide" onClick={() => void importMedia()}><IconUpload size={16} />Import clips and pictures</button>
+      {firstRun && <div className="start">
+        <p className="start-title">Start here</p>
+        {upload && project.assets.mic && <button onClick={smartEdit} disabled={smartBusy}><IconWand size={18} /><span><b>{smartBusy ? 'Working…' : 'Smart edit'}</b><i>Cuts pauses and filler words, adds captions</i></span></button>}
+        {project.assets.mic && <button onClick={() => go('captions')}><IconBadgeCc size={18} /><span><b>Add captions</b><i>Writes what you say on the video</i></span></button>}
+        <button onClick={() => go('text')}><IconLetterT size={18} /><span><b>Add text</b><i>Type on the video, then drag it where you want</i></span></button>
+      </div>}
+      <button className="wide" onClick={() => void importMedia()}><IconUpload size={16} />Add a clip or picture</button>
       {library.length ? <div className="gallery">{library.map((f) => {
         const clip = isClip(f), name = f.split('/').pop()!, len = lengths[f]
         return <div key={f} className="tile">
@@ -941,7 +954,7 @@ export function Editor({ project }: { project: Project }) {
             {clip && len != null && <span className="tile-len">{fmtShort(len)}</span>}</button>
           <button className="tile-over" data-tip="Show over the video" onClick={() => overlayAtPlayhead(f, name, clip ? 'video' : 'image', len)}>Overlay</button>
         </div> })}</div>
-        : <p className="note">Bring in clips and pictures. Click one to add it to the video at the playhead, or Overlay to show it on top.</p>}
+ : null}
     </>
     if (shownPanel === 'text') return <>
       <h3 className="drawer-title">Text</h3>
@@ -1051,7 +1064,7 @@ export function Editor({ project }: { project: Project }) {
     </>
   }
 
-  const hint = working ?? (range ? `${fmt(srcToOut(kept, range[1]) - srcToOut(kept, range[0]))} selected. Choose what to do with it above.` : `Final length ${fmtShort(outLen)}`)
+  const hint = working ?? hoverInfo ?? (range ? `${fmt(srcToOut(kept, range[1]) - srcToOut(kept, range[0]))} selected. Choose what to do with it above.` : `Final length ${fmtShort(outLen)}`)
   const onClipNow = rangeAt(playheadSrc)
 
   return (
@@ -1084,7 +1097,7 @@ export function Editor({ project }: { project: Project }) {
         <div className="stage">
           <Player ref={playerRef} component={Screencast} inputProps={props} durationInFrames={frames} fps={FPS} acknowledgeRemotionLicense
             compositionWidth={size.width} compositionHeight={size.height} clickToPlay={false} style={{ width: '100%', height: '100%' }} />
-          <Direct selKey={selKey} canMove={canMove} onPick={(k) => { playerRef.current?.pause(); if (!k) { setSel(null); return } const [kind, id] = k.split(':') as ['text' | 'sticker' | 'broll', string]; setExporting(false); setSel({ kind, id }) }}
+          <Direct selKey={selKey} canMove={canMove} onTogglePlay={() => playerRef.current?.toggle()} onPick={(k) => { playerRef.current?.pause(); if (!k) { setSel(null); return } const [kind, id] = k.split(':') as ['text' | 'sticker' | 'broll', string]; setExporting(false); setSel({ kind, id }) }}
             onStart={gestureStart} onMove={(x, y) => pose({ x, y })} onScale={(v) => pose({ scale: v })} onRotate={(deg) => pose({ rotate: deg })}
             onEdit={() => { wordsInput.current?.focus(); wordsInput.current?.select() }}
             onDuplicate={() => { if (selItem) void duplicate(selItem) }} onDelete={() => { if (selItem) removeItem(selItem) }}
@@ -1111,7 +1124,7 @@ export function Editor({ project }: { project: Project }) {
       </div>
       <Timeline ev={project.events} cuts={cuts} ranges={kept} splits={splits} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks} texts={texts}
         overlays={overlays} stickers={stickers} music={music} voiceovers={voiceovers} inserts={shownInserts} transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset} scale={tlScale}
-        onSeek={seekSrc} onRange={setRange} onSelect={pick} onAction={rangeAction} onDragStart={dragStart} onDragItem={dragItem} onDragEnd={dragEnd} onMenu={(it, x, y) => setMenu({ it, x, y })} />
+        onSeek={seekSrc} onRange={setRange} onSelect={pick} onAction={rangeAction} onDragStart={dragStart} onDragItem={dragItem} onDragEnd={dragEnd} onMenu={(it, x, y) => setMenu({ it, x, y })} onHover={setHoverInfo} strip={strip} />
       {menu && <div className="ctx" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
         <button onClick={() => { setMenu(null); splitHere() }}>Split at playhead<kbd>⌘B</kbd></button>
         {menu.it.kind !== 'cut' && menu.it.kind !== 'speed' && menu.it.kind !== 'mask' && <button onClick={() => { const it = menu.it; setMenu(null); void duplicate(it) }}>Duplicate<kbd>⌘D</kbd></button>}

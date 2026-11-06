@@ -338,6 +338,17 @@ app.whenReady().then(async () => {
     await ffmpegRun(['-ss', t.toFixed(3), '-i', join(dir, eventsOf(dir).files.screen), '-frames:v', '1', '-q:v', '2', join(dir, 'media', name)], 'That frame could not be saved.')
     return made(dir, name, 'image', 'Freeze frame')
   })
+  // What the timeline shows: a strip of frames and the shape of the sound, made once per project and kept in media/.
+  ipcMain.handle('project:strip', async (_e, dir: string): Promise<{ strip: string; frames: number; aspect: number; wave: string | null }> => {
+    inProject(dir)
+    const ev = eventsOf(dir), frames = Math.max(8, Math.min(90, Math.ceil(ev.videoDuration / 2)))
+    mkdirSync(join(dir, 'media'), { recursive: true })
+    const stripFile = join(dir, 'media', '.strip.jpg'), waveFile = join(dir, 'media', '.wave.png')
+    // Short videos read every frame; long ones only keyframes, so the strip stays quick.
+    if (!existsSync(stripFile)) await ffmpegRun([...(ev.videoDuration > 600 ? ['-skip_frame', 'nokey'] : []), '-i', join(dir, ev.files.screen), '-vf', `fps=${(frames / Math.max(0.1, ev.videoDuration)).toFixed(4)},scale=-2:80,tile=${frames}x1`, '-frames:v', '1', '-q:v', '5', stripFile], 'The timeline pictures could not be made.')
+    if (ev.files.mic && !existsSync(waveFile)) await ffmpegRun(['-i', join(dir, ev.files.mic), '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=2400x48:colors=0xFFFFFF:scale=sqrt', '-frames:v', '1', waveFile], 'wave').catch(() => {})
+    return { strip: server.url(stripFile), frames, aspect: ev.display.width / Math.max(1, ev.display.height), wave: existsSync(waveFile) ? server.url(waveFile) : null }
+  })
   ipcMain.handle('project:process', async (_e, dir: string, op: ClipOp, start: number, end: number, source?: string): Promise<MediaFile> => {
     inProject(dir)
     const len = end - start

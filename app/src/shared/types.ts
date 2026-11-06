@@ -371,6 +371,8 @@ export interface NarrateApi {
   /** A keyed version of a green-screen clip or picture (transparent webm or png). */
   chromaKey(dir: string, file: string, color: string, similarity: number): Promise<MediaFile>
   voiceChange(dir: string, fx: Exclude<VoiceFx, 'none'>, clean: boolean): Promise<MediaFile>
+  /** Frames and sound shape for the timeline. */
+  timelineStrip(dir: string): Promise<{ strip: string; frames: number; aspect: number; wave: string | null }>
   getBrand(): Promise<BrandKit>
   setBrand(b: BrandKit): Promise<BrandKit>
   pickBrandLogo(): Promise<string | null>

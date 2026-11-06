@@ -10,8 +10,10 @@ const SNAP = 0.012
  * carry data-hc-item="kind:id", so this layer finds them where they actually are (animations and all), lets you click to
  * select, drag to move with centre guides, pull a corner to resize and the handle to rotate.
  */
-export function Direct({ selKey, canMove, onPick, onStart, onMove, onScale, onRotate, onEdit, onDuplicate, onDelete, scaleOf, rotateOf }: {
+export function Direct({ selKey, canMove, onTogglePlay, onPick, onStart, onMove, onScale, onRotate, onEdit, onDuplicate, onDelete, scaleOf, rotateOf }: {
   selKey: string | null; canMove: boolean
+  /** A click on the video with nothing under it and nothing selected plays or pauses, as anyone expects. */
+  onTogglePlay: () => void
   onPick: (key: string | null) => void; onStart: () => void
   onMove: (x: number, y: number) => void; onScale: (s: number) => void; onRotate: (deg: number) => void
   onEdit: () => void; onDuplicate: () => void; onDelete: () => void
@@ -52,6 +54,7 @@ export function Direct({ selKey, canMove, onPick, onStart, onMove, onScale, onRo
     const hits = [...document.querySelectorAll('[data-hc-item]')].reverse()
     const hit = hits.find((n) => { const r = n.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom })
     const key = hit?.getAttribute('data-hc-item') ?? null
+    if (!key && !selKey) { onTogglePlay(); return }
     onPick(key)
     if (key) begin(e, 'move', key)
   }

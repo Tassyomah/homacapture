@@ -49,6 +49,7 @@ const api: NarrateApi = {
   processClip: (dir, op, start, end, source) => ipcRenderer.invoke('project:process', dir, op, start, end, source),
   chromaKey: (dir, file, color, similarity) => ipcRenderer.invoke('project:chroma', dir, file, color, similarity),
   voiceChange: (dir, fx, clean) => ipcRenderer.invoke('project:voice', dir, fx, clean),
+  timelineStrip: (dir) => ipcRenderer.invoke('project:strip', dir),
   getBrand: () => ipcRenderer.invoke('brand:get'),
   setBrand: (b) => ipcRenderer.invoke('brand:set', b),
   pickBrandLogo: () => ipcRenderer.invoke('brand:logo'),
