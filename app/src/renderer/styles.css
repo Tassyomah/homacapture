@@ -737,3 +737,5 @@ details.more { padding: 12px 20px; }
 details.more summary { cursor: pointer; font-size: 13px; color: var(--muted); }
 details.more[open] summary { margin-bottom: 8px; }
 details.more .control { padding-left: 0; padding-right: 0; border: 0; }
+.brand { display: inline-flex; align-items: center; gap: 8px; }
+.brand img { width: 20px; height: 20px; display: block; }

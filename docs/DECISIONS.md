@@ -61,3 +61,9 @@ Tassy: "capcut is more intuitive and easy to use", "I want a lot of those capcut
 - **In-line clips (`InsertClip`):** clips, pictures, freeze frames and processed pieces play in the main line. Each has a private time slot `v` past the end of the recording, so items placed on it use the same source-time model. Versions keep only clips inside what they keep.
 - **New free tools:** split, duplicate, freeze, reverse, smooth slow motion (minterpolate), stabilise (deshake; this ffmpeg has no vidstab), green screen (chromakey to png or VP9 alpha), voice changer, clip and overlay in/out animations, overlay shapes, blend, opacity, movement keyframes, fonts, text colour and background, brand kit (saved per app), timeline zoom, right-click menu, real-frame look tiles.
 - **Not supported yet:** dragging a piece of the main recording to a new position (clips can move; main pieces split, trim and delete). Captions do not run over added clips.
+
+## 2026-11-06 · HomaCapture logo, derived from Homalabs
+Tassy: everything built at the studio is a Homa-something derived from the Homalabs logo, like HomaPod. Chosen: option A, the aperture. Homalabs tile and indigo-to-coral gradient; the curved piece of the Homalabs glyph turned four times around a dot, with clean gaps like the parent mark. Masters in `brand/`; `app/build/icon.icns` and `icon.png` are the app icon, `renderer/mark.svg` the header mark.
+
+## 2026-11-06 · First-use pass
+Tested from a brand-new upload, not an edited project: uploads open full frame; a Start here guide (Smart edit, Add captions, Add text); clicking the video plays it; the video track shows real frames and the sound shape; hover info moved to the status line; Framing folded away; Smart edit uses short captions.
