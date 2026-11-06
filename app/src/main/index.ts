@@ -183,6 +183,14 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('devices:list', (): Promise<Devices> => recorder.listDevices())
   ipcMain.handle('app:relaunch', () => { app.relaunch(); app.exit(0) })
+  // macOS keeps a Screen Recording entry tied to the build it was granted to, and toggling it in System Settings does not
+  // update that. Clearing HomaCapture's own entry and asking again gives a fresh one for this build. Runs only on the user's click.
+  ipcMain.handle('permissions:repairScreen', async () => {
+    if (process.platform === 'darwin') { try { execFileSync('/usr/bin/tccutil', ['reset', 'ScreenCapture', 'com.homalabs.narrate']) } catch (e) { console.warn('tccutil', e) } }
+    const p = await recorder.checkPermissions(true)
+    if (!p.screen) await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
+    return p
+  })
   ipcMain.handle('permissions:check', (_e, request: boolean) => recorder.checkPermissions(request))
   ipcMain.handle('settings:open', (_e, which: 'screen' | 'mic') => shell.openExternal(SETTINGS_URL[which]))
   ipcMain.handle('recording:start', async (_e, opts: StartOptions) => {

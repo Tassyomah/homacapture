@@ -317,6 +317,8 @@ export interface NarrateApi {
   platform: Platform
   listDevices(): Promise<Devices>
   relaunch(): Promise<void>
+  /** Clears HomaCapture's stale Screen Recording entry and asks macOS again. */
+  repairScreen(): Promise<Permissions>
   checkPermissions(request: boolean): Promise<Permissions>
   openSettings(which: 'screen' | 'mic'): Promise<void>
   startRecording(opts: StartOptions): Promise<void>

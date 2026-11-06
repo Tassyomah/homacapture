@@ -123,10 +123,9 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
         <div className="permission">
           <b>Turn on screen recording to record your screen.</b>
           <p>Only recording needs this; uploading and editing work without it. Nothing is captured until you press Record, and recordings stay on {machine}.
-             This goes away by itself once it is on. If it stays after you turn it on, reopen the app.</p>
+             Press the button, turn HomaCapture on in the window that opens, and this goes away by itself.</p>
           <div className="row">
-            <button className="primary" onClick={() => loadPerms(true)}>Allow screen recording</button>
-            <button onClick={() => window.narrate.openSettings('screen')}>Open System Settings</button>
+            <button className="primary" onClick={() => void window.narrate.repairScreen().then(setPerms)}>Fix and allow screen recording</button>
             <button onClick={() => void window.narrate.relaunch()}>Reopen HomaCapture</button>
             <button onClick={() => setHidePermission(true)}>Hide for now</button>
           </div>
