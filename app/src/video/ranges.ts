@@ -1,7 +1,7 @@
-import type { Cut, RecordingEvents, SpeedRange } from '../shared/types'
+import type { Cut, InsertClip, RecordingEvents, SpeedRange } from '../shared/types'
 
-/** A stretch of the recording in source seconds; `rate` is its playback speed (1 = normal). */
-export interface Range { start: number; end: number; rate: number }
+/** A stretch of the recording in source seconds; `rate` is its playback speed (1 = normal). `ins` marks a clip played in line (its seconds are private ones past the end of the recording). */
+export interface Range { start: number; end: number; rate: number; ins?: InsertClip }
 
 /** Everything removed from the output: recorder pauses plus the user's cuts, merged and clipped to the video. */
 export function removedRanges(ev: RecordingEvents, cuts: Cut[] = []): Range[] {
@@ -21,8 +21,27 @@ export function removedRanges(ev: RecordingEvents, cuts: Cut[] = []): Range[] {
   return merged
 }
 
+/** What plays, in order: the kept recording with any in-line clips placed at their source second. */
+export function keptRanges(ev: RecordingEvents, cuts: Cut[] = [], speeds: SpeedRange[] = [], inserts: InsertClip[] = []): Range[] {
+  const main = mainRanges(ev, cuts, speeds)
+  if (!inserts.length) return main
+  const todo = [...inserts].sort((a, b) => a.at - b.at)
+  const asRange = (i: InsertClip): Range => ({ start: i.v, end: i.v + Math.max(0.05, i.out - i.in), rate: 1, ins: i })
+  const out: Range[] = []
+  for (const r of main) {
+    let cur = r.start
+    while (todo.length && todo[0].at < r.end - 0.01) {
+      const i = todo.shift()!
+      if (i.at > cur + 0.01) { out.push({ ...r, start: cur, end: i.at }); cur = i.at }
+      out.push(asRange(i))
+    }
+    if (r.end - cur >= 0.02) out.push({ ...r, start: cur })
+  }
+  return [...out, ...todo.map(asRange)]
+}
+
 /** Kept ranges of the recording: everything except pauses and cuts, split where the playback speed changes. */
-export function keptRanges(ev: RecordingEvents, cuts: Cut[] = [], speeds: SpeedRange[] = []): Range[] {
+function mainRanges(ev: RecordingEvents, cuts: Cut[] = [], speeds: SpeedRange[] = []): Range[] {
   const dur = ev.videoDuration
   const kept: Range[] = []
   let cursor = 0
@@ -47,11 +66,17 @@ export function keptRanges(ev: RecordingEvents, cuts: Cut[] = [], speeds: SpeedR
   return out.filter((r) => r.end - r.start >= 0.05)
 }
 
+/** In-line clips that belong to a version: only those standing inside what the version keeps of the recording. */
+export function insertsWithin(ev: RecordingEvents, cuts: Cut[], inserts: InsertClip[]): InsertClip[] {
+  const main = mainRanges(ev, cuts)
+  return inserts.filter((i) => main.some((r) => i.at >= r.start - 0.01 && i.at <= r.end + 0.01))
+}
+
 /** Output seconds a range takes to play. */
 export const playLen = (r: Range) => (r.end - r.start) / r.rate
 
-export function keptDuration(ev: RecordingEvents, cuts: Cut[] = [], speeds: SpeedRange[] = []): number {
-  return keptRanges(ev, cuts, speeds).reduce((s, r) => s + playLen(r), 0)
+export function keptDuration(ev: RecordingEvents, cuts: Cut[] = [], speeds: SpeedRange[] = [], inserts: InsertClip[] = []): number {
+  return keptRanges(ev, cuts, speeds, inserts).reduce((s, r) => s + playLen(r), 0)
 }
 
 /** Output time → source time (what the viewer sees at tOut was recorded at the returned second). */
@@ -68,11 +93,17 @@ export function outToSrc(kept: Range[], tOut: number): number {
 
 /** Source time → output time. Inside a removed stretch, snaps to the next kept second (or the end). */
 export function srcToOut(kept: Range[], tSrc: number): number {
-  let acc = 0
+  let acc = 0, next: { start: number; acc: number } | null = null
   for (const r of kept) {
-    if (tSrc < r.start) return acc
-    if (tSrc <= r.end) return acc + (tSrc - r.start) / r.rate
+    // End-exclusive: where a clip sits between two stretches, the second second's start belongs after the clip.
+    if (tSrc >= r.start && tSrc < r.end) return acc + (tSrc - r.start) / r.rate
+    if (!r.ins && r.start > tSrc && (!next || r.start < next.start)) next = { start: r.start, acc }
     acc += playLen(r)
   }
-  return acc
+  return next ? next.acc : acc
+}
+
+/** A fresh private time slot for an in-line clip, past the recording and every clip so far (room for it to be lengthened). */
+export function nextSlot(ev: RecordingEvents, inserts: InsertClip[]): number {
+  return inserts.reduce((m, i) => Math.max(m, i.v + (i.length ?? 60) + 1), ev.videoDuration + 1)
 }

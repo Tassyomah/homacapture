@@ -1,6 +1,6 @@
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion'
 import { useMemo } from 'react'
-import { ASPECTS, LOOKS, type Mask, type Sticker, type MusicTrack, type Overlay, type Voiceover, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type TextPop, type Transcript } from '../shared/types'
+import { ASPECTS, LOOKS, type Mask, type Sticker, type MusicTrack, type Overlay, type Voiceover, type InsertClip, type Keyframe, type Placed, type OverlayShape, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type TextPop, type Transcript } from '../shared/types'
 import { buildCamera, cameraAt, cursorIdAt, smoothCursor, type CamKey, type Viewport } from './motion'
 import { keptRanges, srcToOut, type Range } from './ranges'
 import { POP, WHOOSH } from './sfx'
@@ -39,8 +39,8 @@ export function layout(ev: RecordingEvents, cfg: RenderConfig): Layout {
 }
 
 /** One kept range of the recording, rendered at source time = srcStart + local frame. */
-const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; transIn: boolean; punches: number[] }> =
-  ({ ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts, overlays, stickers, transIn, punches }) => {
+const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; transIn: boolean; punches: number[]; ins?: InsertClip; segLen: number }> =
+  ({ ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts, overlays, stickers, transIn, punches, ins, segLen }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = srcStart + (frame / fps) * rate
@@ -83,9 +83,9 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
 
   return (
     <>
-      <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, borderRadius: cfg.radius,
+      <div data-hc-frame="" style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, borderRadius: cfg.radius,
                     overflow: 'hidden', boxShadow: '0 40px 120px rgba(20,20,15,0.35)', background: '#14140F', ...frameFx }}>
-        <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${cam.scale})`, filter: lookCss }}>
+        {ins ? <InlineClip ins={ins} src={assets.media?.[ins.file] ?? null} age={age} len={segLen} fps={fps} filter={lookCss} /> : <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${cam.scale})`, filter: lookCss }}>
           {cutout ? <>
             {/* Remove / blur background: what sits behind the speaker, then the speaker cut out (transparent video) on top. */}
             {cfg.backdrop === 'blur' && <OffthreadVideo src={assets.screen} muted startFrom={Math.round(srcStart * fps)} playbackRate={rate}
@@ -110,10 +110,10 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
               left: pos[0] - shape.hotspot[0] * cs, top: pos[1] - shape.hotspot[1] * cs,
               width: shape.size[0] * cs, height: shape.size[1] * cs, filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.35))' }} />
           )}
-        </div>
+        </div>}
         <Cinematic cfg={cfg} W={F.w} H={F.h} frame={frame} />
       </div>
-      {webcam && assets.camera && (
+      {!ins && webcam && assets.camera && (
         // Camera overlay sits over the screen frame and stays put while the screen zooms (spec §10, §11).
         <div style={{ position: 'absolute', left: F.x + webcam.x, top: F.y + webcam.y, width: webcam.w, height: webcam.h,
                       borderRadius: webcam.radius, overflow: 'hidden', boxShadow: '0 24px 70px rgba(20,20,15,0.4)', background: '#14140F' }}>
@@ -125,16 +125,15 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
         <BRoll key={o.id} o={o} src={assets.media![o.file]} t={t} srcStart={srcStart} fps={fps} rate={rate} F={F} faceLeft={(ev.focus?.[0] ?? W / 2) < W / 2} />))}
       {tr === 'flash' && q > 0 && <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, background: '#EFEEE8', opacity: 0.85 * q * q, pointerEvents: 'none' }} />}
       {stickers.filter((s) => t >= s.t && t < s.t + s.duration).map((s) => <StickerView key={s.id} s={s} t={t} F={F} />)}
-      {cfg.keycaps && ev.keys && ev.keys.length > 0 && <Keycaps keys={ev.keys} t={t} t0={ev.t0Video} F={F} />}
-      {texts.length > 0 && <KineticText texts={texts.filter((x) => x.style !== 'name')} t={t} F={F} portrait={F.h > F.w} />}
-      {texts.filter((x) => x.style === 'name' && t >= x.t && t < x.t + x.duration).map((x) => <NameTag key={x.id} x={x} t={t} F={F} portrait={F.h > F.w} L={L} />)}
-      {transcript && cfg.captions !== 'off' && (
+      {!ins && cfg.keycaps && ev.keys && ev.keys.length > 0 && <Keycaps keys={ev.keys} t={t} t0={ev.t0Video} F={F} />}
+      {shownTexts(texts, t).map((x) => x.style === 'name' ? <NameTag key={x.id} x={x} t={t} F={F} portrait={F.h > F.w} L={L} /> : <TextView key={x.id} tp={x} t={t} F={F} portrait={F.h > F.w} />)}
+      {!ins && transcript && cfg.captions !== 'off' && (
         <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, pointerEvents: 'none' }}>
           <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={F.h} portrait={L.vp.crop || F.h > F.w} highlight={cfg.capHighlight} emoji={cfg.capEmoji} />
         </div>
       )}
-      {assets.mic && cfg.micVolume > 0 && <TimedAudio src={cfg.voice === 'clean' && assets.micClean ? assets.micClean : assets.mic} start={micStart} fps={fps} volume={cfg.micVolume} rate={rate} />}
-      {assets.system && cfg.systemVolume > 0 && <TimedAudio src={assets.system} start={sysStart} fps={fps} volume={cfg.systemVolume} rate={rate} />}
+      {!ins && assets.mic && cfg.micVolume > 0 && <TimedAudio src={(cfg.voiceFx !== 'none' ? assets.media?.[`media/voice-${cfg.voiceFx}.wav`] : null) ?? (cfg.voice === 'clean' && assets.micClean ? assets.micClean : assets.mic)} start={micStart} fps={fps} volume={cfg.micVolume} rate={rate} />}
+      {!ins && assets.system && cfg.systemVolume > 0 && <TimedAudio src={assets.system} start={sysStart} fps={fps} volume={cfg.systemVolume} rate={rate} />}
     </>
   )
 }
@@ -159,15 +158,17 @@ const Cinematic: React.FC<{ cfg: RenderConfig; W: number; H: number; frame: numb
 /** Name tag (lower third): a flat paper card with the name in ink and the role in indigo, sliding in from the left. */
 const NameTag: React.FC<{ x: TextPop; t: number; F: { x: number; y: number; w: number; h: number }; portrait: boolean; L: Layout }> = ({ x, t, F, portrait, L }) => {
   const age = t - x.t, left = x.t + x.duration - t
+  const hand = x.x != null || !!x.kf?.length
+  const at = placedAt({ x: x.x ?? 0.5, y: x.y ?? 0.7, scale: x.scale ?? 1, rotate: x.rotate ?? 0, opacity: x.opacity ?? 1 }, x.kf, age)
   const p = Math.min(1, age / 0.4), out = Math.min(1, left / 0.3)
   const ease = 1 - (1 - p) ** 3
-  const fs = Math.round(F.w * (portrait ? 0.044 : 0.026))
+  const fs = Math.round(F.w * (portrait ? 0.044 : 0.026) * at.scale)
   return (
     // Sits just above where captions start (they take the bottom 16-25 %), clear of the speaker's chin on vertical video.
-    <div style={{ position: 'absolute', left: F.x + Math.round(F.w * 0.05), bottom: L.height - (F.y + F.h) + Math.round(F.h * (portrait ? 0.26 : 0.2)), pointerEvents: 'none',
-                  transform: `translateX(${((1 - ease) * -40).toFixed(1)}%)`, opacity: Math.min(ease * 1.5, out) }}>
+    <div data-hc-item={`text:${x.id}`} style={{ position: 'absolute', ...(hand ? { left: F.x + F.w * at.x, top: F.y + F.h * at.y } : { left: F.x + Math.round(F.w * 0.05), bottom: L.height - (F.y + F.h) + Math.round(F.h * (portrait ? 0.26 : 0.2)) }), pointerEvents: 'none',
+                  transform: `${hand ? 'translate(-50%, -50%) ' : ''}translateX(${((1 - ease) * -40).toFixed(1)}%) rotate(${at.rotate}deg)`, opacity: Math.min(ease * 1.5, out) * at.opacity }}>
       <div style={{ background: '#EFEEE8', borderRadius: Math.round(fs * 0.35), padding: `${Math.round(fs * 0.45)}px ${Math.round(fs * 0.8)}px`, boxShadow: '0 12px 40px rgba(20,20,15,0.25)',
-                    fontFamily: 'Aeonik, Archivo, Inter, system-ui, sans-serif', display: 'flex', alignItems: 'center', gap: Math.round(fs * 0.6) }}>
+                    fontFamily: `${x.font ? `"${x.font}", ` : ''}Aeonik, Archivo, Inter, system-ui, sans-serif`, display: 'flex', alignItems: 'center', gap: Math.round(fs * 0.6) }}>
         <div style={{ width: Math.round(fs * 0.22), alignSelf: 'stretch', borderRadius: 99, background: '#FB8B73' }} />
         <div>
           <div style={{ fontSize: fs, fontWeight: 800, color: '#14140F', lineHeight: 1.1 }}>{x.text}</div>
@@ -223,63 +224,118 @@ const Keycaps: React.FC<{ keys: { t: number; keys: string }[]; t: number; t0: nu
 
 const easeOutBack = (p: number) => { const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * (p - 1) ** 3 + c1 * (p - 1) ** 2 }
 
+/** Where an item is at t, moving between its keyframes (`at` = seconds from its start) with a gentle ease. */
+export function placedAt(base: Required<Omit<Placed, 'kf'>>, kf: Keyframe[] | undefined, age: number): Required<Omit<Placed, 'kf'>> {
+  if (!kf?.length) return base
+  const k = [...kf].sort((a, b) => a.at - b.at)
+  if (age <= k[0].at) return k[0]
+  const last = k[k.length - 1]
+  if (age >= last.at) return last
+  const i = k.findIndex((f) => f.at > age), a = k[i - 1], b = k[i]
+  const p = (age - a.at) / Math.max(0.001, b.at - a.at), e = p * p * (3 - 2 * p)
+  const mix = (x: number, y: number) => x + (y - x) * e
+  return { x: mix(a.x, b.x), y: mix(a.y, b.y), scale: mix(a.scale, b.scale), rotate: mix(a.rotate, b.rotate), opacity: mix(a.opacity, b.opacity) }
+}
+
+/** The way out, in the last 0.3 s of an item: fade, slide away or shrink. */
+function leaving(out: string | undefined, left: number): { lift: number; shrink: number; alpha: number } {
+  const q = Math.max(0, Math.min(1, 1 - left / 0.3))
+  if (out === 'slide') return { lift: -0.5 * q * q, shrink: 1, alpha: 1 - q }
+  if (out === 'shrink') return { lift: 0, shrink: 1 - 0.7 * q * q, alpha: 1 - q }
+  if (out === 'fade') return { lift: 0, shrink: 1, alpha: 1 - q }
+  return { lift: 0, shrink: 1, alpha: 1 }
+}
+
+/** Texts showing at t: hand-placed ones and name tags always; auto-placed ones share one spot, so only the latest. */
+function shownTexts(texts: TextPop[], t: number): TextPop[] {
+  const on = texts.filter((x) => t >= x.t && t < x.t + x.duration)
+  const shared = on.filter((x) => x.style !== 'name' && x.x == null && !x.kf?.length)
+  return on.filter((x) => !shared.includes(x) || x === shared[shared.length - 1])
+}
+
 /**
- * Kinetic text (auto-edit of uploads): the key phrase pops in big above the speaker's head and fades just before the
- * next beat. It sits on the frame, not on the zoomed video, so it stays put through punch-ins. Flat brand shapes only.
+ * Text on the video: pops in big above the speaker's head unless it was placed by hand. It sits on the frame, not on
+ * the zoomed video, so it stays put through punch-ins. Flat brand shapes only.
  * 'pop' = coral word(s); 'title' = a paper card with ink type for the opening hook.
  */
-const KineticText: React.FC<{ texts: TextPop[]; t: number; F: { x: number; y: number; w: number; h: number }; portrait: boolean }> = ({ texts, t, F, portrait }) => {
-  const on = texts.filter((x) => t >= x.t && t < x.t + x.duration)
-  if (!on.length) return null
-  const tp = on[on.length - 1]
+const TextView: React.FC<{ tp: TextPop; t: number; F: { x: number; y: number; w: number; h: number }; portrait: boolean }> = ({ tp, t, F, portrait }) => {
   const age = t - tp.t, left = tp.t + tp.duration - t
   const anim = tp.anim ?? 'pop'
-  const full = tp.text.toUpperCase()
+  const full = tp.font && tp.font !== 'Aeonik' ? tp.text : tp.text.toUpperCase()
   // pop: springs up from 62 %; slide: rises 40 % of its height; slam: drops in from 180 % and lands; type: letters appear one by one.
   const p = Math.min(1, age / (anim === 'slam' ? 0.18 : anim === 'slide' ? 0.3 : 0.24))
   const scale = anim === 'pop' ? 0.62 + 0.38 * easeOutBack(p) : anim === 'slam' ? 1 + 0.8 * (1 - p) ** 2 : 1
   const lift = anim === 'slide' ? (1 - (1 - (1 - p) ** 3)) * 0.4 : 0
-  const alpha = Math.min(1, age / (anim === 'type' ? 0.02 : 0.08), left / 0.16)
+  const gone = leaving(tp.animOut, left)
+  const alpha = Math.min(1, age / (anim === 'type' ? 0.02 : 0.08), tp.animOut && tp.animOut !== 'none' ? 1 : left / 0.16) * gone.alpha
   const text = anim === 'type' ? full.slice(0, Math.max(1, Math.ceil(full.length * Math.min(1, age / Math.min(0.9, 0.05 * full.length))))) : full
   const title = tp.style === 'title'
+  const hand = tp.x != null || !!tp.kf?.length
+  const at = placedAt({ x: tp.x ?? 0.5, y: tp.y ?? 0.2, scale: tp.scale ?? 1, rotate: tp.rotate ?? (title ? 0 : -2), opacity: tp.opacity ?? 1 }, tp.kf, age)
   const base = F.w * (portrait ? (title ? 0.075 : 0.12) : (title ? 0.045 : 0.07))
-  const fontSize = Math.round(Math.min(base, (F.w * (portrait ? 0.84 : 0.7)) / Math.max(4, Math.min(text.length, 14) * 0.6)))
-  return (
-    <div style={{ position: 'absolute', left: F.x, top: F.y + Math.round(F.h * (portrait ? 0.13 : 0.1)), width: F.w, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>
-      <div style={{ transform: `translateY(${(lift * 100).toFixed(1)}%) scale(${scale}) rotate(${title ? 0 : -2}deg)`, opacity: alpha, transformOrigin: '50% 60%', maxWidth: portrait ? '86%' : '72%', textAlign: 'center',
-                    fontFamily: 'Aeonik, Archivo, Inter, system-ui, sans-serif', fontWeight: 800, fontSize, lineHeight: 1.02, letterSpacing: '-0.01em', textWrap: 'balance' as never,
-                    color: title ? '#14140F' : '#FB8B73', background: title ? '#EFEEE8' : 'transparent', borderRadius: title ? fontSize * 0.45 : 0,
-                    padding: title ? `${Math.round(fontSize * 0.4)}px ${Math.round(fontSize * 0.7)}px` : 0,
-                    textShadow: title ? undefined : `0 ${Math.round(fontSize * 0.06)}px ${Math.round(fontSize * 0.3)}px rgba(20,20,15,0.55)` }}>{text}</div>
-    </div>
-  )
+  const fontSize = Math.round(Math.min(base, (F.w * (portrait ? 0.84 : 0.7)) / Math.max(4, Math.min(text.length, 14) * 0.6)) * at.scale)
+  const boxed = title || !!tp.bg
+  const body = (
+    <div data-hc-item={`text:${tp.id}`} style={{ transform: `translateY(${((lift + gone.lift) * 100).toFixed(1)}%) scale(${scale * gone.shrink}) rotate(${at.rotate}deg)`, opacity: alpha * at.opacity, transformOrigin: '50% 60%', maxWidth: hand ? F.w * 0.94 : portrait ? '86%' : '72%', textAlign: 'center',
+                  fontFamily: `${tp.font ? `"${tp.font}", ` : ''}Aeonik, Archivo, Inter, system-ui, sans-serif`, fontWeight: 800, fontSize, lineHeight: 1.02, letterSpacing: '-0.01em', textWrap: 'balance' as never,
+                  color: tp.color ?? (title ? '#14140F' : '#FB8B73'), background: tp.bg ?? (title ? '#EFEEE8' : 'transparent'), borderRadius: boxed ? fontSize * 0.45 : 0,
+                  padding: boxed ? `${Math.round(fontSize * 0.4)}px ${Math.round(fontSize * 0.7)}px` : 0,
+                  textShadow: boxed ? undefined : `0 ${Math.round(fontSize * 0.06)}px ${Math.round(fontSize * 0.3)}px rgba(20,20,15,0.55)` }}>{text}</div>)
+  if (hand) return <div style={{ position: 'absolute', left: F.x + F.w * at.x, top: F.y + F.h * at.y, transform: 'translate(-50%, -50%)', width: 'max-content', pointerEvents: 'none' }}>{body}</div>
+  return <div style={{ position: 'absolute', left: F.x, top: F.y + Math.round(F.h * (portrait ? 0.13 : 0.1)), width: F.w, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>{body}</div>
+}
+
+/** A clip, picture or freeze frame playing in the main line: fills the frame, with its own way in and out. */
+const InlineClip: React.FC<{ ins: InsertClip; src: string | null; age: number; len: number; fps: number; filter?: string }> = ({ ins, src, age, len, fps, filter }) => {
+  const pin = Math.min(1, age / 0.35), left = len - age
+  const inn = ins.animIn ?? 'none'
+  const eased = 1 - (1 - pin) ** 3
+  const opacity = (inn === 'fade' ? pin : 1) * (ins.animOut === 'fade' ? Math.min(1, left / 0.35) : 1)
+  const transform = inn === 'zoom' ? `scale(${1.18 - 0.18 * eased})` : inn === 'slide' ? `translateY(${((1 - eased) * 100).toFixed(1)}%)` : undefined
+  const style: React.CSSProperties = { position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block', opacity, transform, filter }
+  if (!src) return null
+  return ins.kind === 'video' ? <OffthreadVideo src={src} startFrom={Math.round(ins.in * fps)} volume={ins.volume} style={style} /> : <Img src={src} style={style} />
 }
 
 /**
  * B-roll: a picture or clip over the video. 'full' fills the frame (pictures drift in slowly, Ken Burns style);
  * 'card' floats a rounded card clear of the speaker's face (above it on vertical video, beside it on landscape). Flat card, soft shadow, no border.
  */
+const CLIP_SHAPE: Record<OverlayShape, string | undefined> = { rect: undefined, round: undefined, circle: 'circle(50% at 50% 50%)',
+  heart: undefined,
+  star: 'polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)' }
 const BRoll: React.FC<{ o: Overlay; src: string; t: number; srcStart: number; fps: number; rate: number; F: { x: number; y: number; w: number; h: number }; faceLeft: boolean }> = ({ o, src, t, srcStart, fps, rate, F, faceLeft }) => {
   const age = t - o.t, left = o.t + o.duration - t
-  const alpha = Math.min(1, age / 0.12, left / 0.12)
+  const gone = leaving(o.animOut, left)
+  const inn = o.animIn ?? 'none'
+  const fadeIn = inn === 'fade' ? Math.min(1, age / 0.35) : Math.min(1, age / 0.12)
+  const alpha = Math.min(fadeIn, o.animOut && o.animOut !== 'none' ? 1 : left / 0.12) * gone.alpha
+  const blend = o.blend && o.blend !== 'normal' ? o.blend : undefined
   const media = (style: React.CSSProperties) => o.kind === 'video'
-    ? <TimedVideo src={src} start={srcStart - o.t} fps={fps} rate={rate} style={style} />
+    ? <TimedVideo src={src} start={srcStart - o.t} fps={fps} rate={rate} style={style} transparent={o.file.endsWith('.webm')} />
     : <Img src={src} style={style} />
   if (o.fit === 'full') {
     const drift = o.kind === 'image' ? 1 + 0.06 * Math.min(1, age / Math.max(0.5, o.duration)) : 1
     return (
-      <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, overflow: 'hidden', opacity: alpha, background: '#14140F' }}>
+      <div data-hc-item={`broll:${o.id}`} style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, overflow: 'hidden', opacity: alpha * (o.opacity ?? 1), background: o.file.endsWith('.webm') || o.file.endsWith('.png') ? undefined : '#14140F', mixBlendMode: blend }}>
         {media({ width: '100%', height: '100%', objectFit: 'cover', display: 'block', transform: `scale(${drift * (1.04 - 0.04 * Math.min(1, age / 0.25))})` })}
       </div>)
   }
   const portrait = F.h > F.w
-  const w = Math.round(F.w * (portrait ? 0.8 : 0.42)), h = Math.round(w * 0.625)
-  const scale = 0.7 + 0.3 * easeOutBack(Math.min(1, age / 0.28))
-  const x = portrait ? (F.w - w) / 2 : faceLeft ? F.w * 0.54 : F.w * 0.04
-  const y = portrait ? F.h * 0.05 : (F.h - h) / 2
+  const shape = o.shape ?? 'round', round = shape === 'circle' || shape === 'heart' || shape === 'star'
+  const hand = o.x != null || !!o.kf?.length
+  const defW = F.w * (portrait ? 0.8 : 0.42)
+  const at = placedAt({ x: o.x ?? (portrait ? 0.5 : (faceLeft ? 0.54 + defW / F.w / 2 : 0.04 + defW / F.w / 2)), y: o.y ?? (portrait ? 0.05 + (defW * 0.625) / F.h / 2 : 0.5), scale: o.scale ?? 1, rotate: o.rotate ?? (hand ? 0 : -1.5), opacity: o.opacity ?? 1 }, o.kf, age)
+  const w = Math.round(defW * at.scale), h = round ? w : Math.round(w * 0.625)
+  const scale = (inn === 'none' || inn === 'zoom' ? 0.7 + 0.3 * easeOutBack(Math.min(1, age / 0.28)) : 1) * gone.shrink
+  const slide = (inn === 'slide' ? (1 - (1 - Math.min(1, age / 0.3)) ** 3) * -1 + 1 : 0) * 0.5 + gone.lift
+  // Heart is drawn in a 0–1 box, so it is scaled to the card through a matching SVG clipPath.
+  const clipId = `hc-heart-${o.id}`
   return (
-    <div style={{ position: 'absolute', left: F.x + x, top: F.y + y, width: w, height: h, borderRadius: Math.round(w * 0.05), overflow: 'hidden',
-                  opacity: alpha, transform: `scale(${scale}) rotate(-1.5deg)`, boxShadow: '0 30px 90px rgba(20,20,15,0.45)', background: '#14140F' }}>
+    <div data-hc-item={`broll:${o.id}`} style={{ position: 'absolute', left: F.x + F.w * at.x - w / 2, top: F.y + F.h * at.y - h / 2, width: w, height: h, borderRadius: shape === 'rect' ? 0 : shape === 'round' ? Math.round(w * 0.05) : 0, overflow: 'hidden',
+                  opacity: alpha * at.opacity, transform: `translateY(${(slide * 100).toFixed(1)}%) scale(${scale}) rotate(${at.rotate}deg)`, boxShadow: round ? undefined : '0 30px 90px rgba(20,20,15,0.45)', background: round ? undefined : '#14140F', mixBlendMode: blend,
+                  clipPath: shape === 'heart' ? `url(#${clipId})` : CLIP_SHAPE[shape] }}>
+      {shape === 'heart' && <svg width={0} height={0} style={{ position: 'absolute' }}><clipPath id={clipId} clipPathUnits="objectBoundingBox"><path d="M0.5 0.92 C0.2 0.68 0 0.5 0 0.28 C0 0.12 0.13 0 0.28 0 C0.37 0 0.45 0.05 0.5 0.13 C0.55 0.05 0.63 0 0.72 0 C0.87 0 1 0.12 1 0.28 C1 0.5 0.8 0.68 0.5 0.92 Z" /></clipPath></svg>}
       {media({ width: '100%', height: '100%', objectFit: 'cover', display: 'block' })}
     </div>)
 }
@@ -298,10 +354,11 @@ const StickerView: React.FC<{ s: Sticker; t: number; F: { x: number; y: number; 
   const age = t - s.t, left = s.t + s.duration - t
   const scale = 0.4 + 0.6 * easeOutBack(Math.min(1, age / 0.3))
   const alpha = Math.min(1, age / 0.06, left / 0.15)
-  const size = F.w * s.size
-  const rot = s.rotate + Math.sin(age * 4) * 3
+  const at = placedAt({ x: s.x, y: s.y, scale: s.size, rotate: s.rotate, opacity: s.opacity ?? 1 }, s.kf, age)
+  const size = F.w * at.scale
+  const rot = at.rotate + Math.sin(age * 4) * 3
   return (
-    <div style={{ position: 'absolute', left: F.x + F.w * s.x - size / 2, top: F.y + F.h * s.y - size / 2, width: size, height: size, opacity: alpha,
+    <div data-hc-item={`sticker:${s.id}`} style={{ position: 'absolute', left: F.x + F.w * at.x - size / 2, top: F.y + F.h * at.y - size / 2, width: size, height: size, opacity: alpha * at.opacity,
                   transform: `scale(${scale}) rotate(${rot}deg)`, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none',
                   filter: 'drop-shadow(0 8px 18px rgba(20,20,15,0.3))' }}>
       {s.emoji ? <span style={{ fontSize: size * 0.82, lineHeight: 1 }}>{s.emoji}</span>
@@ -355,10 +412,10 @@ const ProgressBar: React.FC<{ where: 'top' | 'bottom'; W: number; H: number }> =
 }
 
 /** A video whose own time axis starts `start` seconds into this segment (negative = it begins later than the segment). */
-const TimedVideo: React.FC<{ src: string; start: number; fps: number; rate: number; style: React.CSSProperties }> = ({ src, start, fps, rate, style }) =>
+const TimedVideo: React.FC<{ src: string; start: number; fps: number; rate: number; style: React.CSSProperties; transparent?: boolean }> = ({ src, start, fps, rate, style, transparent }) =>
   start >= 0
-    ? <OffthreadVideo src={src} muted startFrom={Math.round(start * fps)} playbackRate={rate} style={style} />
-    : <Sequence from={Math.round((-start / rate) * fps)} layout="none"><OffthreadVideo src={src} muted playbackRate={rate} style={style} /></Sequence>
+    ? <OffthreadVideo src={src} muted transparent={transparent} startFrom={Math.round(start * fps)} playbackRate={rate} style={style} />
+    : <Sequence from={Math.round((-start / rate) * fps)} layout="none"><OffthreadVideo src={src} muted transparent={transparent} playbackRate={rate} style={style} /></Sequence>
 
 /** An audio track whose own time axis starts `start` seconds into this segment (negative = it begins later). */
 const TimedAudio: React.FC<{ src: string; start: number; fps: number; volume: number; rate: number }> = ({ src, start, fps, volume, rate }) =>
@@ -383,11 +440,11 @@ export function cameraRect(cfg: RenderConfig, camera: { width: number; height: n
  * so the exporter can pick any integer output size without the layout maths changing.
  */
 export const Screencast: React.FC<ScreencastProps> = (props) => {
-  const { assets, events: ev, config: cfg, cuts = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, voiceovers = [], transcript = null } = props
+  const { assets, events: ev, config: cfg, cuts = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, voiceovers = [], inserts = [], transcript = null } = props
   const { fps, width: VW } = useVideoConfig()
   const L = useMemo(() => layout(ev, cfg), [ev, cfg])
   const keys = useMemo(() => buildCamera(ev, cfg, L.vp, zooms), [ev, cfg, L, zooms])
-  const ranges = useMemo(() => keptRanges(ev, cuts, speeds), [ev, cuts, speeds])
+  const ranges = useMemo(() => keptRanges(ev, cuts, speeds, inserts), [ev, cuts, speeds, inserts])
   const total = ranges.reduce((s, r) => s + Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps)), 0) / fps
   // Voiceovers play in output time from where their source moment lands (or the next kept moment after a cut).
   const voices = useMemo(() => voiceovers.filter((v) => assets.media?.[v.file]).map((v) => ({ v, at: srcToOut(ranges, v.t) })), [voiceovers, assets.media, ranges])
@@ -396,7 +453,7 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
   const punches = useMemo(() => zooms.map((z) => z.t), [zooms])
   // Sound effects (output seconds): a whoosh that peaks on each zoom / punch-in and B-roll, a pop on each text.
   // A transition plays where a cut joins two kept stretches ('big' = more than 2 s was removed there).
-  const transIn = useMemo(() => ranges.map((r, i) => i > 0 && r.start - ranges[i - 1].end > (cfg.transitionAt === 'all' ? 0.01 : 2)), [ranges, cfg.transitionAt])
+  const transIn = useMemo(() => ranges.map((r, i) => i > 0 && (!!r.ins || !!ranges[i - 1].ins || r.start - ranges[i - 1].end > (cfg.transitionAt === 'all' ? 0.01 : 2))), [ranges, cfg.transitionAt])
   const sfx = useMemo(() => {
     if (!cfg.sfx) return []
     const kept = (t: number) => ranges.some((r) => t >= r.start - 0.01 && t < r.end)
@@ -414,7 +471,7 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
           const len = Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps))
           const seq = (
             <Sequence key={i} from={from} durationInFrames={len}>
-              <Segment ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} overlays={overlays} stickers={stickers} transIn={transIn[i]} punches={punches} />
+              <Segment ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} overlays={overlays} stickers={stickers} transIn={transIn[i]} punches={punches} ins={r.ins} segLen={len / fps} />
             </Sequence>
           )
           from += len

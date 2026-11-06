@@ -1,128 +1,206 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { IconEyeOff, IconLetterT, IconMoodSmile, IconPhoto, IconPlayerTrackNext, IconScissors, IconX, IconZoomIn } from '@tabler/icons-react'
-import type { Chapter, Cut, ManualZoom, Mask, MusicTrack, Overlay, Sticker, RecordingEvents, SpeedRange, TextPop, Transcript, Voiceover } from '../../shared/types'
-import { keptRanges, removedRanges, type Range } from '../../video/ranges'
+import type { Chapter, Cut, InsertClip, ManualZoom, Mask, MusicTrack, Overlay, Sticker, RecordingEvents, SpeedRange, TextPop, Transcript, Voiceover } from '../../shared/types'
+import { outToSrc, playLen, srcToOut, type Range } from '../../video/ranges'
 
 /** Something on the timeline the user can select and edit in the inspector. */
 export type Item = { kind: 'cut'; i: number } | { kind: 'zoom'; id: string } | { kind: 'speed'; i: number } | { kind: 'mask'; id: string } | { kind: 'text'; id: string } | { kind: 'broll'; id: string } | { kind: 'sticker'; id: string } | { kind: 'voice'; id: string }
+  | { kind: 'piece'; a: number; b: number } | { kind: 'insert'; id: string }
 export type RangeAction = 'cut' | 'zoom' | 'speed' | 'mask' | 'text' | 'broll' | 'sticker'
-export const sameItem = (a: Item | null, b: Item | null) => !!a && !!b && a.kind === b.kind && ('id' in a ? a.id === (b as { id: string }).id : a.i === (b as { i: number }).i)
+export type DragMode = 'move' | 'l' | 'r'
+export const sameItem = (a: Item | null, b: Item | null) => {
+  if (!a || !b || a.kind !== b.kind) return false
+  if (a.kind === 'piece') return Math.abs(a.a - (b as typeof a).a) < 0.01 && Math.abs(a.b - (b as typeof a).b) < 0.01
+  return 'id' in a ? a.id === (b as { id: string }).id : a.i === (b as { i: number }).i
+}
+/** The blocks on the video track: what plays, in order, also divided where the user split it. */
+export function piecesOf(ranges: Range[], splits: number[]): Range[] {
+  const out: Range[] = []
+  for (const r of ranges) {
+    if (r.ins) { out.push(r); continue }
+    let cur = r.start
+    for (const s of [...splits].sort((x, y) => x - y)) if (s > cur + 0.02 && s < r.end - 0.02) { out.push({ ...r, start: cur, end: s }); cur = s }
+    out.push({ ...r, start: cur })
+  }
+  return out
+}
 
 /**
- * The recording's timeline in source time, one track per kind of edit (spec §36–40). Click to move the playhead,
- * drag across any track to select a stretch (a toolbar offers Cut / Zoom / Speed / Blur), click a block to edit it.
- * Hovering anything says what it is.
+ * The finished video, left to right (spec §36–40): a removed stretch closes up, so what you see is what plays, with a
+ * small joint you can click to bring it back. Click to move the playhead, drag across empty track to select a stretch,
+ * drag a block to move it, drag its ends to change its length. Items keep their source seconds underneath, so everything
+ * stays in place when the cut changes.
  */
-export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, voiceovers = [], transcript, playhead, range, selected, editable,
-  onSeek, onRange, onSelect, onAction }: {
-  ev: RecordingEvents; cuts: Cut[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]
+export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, voiceovers = [], inserts = [], transcript, playhead, range, selected, editable, scale = 1,
+  onSeek, onRange, onSelect, onAction, onDragStart, onDragItem, onDragEnd, onMenu }: {
+  ev: RecordingEvents; cuts: Cut[]; ranges: Range[]; splits?: number[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[]
   transcript?: Transcript | null; playhead: number; range: [number, number] | null; selected: Item | null
-  /** False while editing a derived version: only cuts belong to it, so zoom / speed / blur tracks are read-only. */
+  /** False while editing a derived version: only cuts belong to it, so the other tracks are read-only. */
   editable: boolean
+  /** How far the timeline is zoomed in: 1 fits the whole video. */
+  scale?: number
   onSeek: (tSrc: number) => void; onRange: (r: [number, number] | null) => void; onSelect: (it: Item | null) => void; onAction: (a: RangeAction) => void
+  onDragStart: (it: Item) => void; onDragItem: (it: Item, mode: DragMode, tOut: number) => void; onDragEnd: (it: Item, mode: DragMode, tOut: number) => void
+  onMenu: (it: Item, x: number, y: number) => void
 }) {
-  const dur = Math.max(0.001, ev.videoDuration)
-  const kept = useMemo(() => keptRanges(ev, cuts), [ev, cuts])
-  const pauses = useMemo(() => removedRanges(ev, []), [ev])
+  const total = useMemo(() => Math.max(0.001, ranges.reduce((s, r) => s + playLen(r), 0)), [ranges])
+  const pieces = useMemo(() => piecesOf(ranges, splits), [ranges, splits])
   const upload = ev.source === 'import'
-  const pct = (t: number) => `${(Math.max(0, Math.min(dur, t)) / dur) * 100}%`
-  const w = (a: number, b: number) => `${(Math.max(0, Math.min(dur, b) - Math.max(0, a)) / dur) * 100}%`
-  const width = (r: Range) => w(r.start, r.end)
+  const out = (t: number) => Math.max(0, Math.min(total, srcToOut(ranges, t)))
+  const pct = (t: number) => `${(out(t) / total) * 100}%`
+  const w = (a: number, b: number) => `${(Math.max(0, out(b) - out(a)) / total) * 100}%`
   const area = useRef<HTMLDivElement>(null)
-  const drag = useRef<{ x: number; t: number; moved: boolean; item: Item | null; scrub: boolean } | null>(null)
+  const drag = useRef<{ x: number; t: number; moved: boolean; item: Item | null; scrub: boolean; mode: DragMode; grab: number } | null>(null)
   const [hover, setHover] = useState<{ x: number; t: number; info: string | null } | null>(null)
+  const [snap, setSnap] = useState<number | null>(null)
+  const scroller = useRef<HTMLDivElement>(null)
+  // Zoomed in: the view follows the playhead.
+  useEffect(() => {
+    const v = scroller.current, a = area.current; if (!v || !a || scale <= 1) return
+    const x = (out(playhead) / total) * a.clientWidth
+    if (x < v.scrollLeft + 20 || x > v.scrollLeft + v.clientWidth - 20) v.scrollLeft = Math.max(0, x - v.clientWidth / 3)
+  }, [playhead, scale, total])
 
-  const timeAt = (clientX: number) => {
+  const outAt = (clientX: number) => {
     const box = area.current!.getBoundingClientRect()
-    return Math.max(0, Math.min(dur, ((clientX - box.left) / box.width) * dur))
+    return Math.max(0, Math.min(total, ((clientX - box.left) / box.width) * total))
   }
+  const timeAt = (clientX: number) => outToSrc(ranges, outAt(clientX))
   const itemOf = (el: EventTarget | null): Item | null => {
     const n = (el as HTMLElement | null)?.closest?.('[data-item]') as HTMLElement | null
     return n ? JSON.parse(n.dataset.item!) : null
   }
+  // Blocks land on the playhead and on the joins between pieces when they come close.
+  const snapped = (tOut: number) => {
+    const near = (8 / (area.current?.getBoundingClientRect().width ?? 800)) * total
+    const points = [out(playhead), 0, total, ...pieces.reduce<number[]>((acc, p) => [...acc, (acc[acc.length - 1] ?? 0) + playLen(p)], [])]
+    const hit = points.find((p) => Math.abs(p - tOut) < near)
+    setSnap(hit ?? null)
+    return hit ?? tOut
+  }
   const down = (e: React.PointerEvent) => {
     if ((e.target as HTMLElement).closest('.rangebar')) return
+    if (e.button === 2) return
     try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* synthetic events have no pointer */ }
     const scrub = !!(e.target as HTMLElement).closest('.ruler, .playhead')
-    drag.current = { x: e.clientX, t: timeAt(e.clientX), moved: false, item: scrub ? null : itemOf(e.target), scrub }
+    const edge = (e.target as HTMLElement).closest?.('.edge') as HTMLElement | null
+    const mode: DragMode = edge ? (edge.classList.contains('l') ? 'l' : 'r') : 'move'
+    const item = scrub ? null : itemOf(e.target)
+    const block = (e.target as HTMLElement).closest?.('[data-item]') as HTMLElement | null
+    const grab = block ? outAt(e.clientX) - outAt(block.getBoundingClientRect().left) : 0
+    drag.current = { x: e.clientX, t: timeAt(e.clientX), moved: false, item, scrub, mode, grab }
     if (scrub) onSeek(timeAt(e.clientX))
   }
+  const draggable = (it: Item | null, mode: DragMode) => !!it && editable && it.kind !== 'cut' && it.kind !== 'speed' && (mode !== 'move' || it.kind !== 'piece')
   const move = (e: React.PointerEvent) => {
     const t = timeAt(e.clientX)
     const info = (e.target as HTMLElement).closest?.('[data-info]')?.getAttribute('data-info') ?? null
-    setHover({ x: e.clientX - area.current!.getBoundingClientRect().left, t, info })
+    setHover({ x: e.clientX - area.current!.getBoundingClientRect().left, t: outAt(e.clientX), info })
     const d = drag.current; if (!d) return
     if (d.scrub) { onSeek(t); return }
-    if (!d.moved && Math.abs(e.clientX - d.x) > 4) { d.moved = true; onSelect(null) }
-    if (d.moved) onRange([Math.min(d.t, t), Math.max(d.t, t)])
+    if (!d.moved && Math.abs(e.clientX - d.x) > 4) {
+      d.moved = true
+      if (draggable(d.item, d.mode)) onDragStart(d.item!); else { d.item = null; onSelect(null) }
+    }
+    if (!d.moved) return
+    if (d.item) onDragItem(d.item, d.mode, snapped(outAt(e.clientX) - (d.mode === 'move' ? d.grab : 0)))
+    else onRange([Math.min(d.t, t), Math.max(d.t, t)])
   }
   const up = (e: React.PointerEvent) => {
-    const d = drag.current; drag.current = null
+    const d = drag.current; drag.current = null; setSnap(null)
     if (!d || d.scrub) return
-    if (d.moved) { const r = [Math.min(d.t, timeAt(e.clientX)), Math.max(d.t, timeAt(e.clientX))]; if (r[1] - r[0] < 0.15) onRange(null); return }
+    if (d.moved && d.item) { onDragEnd(d.item, d.mode, snapped(outAt(e.clientX) - (d.mode === 'move' ? d.grab : 0))); setSnap(null); return }
+    if (d.moved) { const a = timeAt(e.clientX); if (Math.abs(a - d.t) < 0.15) onRange(null); return }
     onRange(null)
     if (d.item) { onSelect(d.item); return }
     onSelect(null); onSeek(timeAt(e.clientX))
   }
+  const menu = (e: React.MouseEvent) => {
+    const it = itemOf(e.target); if (!it || !editable) return
+    e.preventDefault(); onSelect(it); onMenu(it, e.clientX, e.clientY)
+  }
 
-  // Ruler ticks: a "nice" step so there are roughly 6–10 labels whatever the length.
-  const step = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => dur / s <= 10) ?? 1200
-  const ticks = Array.from({ length: Math.floor(dur / step) + 1 }, (_, i) => i * step)
-  const lane = (label: string, hint: string, children: React.ReactNode) => (
-    <div className="lane"><span className="lane-label" data-info={hint}>{label}</span><div className="lane-body">{children}</div></div>
-  )
+  // Ruler ticks: a "nice" step so there are roughly 6–10 labels across the visible width.
+  const step = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600].find((s) => total / s <= 10 * scale) ?? 1200
+  const ticks = Array.from({ length: Math.floor(total / step) + 1 }, (_, i) => i * step)
+  // Lane names live in their own column, so they stay put while a zoomed-in timeline scrolls sideways.
+  const labels: { name: string; rows: number }[] = []
+  const lane = (label: string, hint: string, children: React.ReactNode, rows = 1) => {
+    labels.push({ name: label, rows })
+    return <div className="lane" style={rows > 1 ? { height: 22 * rows } : undefined} data-info={hint}><div className="lane-body">{children}</div></div>
+  }
+  // Things that overlap in time stack in rows, so none hides another.
+  const stack = <X,>(xs: X[], span: (x: X) => [number, number]) => {
+    const ends: number[] = [], rowOf = new Map<X, number>()
+    for (const x of [...xs].sort((p, q) => out(span(p)[0]) - out(span(q)[0]))) {
+      const [a, b] = span(x), oa = out(a), ob = Math.max(out(b), oa + total * 0.012)
+      let r = ends.findIndex((e) => e <= oa + 0.001)
+      if (r < 0) { r = ends.length; ends.push(0) }
+      ends[r] = ob; rowOf.set(x, r)
+    }
+    return { rows: Math.max(1, ends.length), rowOf }
+  }
+  // Floats above the timeline, in window coordinates, so nothing clips it and it stays on screen.
+  const floating = (fraction: number, above: number): React.CSSProperties => {
+    const box = area.current?.getBoundingClientRect(), view = scroller.current?.getBoundingClientRect()
+    if (!box || !view) return { display: 'none' }
+    return { position: 'fixed', top: view.top - above, left: Math.max(view.left + 130, Math.min(view.right - 130, box.left + box.width * fraction)) }
+  }
   const it = (x: Item) => JSON.stringify(x)
   const on = (x: Item) => (selected && sameItem(selected, x) ? ' on' : '')
+  const ends = (show: boolean) => show ? <><i className="edge l" /><i className="edge r" /></> : null
+  const block = (kind: string, x: Item, a: number, b: number, info: string, label: React.ReactNode, row = 0) => (
+    <div key={'id' in x ? x.id : kind + a} className={`blk pill ${kind}` + on(x) + (editable ? '' : ' ro')} style={{ left: pct(a), width: w(a, b), minWidth: 6, top: 3 + row * 22, bottom: 'auto', height: 16 }}
+      data-item={editable ? it(x) : undefined} data-info={info}><span>{label}</span>{ends(editable)}</div>)
+
+  const textRows = stack(texts, (x) => [x.t, x.t + x.duration]), stickerRows = stack(stickers, (x) => [x.t, x.t + x.duration])
+  const overlayRows = stack(overlays, (x) => [x.t, x.t + x.duration]), voiceRows = stack(voiceovers, (x) => [x.t, x.t + x.duration])
 
   return (
-    <div className="tl">
-      <div className="tl-area" ref={area} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => setHover(null)}>
+    <div className="tl" onContextMenu={menu}>
+      <div className="tl-scroll" ref={scroller}><div className="tl-area" ref={area} style={{ width: `${scale * 100}%` }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => setHover(null)}>
         <div className="ruler" data-info="Drag here to scrub">
-          {ticks.map((t) => <span key={t} style={{ left: pct(t) }}>{fmtShort(t)}</span>)}
+          {ticks.map((t) => <span key={t} style={{ left: `${(t / total) * 100}%` }}>{fmtShort(t)}</span>)}
         </div>
-        {lane('Video', 'Your recording. Drag across it to select a stretch.', <>
-          {kept.map((r, i) => <div key={'k' + i} className="blk kept" style={{ left: pct(r.start), width: width(r) }} />)}
-          {pauses.map((r, i) => <div key={'p' + i} className="blk pause" style={{ left: pct(r.start), width: width(r) }} data-info={`Pause, removed automatically · ${fmt(r.start)}–${fmt(r.end)}`} />)}
-          {cuts.map((c, i) => <div key={'c' + i} className={'blk cut' + on({ kind: 'cut', i })} style={{ left: pct(Math.min(...c)), width: w(Math.min(...c), Math.max(...c)) }}
-            data-item={it({ kind: 'cut', i })} data-info={`Cut ${fmt(Math.min(...c))}–${fmt(Math.max(...c))} · click to restore or adjust`} />)}
+        {lane('Video', 'Your video. Click a piece to edit it, drag its ends to trim.', <>
+          {pieces.map((p, i) => {
+            const x: Item = p.ins ? { kind: 'insert', id: p.ins.id } : { kind: 'piece', a: p.start, b: p.end }
+            const from = pieces.slice(0, i).reduce((s, q) => s + playLen(q), 0)
+            return <div key={'k' + i} className={'blk kept' + (p.ins ? ' ins' : '') + on(x)} style={{ left: `${(from / total) * 100}%`, width: `${(playLen(p) / total) * 100}%` }} data-item={it(x)}
+              data-info={`${p.ins ? p.ins.name : 'Clip'} · ${fmt(playLen(p))}${p.rate !== 1 ? ` · ${p.rate}× speed` : ''} · click to edit`}>
+              {p.ins && <span className="blk-name">{p.ins.name}</span>}{p.rate !== 1 && <span className="blk-name">{p.rate}×</span>}{ends(true)}</div>
+          })}
+          {cuts.map((c, i) => <div key={'c' + i} className={'blk joint' + on({ kind: 'cut', i })} style={{ left: pct(Math.min(...c)) }}
+            data-item={it({ kind: 'cut', i })} data-info={`${fmt(Math.abs(c[1] - c[0]))} removed here · click to bring it back`} />)}
           {highlights.map(([a, b], i) => <div key={'h' + i} className="blk hl" style={{ left: pct(a), width: w(a, b) }} data-info={`Highlight ${fmt(a)}–${fmt(b)}`} />)}
           {chapters.map((c, i) => <div key={'ch' + i} className="chap" style={{ left: pct(c.t) }} data-info={`Chapter: ${c.title} · ${fmt(c.t)}`} />)}
-          {ev.clicks.filter((c) => c.type === 'down').map((c, i) => <i key={'d' + i} className="click" style={{ left: pct(c.t - ev.t0Video) }} />)}
         </>)}
-        {lane('Zoom', upload ? 'Punch-ins: closer framings on the speaker.' : 'Zoom-ins you added. Automatic zoom follows your clicks on its own.', zooms.map((z) => (
-          <div key={z.id} className={'blk pill zoom' + on({ kind: 'zoom', id: z.id }) + (editable ? '' : ' ro')} style={{ left: pct(z.t), width: w(z.t, z.t + z.duration) }}
-            data-item={editable ? it({ kind: 'zoom', id: z.id }) : undefined} data-info={`${z.snap ? 'Punch-in' : 'Zoom'} ${z.level.toFixed(1)}× · ${fmt(z.t)}–${fmt(z.t + z.duration)} · click to edit`}><span>{z.level.toFixed(1)}×</span></div>)))}
-        {(upload || texts.length > 0) && lane('Text', 'Words that pop up on screen. Click one to change it.', texts.map((x) => (
-          <div key={x.id} className={'blk pill text' + on({ kind: 'text', id: x.id }) + (editable ? '' : ' ro')} style={{ left: pct(x.t), width: w(x.t, x.t + x.duration) }}
-            data-item={editable ? it({ kind: 'text', id: x.id }) : undefined} data-info={`“${x.text}” · ${fmt(x.t)} · click to edit`}><span>{x.text}</span></div>)))}
-        {(upload || stickers.length > 0) && lane('Stickers', 'Emoji and shapes on top of the video. Drag across the timeline, then Sticker.', stickers.map((k) => (
-          <div key={k.id} className={'blk pill sticker' + on({ kind: 'sticker', id: k.id }) + (editable ? '' : ' ro')} style={{ left: pct(k.t), width: w(k.t, k.t + k.duration) }}
-            data-item={editable ? it({ kind: 'sticker', id: k.id }) : undefined} data-info={`Sticker ${k.emoji ?? k.shape} · ${fmt(k.t)} · click to edit`}><span>{k.emoji ?? k.shape}</span></div>)))}
-        {(upload || overlays.length > 0) && lane('B-roll', 'Pictures and clips shown over the video. Drag across the timeline, then B-roll.', overlays.map((o) => (
-          <div key={o.id} className={'blk pill broll' + on({ kind: 'broll', id: o.id }) + (editable ? '' : ' ro')} style={{ left: pct(o.t), width: w(o.t, o.t + o.duration) }}
-            data-item={editable ? it({ kind: 'broll', id: o.id }) : undefined} data-info={`${o.name} · ${fmt(o.t)}–${fmt(o.t + o.duration)} · click to edit`}><span>{o.name}</span></div>)))}
-        {voiceovers.length > 0 && lane('Voice', 'Voiceovers made from text. Click one to change it.', voiceovers.map((v) => (
-          <div key={v.id} className={'blk pill voice' + on({ kind: 'voice', id: v.id }) + (editable ? '' : ' ro')} style={{ left: pct(v.t), width: w(v.t, v.t + v.duration) }}
-            data-item={editable ? it({ kind: 'voice', id: v.id }) : undefined} data-info={`“${v.text}” · ${v.voice} · click to edit`}><span>{v.text}</span></div>)))}
-        {music && lane('Music', 'Music under the whole video. Change it in the Sound tab.', <div className="blk pill music" style={{ left: 0, width: '100%' }} data-info={`${music.name} · ${Math.round(music.volume * 100)}%${music.duck ? ' · quieter when you talk' : ''}`}><span>{music.name}</span></div>)}
-        {lane('Speed', 'Stretches played faster or slower.', speeds.map((s, i) => (
+        {texts.length > 0 && lane('Text', 'Words on screen. Click to edit, drag to move, drag the ends to change how long it shows.', texts.map((x) =>
+          block('text', { kind: 'text', id: x.id }, x.t, x.t + x.duration, `“${x.text}” · ${fmt(x.t)} · click to edit`, x.text, textRows.rowOf.get(x))), textRows.rows)}
+        {stickers.length > 0 && lane('Stickers', 'Emoji and shapes on the video.', stickers.map((k) =>
+          block('sticker', { kind: 'sticker', id: k.id }, k.t, k.t + k.duration, `Sticker ${k.emoji ?? k.shape} · ${fmt(k.t)} · click to edit`, k.emoji ?? k.shape, stickerRows.rowOf.get(k))), stickerRows.rows)}
+        {overlays.length > 0 && lane('Overlay', 'Pictures and clips shown over the video.', overlays.map((o) =>
+          block('broll', { kind: 'broll', id: o.id }, o.t, o.t + o.duration, `${o.name} · ${fmt(o.t)}–${fmt(o.t + o.duration)} · click to edit`, o.name, overlayRows.rowOf.get(o))), overlayRows.rows)}
+        {voiceovers.length > 0 && lane('Voice', 'Voiceovers made from text. Click one to change it.', voiceovers.map((v) =>
+          block('voice', { kind: 'voice', id: v.id }, v.t, v.t + v.duration, `“${v.text}” · ${v.voice} · click to edit`, v.text, voiceRows.rowOf.get(v))), voiceRows.rows)}
+        {music && lane('Music', 'Music under the whole video. Change it in Audio.', <div className="blk pill music" style={{ left: 0, width: '100%' }} data-info={`${music.name} · ${Math.round(music.volume * 100)}%${music.duck ? ' · quieter when you talk' : ''}`}><span>{music.name}</span></div>)}
+        {zooms.length > 0 && lane('Zoom', upload ? 'Punch-ins: closer framings on the speaker.' : 'Zoom-ins you added. Automatic zoom follows your clicks on its own.', zooms.map((z) =>
+          block('zoom', { kind: 'zoom', id: z.id }, z.t, z.t + z.duration, `${z.snap ? 'Punch-in' : 'Zoom'} ${z.level.toFixed(1)}× · ${fmt(z.t)}–${fmt(z.t + z.duration)} · click to edit`, `${z.level.toFixed(1)}×`)))}
+        {speeds.length > 0 && lane('Speed', 'Stretches played faster or slower.', speeds.map((s, i) => (
           <div key={'s' + i} className={'blk pill speed' + on({ kind: 'speed', i }) + (editable ? '' : ' ro')} style={{ left: pct(s.start), width: w(s.start, s.end) }}
             data-item={editable ? it({ kind: 'speed', i }) : undefined} data-info={`${s.rate}× speed · ${fmt(s.start)}–${fmt(s.end)} · click to edit`}><span>{s.rate}×</span></div>)))}
-        {lane('Blur', 'Hidden areas: passwords, emails, anything private.', masks.map((m) => (
-          <div key={m.id} className={'blk pill mask' + on({ kind: 'mask', id: m.id }) + (editable ? '' : ' ro')} style={{ left: pct(m.start), width: w(m.start, m.end) }}
-            data-item={editable ? it({ kind: 'mask', id: m.id }) : undefined} data-info={`${m.kind === 'blur' ? 'Blur' : 'Solid box'} · ${fmt(m.start)}–${fmt(m.end)} · click to edit`} />)))}
-        {transcript && lane('Words', 'What you said. Edit the text in the Transcript tab.', transcript.segments.map((s, i) => (
-          <div key={'w' + i} className="blk pill words" style={{ left: pct(s.start), width: w(s.start, s.end) }} data-info={s.text.trim()} />)))}
+        {masks.length > 0 && lane('Blur', 'Hidden areas: passwords, emails, anything private.', masks.map((m) =>
+          block('mask', { kind: 'mask', id: m.id }, m.start, m.end, `${m.kind === 'blur' ? 'Blur' : 'Solid box'} · ${fmt(m.start)}–${fmt(m.end)} · click to edit`, '')))}
 
         {range && <div className="sel" style={{ left: pct(range[0]), width: w(range[0], range[1]) }} />}
         {range && (
-          <div className="rangebar" style={{ left: pct((range[0] + range[1]) / 2) }} onPointerDown={(e) => e.stopPropagation()}>
-            <span className="len">{fmt(range[1] - range[0])}</span>
+          <div className="rangebar" style={floating(((out(range[0]) + out(range[1])) / 2 / total), 48)} onPointerDown={(e) => e.stopPropagation()}>
+            <span className="len">{fmt(out(range[1]) - out(range[0]))}</span>
             <button data-tip="Remove this stretch · C" onClick={() => onAction('cut')}><IconScissors size={15} />Cut</button>
             {editable && <>
               <button data-tip={upload ? 'Punch in on the speaker · Z' : 'Zoom in on the cursor · Z'} onClick={() => onAction('zoom')}><IconZoomIn size={15} />Zoom</button>
               <button data-tip="Pop up words from here · T" onClick={() => onAction('text')}><IconLetterT size={15} />Text</button>
-              <button data-tip="Show a picture or clip here · R" onClick={() => onAction('broll')}><IconPhoto size={15} />B-roll</button>
+              <button data-tip="Show a picture or clip here · R" onClick={() => onAction('broll')}><IconPhoto size={15} />Overlay</button>
               <button data-tip="Add an emoji or shape · K" onClick={() => onAction('sticker')}><IconMoodSmile size={15} />Sticker</button>
               <button data-tip="Play faster · S" onClick={() => onAction('speed')}><IconPlayerTrackNext size={15} />Speed</button>
               <button data-tip="Hide something private · B" onClick={() => onAction('mask')}><IconEyeOff size={15} />Blur</button>
@@ -130,10 +208,12 @@ export function Timeline({ ev, cuts, chapters = [], highlights = [], zooms = [],
             <button className="x" aria-label="Clear selection" data-tip="Clear · Esc" onClick={() => onRange(null)}><IconX size={14} /></button>
           </div>
         )}
+        {snap != null && <div className="snap" style={{ left: `${(snap / total) * 100}%` }} />}
         <div className="playhead" style={{ left: pct(playhead) }} />
         {hover && <div className="ghost" style={{ left: hover.x }} />}
-        {hover && <div className="bubble" style={{ left: Math.max(90, Math.min((area.current?.clientWidth ?? 0) - 90, hover.x)) }}>{hover.info ? <><b>{fmt(hover.t)}</b> {hover.info}</> : fmt(hover.t)}</div>}
-      </div>
+        {hover && <div className="bubble" style={floating(hover.x / (area.current?.clientWidth || 1), 30)}>{hover.info ? <><b>{fmt(hover.t)}</b> {hover.info}</> : fmt(hover.t)}</div>}
+      </div></div>
+      <div className="tl-labels">{labels.map((l) => <span key={l.name} style={l.rows > 1 ? { height: 22 * l.rows } : undefined}>{l.name}</span>)}</div>
     </div>
   )
 }

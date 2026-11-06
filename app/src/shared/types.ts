@@ -68,25 +68,45 @@ export interface ManualZoom { id: string; t: number; duration: number; x: number
 /** Kinetic text (auto-edit): a key phrase that pops in big over the video from `t` for `duration` (source seconds). */
 export type TextStyle = 'pop' | 'title' | 'name'
 export type TextAnim = 'pop' | 'slide' | 'type' | 'slam'
-export interface TextPop { id: string; t: number; duration: number; text: string; style: TextStyle
+/** A point in an item's movement: `at` = seconds from the item's start. Between keyframes everything eases smoothly. */
+export interface Keyframe { at: number; x: number; y: number; scale: number; rotate: number; opacity: number }
+/** Where an on-screen item sits when it has been placed by hand: x/y = its centre as a fraction of the frame. */
+export interface Placed { x?: number; y?: number; scale?: number; rotate?: number; opacity?: number; kf?: Keyframe[] }
+export type AnimOut = 'none' | 'fade' | 'slide' | 'shrink'
+export const TEXT_FONTS = ['Aeonik', 'Helvetica Neue', 'Avenir Next', 'Futura', 'Georgia', 'Didot', 'Impact', 'Marker Felt', 'Chalkboard SE', 'Courier New']
+export interface TextPop extends Placed { id: string; t: number; duration: number; text: string; style: TextStyle
+  font?: string; color?: string; bg?: string; animOut?: AnimOut
   /** Second line of a name tag ('name' style): the person's role, e.g. "Principal engineer, Microsoft". */
   sub?: string
   /** How it comes in: pop (springs up), slide (rises in), type (typewriter), slam (drops in big). Default pop. */
   anim?: TextAnim }
 /** Stickers: an emoji or a flat brand shape on top of the video. x/y = centre as a fraction of the frame; size = fraction of frame width. */
 export type StickerShape = 'arrow' | 'star' | 'sparkle' | 'heart' | 'burst'
-export interface Sticker { id: string; t: number; duration: number; emoji?: string; shape?: StickerShape; color?: Background; x: number; y: number; size: number; rotate: number }
+export interface Sticker { id: string; t: number; duration: number; emoji?: string; shape?: StickerShape; color?: Background; x: number; y: number; size: number; rotate: number; opacity?: number; kf?: Keyframe[] }
 export const STICKER_EMOJI = ['🔥', '👀', '💯', '🚀', '✨', '😂', '🤯', '👏', '❤️', '✅', '💡', '📌']
 export const STICKER_SHAPES: StickerShape[] = ['arrow', 'star', 'sparkle', 'heart', 'burst']
 /** B-roll (CapCut-style overlay): a picture or clip shown over the video from `t` for `duration` (source seconds).
  *  `file` is relative to the project folder (media/…). 'full' covers the frame; 'card' floats a rounded card above the speaker. */
-export interface Overlay { id: string; t: number; duration: number; file: string; kind: 'image' | 'video'; name: string; fit: 'full' | 'card'
+export type OverlayShape = 'rect' | 'round' | 'circle' | 'heart' | 'star'
+export type Blend = 'normal' | 'screen' | 'multiply' | 'overlay'
+export interface Overlay extends Placed { id: string; t: number; duration: number; file: string; kind: 'image' | 'video'; name: string; fit: 'full' | 'card'
+  shape?: OverlayShape; blend?: Blend; animIn?: ClipAnim; animOut?: AnimOut
   /** A clip's own length in seconds (it is never shown past its end). */
   length?: number }
+export type ClipAnim = 'none' | 'fade' | 'zoom' | 'slide'
+/**
+ * A clip or still that plays in the main line, pushing the rest along: another video, a picture, a freeze frame, or a
+ * reversed / smoothed / steadied piece. `at` = the source second it plays at. `v` = its private time slot past the end of
+ * the recording, so text and stickers placed on it keep the same timing model as everything else.
+ */
+export interface InsertClip { id: string; at: number; v: number; file: string; kind: 'image' | 'video'; name: string; in: number; out: number; volume: number; length?: number; animIn?: ClipAnim; animOut?: AnimOut }
 /** Background music: one track under the whole video, looped, ducked while anyone speaks. `file` is relative (media/…). */
 export interface MusicTrack { file: string; name: string; volume: number; duck: boolean }
 /** A spoken line made from typed text with one of the computer's own voices (macOS `say`), placed at source time t. */
 export interface Voiceover { id: string; t: number; text: string; voice: string; file: string; duration: number; volume: number }
+export type ClipOp = 'reverse' | 'slowmo' | 'stabilise' | 'copy'
+/** Saved once for the whole app: the colours, font, handle and logo used across every project. */
+export interface BrandKit { colors: string[]; font: string; handle: string; logo: string | null }
 /** A file the user added to a project (copied into <project>/media). */
 export interface MediaFile { file: string; url: string; kind: 'image' | 'video' | 'audio'; name: string; duration?: number }
 /** Playback speed for a stretch of the recording (spec §40); 1 = normal. Source seconds. */
@@ -125,6 +145,9 @@ export interface ProjectFile {
   stickers?: Sticker[]
   music?: MusicTrack | null
   voiceovers?: Voiceover[]
+  inserts?: InsertClip[]
+  /** Where the user split the video (source seconds); a split only divides, nothing is removed. */
+  splits?: number[]
   /** When the automatic first edit of an uploaded video ran (it runs once; "Auto-edit again" redoes it). */
   autoEditedAt?: string
   chapters?: Chapter[]
@@ -215,7 +238,10 @@ export interface RenderConfig {
   capHighlight: boolean; capEmoji: boolean
   /** Cinematic finish: dark edges, film grain, letterbox bars, a short shake on every punch-in. */
   vignette: boolean; grain: boolean; bars: boolean; shake: boolean
+  /** Voice changer: plays media/voice-<fx>.wav instead of the voice track. Same timing, so cuts and captions still line up. */
+  voiceFx: VoiceFx
 }
+export type VoiceFx = 'none' | 'deep' | 'high' | 'radio' | 'robot' | 'echo'
 export type Look = 'none' | 'warm' | 'cool' | 'punchy' | 'soft' | 'film' | 'mono'
 export const LOOKS: { id: Look; label: string; css: string }[] = [
   { id: 'none', label: 'None', css: '' },
@@ -234,12 +260,12 @@ export const defaultConfig: RenderConfig = {
   sfx: false, sfxVolume: 0.55, backdrop: 'off', backdropColor: 'paper', backdropImage: null,
   progressBar: 'off', look: 'none', brightness: 1, contrast: 1, saturation: 1, transition: 'none', transitionAt: 'big',
   intro: false, introTitle: '', introSub: '', outro: false, outroText: 'Follow for more', outroSub: '',
-  capHighlight: false, capEmoji: false, vignette: false, grain: false, bars: false, shake: false,
+  capHighlight: false, capEmoji: false, vignette: false, grain: false, bars: false, shake: false, voiceFx: 'none',
 }
 
-export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; transcript?: Transcript | null; [k: string]: unknown }
+export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[]; transcript?: Transcript | null; [k: string]: unknown }
 /** Master-level instructions every derivative inherits. */
-export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[] }
+export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[] }
 
 export type MicPermission = 'authorized' | 'denied' | 'restricted' | 'notDetermined' | 'unknown'
 export interface Permissions { screen: boolean; mic: MicPermission }
@@ -336,6 +362,18 @@ export interface NarrateApi {
   /** The computer's own voices for voiceovers (macOS), and a spoken file made from text into the project's media/. */
   listVoices(): Promise<{ name: string; lang: string }[]>
   speak(dir: string, text: string, voice: string): Promise<{ file: string; url: string; duration: number }>
+  /** A still of the recording at t seconds into media/ (freeze frames and the picture on the look tiles). */
+  grabFrame(dir: string, t: number, poster?: boolean): Promise<MediaFile>
+  /** Makes a new file from a stretch: reversed, smooth slow motion or steadied. */
+  processClip(dir: string, op: ClipOp, start: number, end: number, source?: string): Promise<MediaFile>
+  /** A keyed version of a green-screen clip or picture (transparent webm or png). */
+  chromaKey(dir: string, file: string, color: string, similarity: number): Promise<MediaFile>
+  voiceChange(dir: string, fx: Exclude<VoiceFx, 'none'>, clean: boolean): Promise<MediaFile>
+  getBrand(): Promise<BrandKit>
+  setBrand(b: BrandKit): Promise<BrandKit>
+  pickBrandLogo(): Promise<string | null>
+  /** Copies the saved logo into a project's media/. */
+  addMediaPath(dir: string, path: string): Promise<MediaFile>
   /** Developer screenshots only (NARRATE_OPEN): open a recording folder in the editor on launch. */
   onDevOpen(cb: (dir: string) => void): () => void
 }

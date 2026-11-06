@@ -15,5 +15,5 @@ const empty: ScreencastProps = {
 export const RemotionRoot = () => (
   <Composition id="Screencast" component={Screencast} fps={FPS} defaultProps={empty}
     width={1920} height={1200} durationInFrames={FPS}
-    calculateMetadata={({ props }) => ({ ...compositionSize(props), durationInFrames: Math.max(1, Math.ceil(keptDuration(props.events, props.cuts ?? [], props.speeds ?? []) * FPS)) })} />
+    calculateMetadata={({ props }) => ({ ...compositionSize(props), durationInFrames: Math.max(1, Math.ceil(keptDuration(props.events, props.cuts ?? [], props.speeds ?? [], props.inserts ?? []) * FPS)) })} />
 )

@@ -45,5 +45,13 @@ const api: NarrateApi = {
   matteProject: (dir) => ipcRenderer.invoke('project:matte', dir),
   listVoices: () => ipcRenderer.invoke('voices:list'),
   speak: (dir, text, voice) => ipcRenderer.invoke('project:speak', dir, text, voice),
+  grabFrame: (dir, t, poster) => ipcRenderer.invoke('project:frame', dir, t, poster),
+  processClip: (dir, op, start, end, source) => ipcRenderer.invoke('project:process', dir, op, start, end, source),
+  chromaKey: (dir, file, color, similarity) => ipcRenderer.invoke('project:chroma', dir, file, color, similarity),
+  voiceChange: (dir, fx, clean) => ipcRenderer.invoke('project:voice', dir, fx, clean),
+  getBrand: () => ipcRenderer.invoke('brand:get'),
+  setBrand: (b) => ipcRenderer.invoke('brand:set', b),
+  pickBrandLogo: () => ipcRenderer.invoke('brand:logo'),
+  addMediaPath: (dir, path) => ipcRenderer.invoke('project:mediaPath', dir, path),
 }
 contextBridge.exposeInMainWorld('narrate', api)

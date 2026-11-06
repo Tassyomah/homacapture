@@ -1,10 +1,10 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, screen, globalShortcut, clipboard } from 'electron'
 import { join, resolve, basename, extname } from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import type { Analysis, Cut, Devices, ExportFormat, ExportProgress, MasterExtras, MediaFile, Project, ProjectFile, RecorderEvent, RenderConfig, StartOptions, Transcript, UnfinishedRecording } from '../shared/types'
+import type { Analysis, BrandKit, ClipOp, Cut, Devices, ExportFormat, ExportProgress, MasterExtras, MediaFile, Project, ProjectFile, RecorderEvent, RecordingEvents, RenderConfig, StartOptions, Transcript, UnfinishedRecording, VoiceFx } from '../shared/types'
 import { Recorder } from './recorder'
 import { AssetServer } from './assetServer'
 import { exportProject, findFfmpeg, renderThumbnails } from './exporter'
@@ -253,7 +253,7 @@ app.whenReady().then(async () => {
     const p = loadProject(process.env.NARRATE_OPEN)
     if (p) exportProject(APP_ROOT, p, { ...(await import('../shared/types')).defaultConfig, ...(p.file?.config ?? {}), outputHeight: 480 }, p.file?.cuts ?? [],
       (prog) => console.log('[dev] export', prog.stage, Math.round(prog.progress * 100) + '%', prog.message ?? ''), 'packaged-test', 'mp4', join(RESOURCES, 'remotion'),
-      { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [], texts: p.file?.texts ?? [], overlays: p.file?.overlays ?? [], stickers: p.file?.stickers ?? [], music: p.file?.music ?? null, voiceovers: p.file?.voiceovers ?? [] })
+      { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [], texts: p.file?.texts ?? [], overlays: p.file?.overlays ?? [], stickers: p.file?.stickers ?? [], music: p.file?.music ?? null, voiceovers: p.file?.voiceovers ?? [], inserts: p.file?.inserts ?? [] })
       .then(() => app.quit(), (e) => { console.log('[dev] export failed', e.message); app.quit() })
   }
   ipcMain.handle('share:settings', () => getShareSettings())
@@ -305,6 +305,105 @@ app.whenReady().then(async () => {
       try { duration = Number(execFileSync(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', dest], { encoding: 'utf8' }).trim()) || undefined } catch { /* unknown length */ }
     }
     return { file: `media/${name}`, url: server.url(dest), kind: isVideo ? 'video' : isAudio ? 'audio' : 'image', name: basename(src), duration }
+  })
+  // Editing tools that make a new file in the project's media/ with ffmpeg. All local and free; the source is never changed.
+  const inProject = (dir: string) => { if (!dir.startsWith(RECORDINGS) || !existsSync(join(dir, 'events.json'))) throw new Error('not a recording folder') }
+  const freeName = (dir: string, stem: string, ext: string) => {
+    mkdirSync(join(dir, 'media'), { recursive: true })
+    let name = `${stem}${ext}`
+    for (let i = 2; existsSync(join(dir, 'media', name)); i++) name = `${stem}-${i}${ext}`
+    return name
+  }
+  const ffmpegRun = (args: string[], failure: string) => new Promise<void>((res, rej) => {
+    const ff = findFfmpeg(); if (!ff) return rej(new Error('ffmpeg is needed for this.'))
+    const p = spawn(ff, ['-v', 'error', '-y', ...args]); let err = ''
+    p.stderr.on('data', (d) => { err += d })
+    p.on('error', rej); p.on('close', (c) => { if (c === 0) res(); else { console.warn(err.slice(-400)); rej(new Error(failure)) } })
+  })
+  const lengthOf = (file: string): number | undefined => {
+    const probe = findFfmpeg()?.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'))
+    if (!probe || !existsSync(probe)) return undefined
+    try { return Number(execFileSync(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', file], { encoding: 'utf8' }).trim()) || undefined } catch { return undefined }
+  }
+  const made = (dir: string, name: string, kind: MediaFile['kind'], label: string): MediaFile => {
+    const dest = join(dir, 'media', name)
+    return { file: `media/${name}`, url: server.url(dest), kind, name: label, duration: kind === 'image' ? undefined : lengthOf(dest) }
+  }
+  const eventsOf = (dir: string): RecordingEvents => JSON.parse(readFileSync(join(dir, 'events.json'), 'utf8'))
+  ipcMain.handle('project:frame', async (_e, dir: string, t: number, poster?: boolean): Promise<MediaFile> => {
+    inProject(dir)
+    if (poster && existsSync(join(dir, 'media', '.poster.jpg'))) return made(dir, '.poster.jpg', 'image', 'Poster')
+    const name = poster ? '.poster.jpg' : freeName(dir, 'freeze', '.jpg')
+    mkdirSync(join(dir, 'media'), { recursive: true })
+    await ffmpegRun(['-ss', t.toFixed(3), '-i', join(dir, eventsOf(dir).files.screen), '-frames:v', '1', '-q:v', '2', join(dir, 'media', name)], 'That frame could not be saved.')
+    return made(dir, name, 'image', 'Freeze frame')
+  })
+  ipcMain.handle('project:process', async (_e, dir: string, op: ClipOp, start: number, end: number, source?: string): Promise<MediaFile> => {
+    inProject(dir)
+    const len = end - start
+    if (len < 0.1) throw new Error('Select a longer stretch.')
+    const limit = op === 'reverse' ? 30 : op === 'slowmo' ? 15 : 120
+    if (len > limit) throw new Error(`Keep it under ${limit} seconds for this. Split the clip first.`)
+    const ev = eventsOf(dir)
+    const name = freeName(dir, op, '.mp4'), out = join(dir, 'media', name)
+    const video = op === 'copy' ? 'null' : op === 'reverse' ? 'reverse' : op === 'slowmo' ? "scale='min(1920,iw)':-2,setpts=2*PTS,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir" : 'deshake=rx=32:ry=32'
+    const audio = op === 'reverse' ? 'areverse' : op === 'slowmo' ? 'atempo=0.5' : 'anull'
+    const hasOwnAudio = (f: string) => { try { return execFileSync(findFfmpeg()!.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe')), ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', f], { encoding: 'utf8' }).trim().length > 0 } catch { return false } }
+    const clip = source ? join(dir, source) : join(dir, ev.files.screen)
+    const inputs = ['-ss', start.toFixed(3), '-t', len.toFixed(3), '-i', clip]
+    // The voice lives in its own track on recordings, so it is cut from there with the same offset the player uses.
+    let audioIn: string | null = null
+    if (!source && ev.files.mic) {
+      const voice = existsSync(join(dir, 'mic.clean.wav')) ? 'mic.clean.wav' : ev.files.mic
+      inputs.push('-ss', Math.max(0, start - (ev.micOffset ?? 0)).toFixed(3), '-t', len.toFixed(3), '-i', join(dir, voice))
+      audioIn = '1:a:0'
+    } else if (hasOwnAudio(clip)) audioIn = '0:a:0'
+    const graph = `[0:v:0]${video},format=yuv420p[v]` + (audioIn ? `;[${audioIn}]${audio}[a]` : '')
+    await ffmpegRun([...inputs, '-filter_complex', graph, '-map', '[v]', ...(audioIn ? ['-map', '[a]', '-c:a', 'aac', '-b:a', '192k'] : []),
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-movflags', '+faststart', out], 'That piece could not be processed.')
+    return made(dir, name, 'video', op === 'copy' ? 'Copy' : op === 'reverse' ? 'Reversed' : op === 'slowmo' ? 'Slow motion' : 'Steadied')
+  })
+  ipcMain.handle('project:chroma', async (_e, dir: string, file: string, color: string, similarity: number): Promise<MediaFile> => {
+    inProject(dir)
+    const src = join(dir, file), still = /\.(png|jpe?g|webp)$/i.test(file)
+    const name = freeName(dir, basename(file, extname(file)) + '-keyed', still ? '.png' : '.webm')
+    const key = `chromakey=${color.replace('#', '0x')}:${similarity.toFixed(2)}:0.08,format=${still ? 'rgba' : 'yuva420p'}`
+    await ffmpegRun(['-i', src, '-vf', key, ...(still ? ['-frames:v', '1'] : ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', '28', '-row-mt', '1', '-deadline', 'realtime', '-cpu-used', '5', '-an']), join(dir, 'media', name)], 'The background colour could not be removed.')
+    return made(dir, name, still ? 'image' : 'video', 'Keyed')
+  })
+  ipcMain.handle('project:voice', async (_e, dir: string, fx: Exclude<VoiceFx, 'none'>, clean: boolean): Promise<MediaFile> => {
+    inProject(dir)
+    const ev = eventsOf(dir); if (!ev.files.mic) throw new Error('This recording has no voice track.')
+    const src = join(dir, clean && existsSync(join(dir, 'mic.clean.wav')) ? 'mic.clean.wav' : ev.files.mic)
+    const probe = findFfmpeg()?.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'))
+    let rate = 48000
+    try { if (probe) rate = Number(execFileSync(probe, ['-v', 'error', '-select_streams', 'a:0', '-show_entries', 'stream=sample_rate', '-of', 'csv=p=0', src], { encoding: 'utf8' }).trim()) || rate } catch { /* assume 48 kHz */ }
+    const pitch = (k: number) => `asetrate=${Math.round(rate * k)},aresample=${rate},atempo=${(1 / k).toFixed(4)}`
+    const filter = { deep: pitch(0.84), high: pitch(1.25), radio: 'highpass=f=400,lowpass=f=3000,acompressor=threshold=0.1:ratio=6', echo: 'aecho=0.8:0.6:140:0.3',
+      robot: "afftfilt=real='hypot(re,im)*sin(0)':imag='hypot(re,im)*cos(0)':win_size=512:overlap=0.75" }[fx]
+    const name = `voice-${fx}.wav`
+    mkdirSync(join(dir, 'media'), { recursive: true })
+    await ffmpegRun(['-i', src, '-af', filter, '-ar', String(rate), join(dir, 'media', name)], 'The voice could not be changed.')
+    return made(dir, name, 'audio', fx)
+  })
+  // Brand kit: one per app, kept beside the other settings.
+  const brandFile = () => join(app.getPath('userData'), 'brand.json')
+  const noBrand: BrandKit = { colors: ['#FB8B73', '#6E71E8', '#14140F', '#EFEEE8'], font: 'Aeonik', handle: '', logo: null }
+  ipcMain.handle('brand:get', (): BrandKit => { try { return { ...noBrand, ...JSON.parse(readFileSync(brandFile(), 'utf8')) } } catch { return noBrand } })
+  ipcMain.handle('brand:set', (_e, b: BrandKit): BrandKit => { writeFileSync(brandFile(), JSON.stringify(b, null, 1)); return b })
+  ipcMain.handle('brand:logo', async (): Promise<string | null> => {
+    const r = await dialog.showOpenDialog(win!, { title: 'Choose your logo', properties: ['openFile'], filters: [{ name: 'Pictures', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] })
+    if (r.canceled || !r.filePaths[0]) return null
+    const dest = join(app.getPath('userData'), `brand-logo${extname(r.filePaths[0]).toLowerCase()}`)
+    copyFileSync(r.filePaths[0], dest)
+    return dest
+  })
+  ipcMain.handle('project:mediaPath', async (_e, dir: string, path: string): Promise<MediaFile> => {
+    inProject(dir)
+    if (!path.startsWith(app.getPath('userData'))) throw new Error('That file cannot be added.')
+    const name = freeName(dir, 'logo', extname(path).toLowerCase())
+    copyFileSync(path, join(dir, 'media', name))
+    return made(dir, name, 'image', 'Logo')
   })
   // Voiceover from text: the Mac's own voices via `say` (offline, free), saved as m4a in the project's media/.
   // Joke and sound-effect voices that ship with macOS; never offered for a voiceover.
