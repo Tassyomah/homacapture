@@ -69,7 +69,7 @@ function mainRanges(ev: RecordingEvents, cuts: Cut[] = [], speeds: SpeedRange[] 
 /** In-line clips that belong to a version: only those standing inside what the version keeps of the recording. */
 export function insertsWithin(ev: RecordingEvents, cuts: Cut[], inserts: InsertClip[]): InsertClip[] {
   const main = mainRanges(ev, cuts)
-  return inserts.filter((i) => main.some((r) => i.at >= r.start - 0.01 && i.at <= r.end + 0.01))
+  return inserts.filter((i) => !i.replaces && main.some((r) => i.at >= r.start - 0.01 && i.at <= r.end + 0.01))
 }
 
 /** Output seconds a range takes to play. */
@@ -84,7 +84,8 @@ export function outToSrc(kept: Range[], tOut: number): number {
   let acc = 0
   for (const r of kept) {
     const len = playLen(r)
-    if (tOut <= acc + len) return r.start + (tOut - acc) * r.rate
+    // End-exclusive, so the join after a clip belongs to what plays next and never to a second that plays nothing.
+    if (tOut < acc + len) return r.start + (tOut - acc) * r.rate
     acc += len
   }
   const last = kept[kept.length - 1]
@@ -93,17 +94,21 @@ export function outToSrc(kept: Range[], tOut: number): number {
 
 /** Source time → output time. Inside a removed stretch, snaps to the next kept second (or the end). */
 export function srcToOut(kept: Range[], tSrc: number): number {
-  let acc = 0, next: { start: number; acc: number } | null = null
+  let acc = 0, next: { start: number; acc: number } | null = null, slot: { start: number; end: number } | null = null
   for (const r of kept) {
     // End-exclusive: where a clip sits between two stretches, the second second's start belongs after the clip.
     if (tSrc >= r.start && tSrc < r.end) return acc + (tSrc - r.start) / r.rate
     if (!r.ins && r.start > tSrc && (!next || r.start < next.start)) next = { start: r.start, acc }
     acc += playLen(r)
+    // Past a clip's end, inside its private slot: that is the end of the clip, not the end of the video.
+    if (r.ins && r.start <= tSrc && (!slot || r.start > slot.start)) slot = { start: r.start, end: acc }
   }
-  return next ? next.acc : acc
+  return next ? next.acc : slot ? slot.end : acc
 }
 
+/** Clear space around each slot, far longer than anything can last, so nothing timed on one spills onto another. */
+export const SLOT_GAP = 200
 /** A fresh private time slot for an in-line clip, past the recording and every clip so far (room for it to be lengthened). */
 export function nextSlot(ev: RecordingEvents, inserts: InsertClip[]): number {
-  return inserts.reduce((m, i) => Math.max(m, i.v + (i.length ?? 60) + 1), ev.videoDuration + 1)
+  return inserts.reduce((m, i) => Math.max(m, i.v + (i.length ?? 60) + SLOT_GAP), ev.videoDuration + SLOT_GAP)
 }

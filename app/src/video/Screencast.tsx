@@ -323,6 +323,7 @@ const BRoll: React.FC<{ o: Overlay; src: string; t: number; srcStart: number; fp
   }
   const portrait = F.h > F.w
   const shape = o.shape ?? 'round', round = shape === 'circle' || shape === 'heart' || shape === 'star'
+  const clear = o.file.endsWith('.webm') || o.file.endsWith('.png')    // keyed clips and logos: no card behind them
   const hand = o.x != null || !!o.kf?.length
   const defW = F.w * (portrait ? 0.8 : 0.42)
   const at = placedAt({ x: o.x ?? (portrait ? 0.5 : (faceLeft ? 0.54 + defW / F.w / 2 : 0.04 + defW / F.w / 2)), y: o.y ?? (portrait ? 0.05 + (defW * 0.625) / F.h / 2 : 0.5), scale: o.scale ?? 1, rotate: o.rotate ?? (hand ? 0 : -1.5), opacity: o.opacity ?? 1 }, o.kf, age)
@@ -333,7 +334,7 @@ const BRoll: React.FC<{ o: Overlay; src: string; t: number; srcStart: number; fp
   const clipId = `hc-heart-${o.id}`
   return (
     <div data-hc-item={`broll:${o.id}`} style={{ position: 'absolute', left: F.x + F.w * at.x - w / 2, top: F.y + F.h * at.y - h / 2, width: w, height: h, borderRadius: shape === 'rect' ? 0 : shape === 'round' ? Math.round(w * 0.05) : 0, overflow: 'hidden',
-                  opacity: alpha * at.opacity, transform: `translateY(${(slide * 100).toFixed(1)}%) scale(${scale}) rotate(${at.rotate}deg)`, boxShadow: round ? undefined : '0 30px 90px rgba(20,20,15,0.45)', background: round ? undefined : '#14140F', mixBlendMode: blend,
+                  opacity: alpha * at.opacity, transform: `translateY(${(slide * 100).toFixed(1)}%) scale(${scale}) rotate(${at.rotate}deg)`, boxShadow: round || clear ? undefined : '0 30px 90px rgba(20,20,15,0.45)', background: round || clear ? undefined : '#14140F', mixBlendMode: blend,
                   clipPath: shape === 'heart' ? `url(#${clipId})` : CLIP_SHAPE[shape] }}>
       {shape === 'heart' && <svg width={0} height={0} style={{ position: 'absolute' }}><clipPath id={clipId} clipPathUnits="objectBoundingBox"><path d="M0.5 0.92 C0.2 0.68 0 0.5 0 0.28 C0 0.12 0.13 0 0.28 0 C0.37 0 0.45 0.05 0.5 0.13 C0.55 0.05 0.63 0 0.72 0 C0.87 0 1 0.12 1 0.28 C1 0.5 0.8 0.68 0.5 0.92 Z" /></clipPath></svg>}
       {media({ width: '100%', height: '100%', objectFit: 'cover', display: 'block' })}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Player, type PlayerRef } from '@remotion/player'
 import { Screencast, compositionSize, placedAt } from '../../video/Screencast'
-import { insertsWithin, keptDuration, keptRanges, nextSlot, outToSrc, playLen, srcToOut } from '../../video/ranges'
+import { SLOT_GAP, insertsWithin, keptDuration, keptRanges, nextSlot, outToSrc, playLen, srcToOut } from '../../video/ranges'
 import { ASPECTS, ASSET_LABEL, CAPTION_STYLES, EXPORT_PRESETS, LOOKS, STICKER_EMOJI, STICKER_SHAPES, TEXT_FONTS, defaultConfig, type AnimOut, type Blend, type BrandKit, type ClipAnim, type ClipOp, type InsertClip, type Keyframe, type OverlayShape, type VoiceFx, type Look, type Sticker, type TextAnim, type Transition, type Analysis, type BackdropFill, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type MusicTrack, type Overlay, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Voiceover, type Transcript, type TranscriptSegment } from '../../shared/types'
 import { smoothCursor } from '../../video/motion'
 import { revealLabel } from '../platform'
@@ -159,7 +159,7 @@ export function Editor({ project }: { project: Project }) {
   const runAutoEdit = (tr: Transcript) => {
     const r = autoEdit(project.events, tr)
     // On a re-run the user's own caption look and sound-effects choice stay; the first run sets them.
-    apply((e) => ({ ...e, cuts: r.cuts, config: { ...e.config, ...r.config,
+    apply((e) => ({ ...e, cuts: [...r.cuts, ...e.inserts.flatMap((i) => (i.replaces ? [i.replaces] : []))], config: { ...e.config, ...r.config,
       captions: e.autoEditedAt && e.config.captions !== 'off' ? e.config.captions : r.config.captions ?? e.config.captions,
       sfx: e.autoEditedAt ? e.config.sfx : true, voice: micClean || project.assets.micClean ? 'clean' : e.config.voice },
       zooms: [...e.zooms.filter((z) => !z.id.startsWith('auto-')), ...r.zooms], texts: [...e.texts.filter((x) => !x.id.startsWith('auto-') || x.style === 'name'), ...r.texts],
@@ -197,7 +197,7 @@ export function Editor({ project }: { project: Project }) {
   const [thumbStatus, setThumbStatus] = useState<'idle' | 'running' | string>('idle')
   const makeThumbs = () => {
     setThumbStatus('running')
-    const times = thumbnailTimes(project.events, edits.cuts, speeds, chapters, highlights, analysis)
+    const times = thumbnailTimes(project.events, edits.cuts, speeds, chapters, highlights, analysis, 4, inserts)
     window.narrate.renderThumbnails(project.dir, edits.config, edits.cuts, times, { zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, inserts })
       .then((t) => { setThumbs(t); setThumbStatus('idle') })
       .catch((e: Error) => setThumbStatus(e.message))
@@ -339,7 +339,10 @@ export function Editor({ project }: { project: Project }) {
   const maskHere = () => maskAt(playheadSrc, Math.min(dur, playheadSrc + 5))
   const rangeAction = (act: RangeAction) => {
     if (!range) return
-    const [a, b] = range
+    const a = range[0]
+    // A stretch never spans the recording and a clip: it stops where the clip stands.
+    const b = a < dur && range[1] >= dur ? Math.min(dur, inserts.find((i) => range[1] >= i.v && range[1] <= i.v + (i.out - i.in))?.at ?? dur) - 0.02 : range[1]
+    if (a >= dur && (act === 'zoom' || act === 'speed' || act === 'mask')) { alert('This works on your main video. Select a stretch of it.'); setRange(null); return }
     if (act === 'cut') { if (a >= dur || b > dur + 0.01) alert('Click the clip on the timeline, then Delete.'); else { const i = cuts.length; if (addCut(a, b)) setSel({ kind: 'cut', i }) } }
     if (act === 'zoom') zoomAt(a, Math.max(0.5, b - a))
     if (act === 'speed') speedOver(a, b)
@@ -414,15 +417,15 @@ export function Editor({ project }: { project: Project }) {
       if ((e.target as HTMLElement).closest?.('input, select, textarea')) return
       const k = e.key.toLowerCase()
       if (e.ctrlKey || e.metaKey) {
-        if (k === 'b') { e.preventDefault(); splitHere() }
-        if (k === 'd' && selItem) { e.preventDefault(); void duplicate(selItem) }
+        if (k === 'b' && !asset) { e.preventDefault(); splitHere() }
+        if (k === 'd' && selItem && !asset) { e.preventDefault(); void duplicate(selItem) }
         if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
         if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo() }
         return
       }
       if (k === ' ') { e.preventDefault(); playerRef.current?.toggle() }
       else if (k === 'escape') { setRange(null); setSel(null); setMenu(null) }
-      else if (k === 'arrowleft' || k === 'arrowright') { e.preventDefault(); seekSrc(playheadSrc + (k === 'arrowleft' ? -1 : 1) * (e.shiftKey ? 5 : 1)) }
+      else if (k === 'arrowleft' || k === 'arrowright') { e.preventDefault(); seekSrc(outToSrc(kept, Math.max(0, Math.min(outLen - 0.02, srcToOut(kept, playheadSrc) + (k === 'arrowleft' ? -1 : 1) * (e.shiftKey ? 5 : 1))))) }
       else if ((k === 'delete' || k === 'backspace') && selItem) removeItem(selItem)
       else if (range && k === 'c') rangeAction('cut')
       else if (range && !asset && k === 'z') rangeAction('zoom')
@@ -507,14 +510,19 @@ export function Editor({ project }: { project: Project }) {
   /** A file becomes a clip in the main line at the playhead (a clip you are standing on is split there). */
   const clipAtPlayhead = (file: string, name: string, kind: 'image' | 'video', length: number | undefined, at = playheadSrc, cut?: [number, number]) => {
     const id = newId('c')
+    const v = nextSlot(project.events, editsNow.current.inserts)
+    landOn.current = v + 0.02
     apply((e) => {
       // Standing on another clip: the new one lands right after it.
       const inClip = e.inserts.find((i) => at >= i.v && at <= i.v + (i.out - i.in))
       const place = inClip ? inClip.at + 0.001 : Math.min(at, project.events.videoDuration)
-      return { ...e, cuts: cut ? [...e.cuts, cut] : e.cuts, inserts: [...e.inserts, { id, at: place, v: nextSlot(project.events, e.inserts), file, kind, name, in: 0, out: kind === 'image' ? 3 : (length ?? 5), volume: 1, length: kind === 'image' ? 60 : length }] }
+      return { ...e, cuts: cut ? [...e.cuts, cut] : e.cuts, inserts: [...e.inserts, { id, at: place, v, file, kind, name, in: 0, out: kind === 'image' ? 3 : (length ?? 5), volume: 1, length: kind === 'image' ? 60 : length, ...(cut ? { replaces: cut } : {}) }] }
     })
     setExporting(false); setSel({ kind: 'insert', id })
   }
+  // After a clip goes in, the playhead sits on it, so the next thing you add lands where you are looking.
+  const landOn = useRef<number | null>(null)
+  useEffect(() => { if (landOn.current != null && kept.some((r) => r.ins)) { const t = landOn.current; landOn.current = null; seekSrc(t) } }, [kept])
   const overlayAtPlayhead = (file: string, name: string, kind: 'image' | 'video', length: number | undefined, patch: Partial<Overlay> = {}) => {
     const id = newId('o')
     apply((e) => ({ ...e, overlays: [...e.overlays, { id, t: playheadSrc, duration: Math.min(4, length ?? 4), file, kind, name, fit: 'card', length, x: 0.5, y: 0.4, scale: 1, rotate: 0, ...patch } as Overlay].sort((a, b) => a.t - b.t) }))
@@ -524,18 +532,21 @@ export function Editor({ project }: { project: Project }) {
   const editInsert = (id: string, patch: Partial<InsertClip>) => apply((e) => ({ ...e, inserts: e.inserts.map((x) => x.id === id ? { ...x, ...patch } : x) }))
   const removeInsert = (id: string) => apply((e) => {
     const ins = e.inserts.find((x) => x.id === id); if (!ins) return e
-    const on = (t: number) => t >= ins.v && t < ins.v + (ins.length ?? 60) + 1
+    const on = (t: number) => t >= ins.v && t < ins.v + (ins.length ?? 60) + SLOT_GAP / 2
     return { ...e, inserts: e.inserts.filter((x) => x.id !== id), texts: e.texts.filter((x) => !on(x.t)), stickers: e.stickers.filter((x) => !on(x.t)), overlays: e.overlays.filter((x) => !on(x.t)), voiceovers: e.voiceovers.filter((x) => !on(x.t)) }
   })
   const rangeAt = (t: number) => kept.find((r) => t >= r.start && t < r.end) ?? null
   const splitHere = () => {
+    if (asset) return
     const t = playheadSrc
     if (selItem?.kind === 'text' || selItem?.kind === 'sticker') {
       const span = itemSpan(selItem)
       if (span && t > span[0] + 0.1 && t < span[1] - 0.1) {
         const id = newId(selItem.kind === 'text' ? 't' : 'k'), left = t - span[0], right = span[1] - t, sid = selItem.id
-        if (selItem.kind === 'text') apply((e) => ({ ...e, texts: e.texts.flatMap((x) => x.id === sid ? [{ ...x, duration: left }, { ...x, id, t, duration: right }] : [x]) }))
-        else apply((e) => ({ ...e, stickers: e.stickers.flatMap((x) => x.id === sid ? [{ ...x, duration: left }, { ...x, id, t, duration: right }] : [x]) }))
+        // Movement carries on: the second half starts where the first stopped.
+        const later = (kf?: Keyframe[]) => kf?.length ? [{ ...placedAt(kf[0], kf, left), at: 0 }, ...kf.filter((k) => k.at > left).map((k) => ({ ...k, at: k.at - left }))] : kf
+        if (selItem.kind === 'text') apply((e) => ({ ...e, texts: e.texts.flatMap((x) => x.id === sid ? [{ ...x, duration: left }, { ...x, id, t, duration: right, kf: later(x.kf) }] : [x]) }))
+        else apply((e) => ({ ...e, stickers: e.stickers.flatMap((x) => x.id === sid ? [{ ...x, duration: left }, { ...x, id, t, duration: right, kf: later(x.kf) }] : [x]) }))
         return
       }
     }
@@ -584,13 +595,15 @@ export function Editor({ project }: { project: Project }) {
     if (it.kind === 'insert') {
       const c = inserts.find((x) => x.id === it.id); if (!c || c.kind !== 'video') return
       const m = await runTool(label, () => window.narrate.processClip(project.dir, op, c.in, c.out, c.file))
-      if (m) { setMedia((x) => ({ ...x, [m.file]: m.url })); apply((e) => ({ ...e, inserts: e.inserts.map((x) => x.id === c.id ? { ...x, file: m.file, name: m.name, in: 0, out: m.duration ?? c.out - c.in, length: m.duration, v: nextSlot(project.events, e.inserts) } : x) })) }
+      if (m) { setMedia((x) => ({ ...x, [m.file]: m.url })); apply((e) => ({ ...e, inserts: e.inserts.map((x) => x.id === c.id ? { ...x, file: m.file, name: m.name, in: 0, out: m.duration ?? c.out - c.in, length: m.duration } : x) })) }
     }
   }
-  const setPieceSpeed = (a: number, b: number, rate: number) => apply((e) => ({ ...e, speeds: [...e.speeds.filter((x) => x.end <= a + 0.01 || x.start >= b - 0.01), ...(rate === 1 ? [] : [{ start: a, end: b, rate }])] }))
-  const chooseVoice = async (fx: VoiceFx) => {
+  // Only this piece changes: a longer stretch around it keeps its speed on either side.
+  const setPieceSpeed = (a: number, b: number, rate: number) => apply((e) => ({ ...e, speeds: [...e.speeds.flatMap((x) => x.end <= a + 0.01 || x.start >= b - 0.01 ? [x]
+    : [...(x.start < a - 0.01 ? [{ ...x, end: a }] : []), ...(x.end > b + 0.01 ? [{ ...x, start: b }] : [])]), ...(rate === 1 ? [] : [{ start: a, end: b, rate }])] }))
+  const chooseVoice = async (fx: VoiceFx, clean = config.voice === 'clean') => {
     if (fx === 'none') { set('voiceFx', 'none'); return }
-    const m = await runTool('Changing the voice…', () => window.narrate.voiceChange(project.dir, fx, config.voice === 'clean'))
+    const m = await runTool('Changing the voice…', () => window.narrate.voiceChange(project.dir, fx, clean))
     if (m) { setMedia((x) => ({ ...x, [m.file]: m.url + `?v=${Date.now()}` })); set('voiceFx', fx) }
   }
   const [key, setKey] = useState({ color: '#00FF00', similarity: 0.22 })
@@ -659,7 +672,11 @@ export function Editor({ project }: { project: Project }) {
   const dragStart = (it: Item) => { pick(it); dragOrigin.current = null; const span = itemSpan(it); if (span) { gestureStart(); dragOrigin.current = { t: span[0], end: span[1] } } }
   const dragItem = (it: Item, mode: DragMode, tOut: number) => {
     const o = dragOrigin.current; if (!o) return
-    const t = outToSrc(kept, tOut), min = 0.3
+    const raw = outToSrc(kept, tOut), min = 0.3
+    // Dragging an end stays on the item's own side: on the recording it stops where a clip stands, on a clip it stops at the clip's edge.
+    const home = mode === 'l' ? o.end - 0.01 : o.t, clip = inserts.find((i) => home >= i.v && home <= i.v + (i.out - i.in))
+    const onClip = (x: number) => inserts.find((i) => x >= i.v && x <= i.v + (i.out - i.in))
+    const t = mode === 'move' ? raw : clip ? Math.max(clip.v, Math.min(clip.v + (clip.out - clip.in), onClip(raw)?.id === clip.id ? raw : mode === 'l' ? clip.v : clip.v + clip.out - clip.in)) : onClip(raw) ? onClip(raw)!.at - 0.02 : Math.min(raw, dur)
     const span = (): [number, number] => mode === 'move' ? [t, t + (o.end - o.t)] : mode === 'l' ? [Math.min(t, o.end - min), o.end] : [o.t, Math.max(t, o.t + min)]
     const [a, b] = span()
     const timed = <X extends { id: string; t: number; duration: number }>(xs: X[], cap?: (x: X) => number) => xs.map((x) => x.id === (it as { id: string }).id ? { ...x, t: a, duration: Math.min(b - a, cap?.(x) ?? Infinity) } : x)
@@ -954,7 +971,7 @@ export function Editor({ project }: { project: Project }) {
           {voiceList.map((v) => <option key={v.name} value={v.name}>{v.name} · {v.lang.replace('en_', '')}</option>)}</select>
         <button disabled={!vo.text.trim() || vo.busy} onClick={addVoice}><IconMicrophone size={15} />{vo.busy ? 'Making the voice…' : `Add at ${fmt(srcToOut(kept, playheadSrc))}`}</button></div>}
       {project.assets.mic && <div className="control"><div className="lbl"><span>Your voice</span></div>
-        {micClean ? seg(config.voice, [['clean', 'Cleaned'], ['raw', 'As recorded']], (v) => set('voice', v))
+        {micClean ? seg(config.voice, [['clean', 'Cleaned'], ['raw', 'As recorded']], (v) => { set('voice', v); if (config.voiceFx !== 'none') void chooseVoice(config.voiceFx, v === 'clean') })
           : <button disabled={enhancing !== 'idle'} onClick={enhance}>{enhancing === 'idle' ? 'Clean up voice' : enhancing}</button>}
         {slider('Voice volume', config.micVolume === 0 ? 'Muted' : `${Math.round(config.micVolume * 100)}%`, 0, 1.5, 0.05, config.micVolume, (v) => set('micVolume', v))}</div>}
       {project.assets.mic && <div className="control"><div className="lbl"><span>Voice changer</span></div>
@@ -1029,7 +1046,7 @@ export function Editor({ project }: { project: Project }) {
         onRename={(i, title) => apply((ed) => ({ ...ed, chapters: ed.chapters.map((x, k) => k === i ? { ...x, title } : x) }))}
         onRemove={(i) => apply((ed) => ({ ...ed, chapters: ed.chapters.filter((_, k) => k !== i) }))}
         onAddHere={() => apply((ed) => ({ ...ed, chapters: [...ed.chapters.filter((c) => Math.abs(c.t - playheadSrc) > 0.5), { t: playheadSrc, title: `Section ${ed.chapters.length + 2}` }].sort((a, b) => a.t - b.t) }))} />
-      <ContentCard content={buildContent(transcript, chapters, keptDuration(project.events, edits.cuts, speeds))} thumbs={thumbs} thumbStatus={thumbStatus}
+      <ContentCard content={buildContent(transcript, chapters, keptDuration(project.events, edits.cuts, speeds, inserts))} thumbs={thumbs} thumbStatus={thumbStatus}
         onMakeThumbs={makeThumbs} onReveal={(p) => window.narrate.reveal(p)} revealLabel={revealLabel} hasTranscript={!!transcript} />
     </>
   }

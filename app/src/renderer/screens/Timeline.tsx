@@ -91,7 +91,7 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
     drag.current = { x: e.clientX, t: timeAt(e.clientX), moved: false, item, scrub, mode, grab }
     if (scrub) onSeek(timeAt(e.clientX))
   }
-  const draggable = (it: Item | null, mode: DragMode) => !!it && editable && it.kind !== 'cut' && it.kind !== 'speed' && (mode !== 'move' || it.kind !== 'piece')
+  const draggable = (it: Item | null, mode: DragMode) => !!it && editable && it.kind !== 'cut' && it.kind !== 'speed' && (mode !== 'move' || it.kind !== 'piece') && (mode === 'move' || it.kind !== 'voice')
   const move = (e: React.PointerEvent) => {
     const t = timeAt(e.clientX)
     const info = (e.target as HTMLElement).closest?.('[data-info]')?.getAttribute('data-info') ?? null
@@ -112,7 +112,11 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
     if (d.moved && d.item) { onDragEnd(d.item, d.mode, snapped(outAt(e.clientX) - (d.mode === 'move' ? d.grab : 0))); setSnap(null); return }
     if (d.moved) { const a = timeAt(e.clientX); if (Math.abs(a - d.t) < 0.15) onRange(null); return }
     onRange(null)
-    if (d.item) { onSelect(d.item); return }
+    if (d.item) {
+      // Clicking the video also puts the playhead where you clicked.
+      if (d.item.kind === 'piece' || d.item.kind === 'insert') onSeek(timeAt(e.clientX))
+      onSelect(d.item); return
+    }
     onSelect(null); onSeek(timeAt(e.clientX))
   }
   const menu = (e: React.MouseEvent) => {

@@ -1,6 +1,6 @@
 import type { Analysis, Chapter, RecordingEvents, Transcript } from '../shared/types'
 import { keptRanges, srcToOut, type Range } from '../video/ranges'
-import type { Cut, SpeedRange } from '../shared/types'
+import type { Cut, InsertClip, SpeedRange } from '../shared/types'
 
 /**
  * Text content drawn only from the recording (add-on §13 "CONTENT", §16 "do not fabricate"): a title, a description
@@ -35,8 +35,8 @@ export function buildContent(transcript: Transcript | null, chapters: Chapter[],
 }
 
 /** Output seconds worth a thumbnail: chapter starts, highlight centres, scene changes — deduplicated, at most `n`. */
-export function thumbnailTimes(ev: RecordingEvents, cuts: Cut[], speeds: SpeedRange[], chapters: Chapter[], highlights: [number, number][], analysis: Analysis | null, n = 4): number[] {
-  const kept = keptRanges(ev, cuts, speeds)
+export function thumbnailTimes(ev: RecordingEvents, cuts: Cut[], speeds: SpeedRange[], chapters: Chapter[], highlights: [number, number][], analysis: Analysis | null, n = 4, inserts: InsertClip[] = []): number[] {
+  const kept = keptRanges(ev, cuts, speeds, inserts)
   const total = kept.reduce((s, r) => s + (r.end - r.start) / r.rate, 0)
   const candidatesSrc: number[] = [
     ...highlights.map(([a, b]) => (a + b) / 2),

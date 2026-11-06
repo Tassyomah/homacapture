@@ -342,11 +342,13 @@ app.whenReady().then(async () => {
     inProject(dir)
     const len = end - start
     if (len < 0.1) throw new Error('Select a longer stretch.')
-    const limit = op === 'reverse' ? 30 : op === 'slowmo' ? 15 : 120
+    const limit = op === 'reverse' || op === 'slowmo' ? 15 : 120
     if (len > limit) throw new Error(`Keep it under ${limit} seconds for this. Split the clip first.`)
     const ev = eventsOf(dir)
     const name = freeName(dir, op, '.mp4'), out = join(dir, 'media', name)
-    const video = op === 'copy' ? 'null' : op === 'reverse' ? 'reverse' : op === 'slowmo' ? "scale='min(1920,iw)':-2,setpts=2*PTS,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir" : 'deshake=rx=32:ry=32'
+    // Reverse holds every frame in memory and slow motion is heavy, so both work at up to 1080p. Sizes stay even for H.264.
+    const fit = "scale=w='min(1920,iw)':h='min(1920,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2", even = 'scale=trunc(iw/2)*2:trunc(ih/2)*2'
+    const video = op === 'copy' ? even : op === 'reverse' ? `${fit},reverse` : op === 'slowmo' ? `${fit},setpts=2*PTS,minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:me_mode=bidir` : `deshake=rx=32:ry=32,${even}`
     const audio = op === 'reverse' ? 'areverse' : op === 'slowmo' ? 'atempo=0.5' : 'anull'
     const hasOwnAudio = (f: string) => { try { return execFileSync(findFfmpeg()!.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe')), ['-v', 'error', '-select_streams', 'a', '-show_entries', 'stream=index', '-of', 'csv=p=0', f], { encoding: 'utf8' }).trim().length > 0 } catch { return false } }
     const clip = source ? join(dir, source) : join(dir, ev.files.screen)

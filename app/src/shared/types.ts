@@ -99,7 +99,9 @@ export type ClipAnim = 'none' | 'fade' | 'zoom' | 'slide'
  * reversed / smoothed / steadied piece. `at` = the source second it plays at. `v` = its private time slot past the end of
  * the recording, so text and stickers placed on it keep the same timing model as everything else.
  */
-export interface InsertClip { id: string; at: number; v: number; file: string; kind: 'image' | 'video'; name: string; in: number; out: number; volume: number; length?: number; animIn?: ClipAnim; animOut?: AnimOut }
+export interface InsertClip { id: string; at: number; v: number; file: string; kind: 'image' | 'video'; name: string; in: number; out: number; volume: number; length?: number; animIn?: ClipAnim; animOut?: AnimOut
+  /** Stands in for this stretch of the recording (reversed, slowed or steadied). Smart edit keeps it cut; versions keep the original. */
+  replaces?: [number, number] }
 /** Background music: one track under the whole video, looped, ducked while anyone speaks. `file` is relative (media/…). */
 export interface MusicTrack { file: string; name: string; volume: number; duck: boolean }
 /** A spoken line made from typed text with one of the computer's own voices (macOS `say`), placed at source time t. */
