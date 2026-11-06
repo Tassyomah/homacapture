@@ -711,3 +711,4 @@ h2 { font-family: var(--mono); font-size: 10.5px; letter-spacing: .1em; color: v
 .ruler { overflow: hidden; }
 .ed-top .rail { padding: 8px 6px; scrollbar-width: none; } .ed-top .rail::-webkit-scrollbar { display: none; }
 .ed-top .rail button { padding: 7px 0 6px; }
+.stickers.big button { font-size: 24px; aspect-ratio: 1; }
