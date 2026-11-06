@@ -10,6 +10,7 @@ const listen = <T,>(channel: string) => (cb: (p: T) => void) => {
 const api: NarrateApi = {
   platform: process.platform as NarrateApi['platform'],
   listDevices: () => ipcRenderer.invoke('devices:list'),
+  relaunch: () => ipcRenderer.invoke('app:relaunch'),
   checkPermissions: (request) => ipcRenderer.invoke('permissions:check', request),
   openSettings: (which) => ipcRenderer.invoke('settings:open', which),
   startRecording: (opts) => ipcRenderer.invoke('recording:start', opts),

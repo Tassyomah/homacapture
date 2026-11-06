@@ -316,6 +316,7 @@ export type Platform = 'darwin' | 'win32' | 'linux'
 export interface NarrateApi {
   platform: Platform
   listDevices(): Promise<Devices>
+  relaunch(): Promise<void>
   checkPermissions(request: boolean): Promise<Permissions>
   openSettings(which: 'screen' | 'mic'): Promise<void>
   startRecording(opts: StartOptions): Promise<void>

@@ -24,6 +24,7 @@
   "license": "MIT",
   "type": "module",
   "build": {
+    "afterSign": "scripts/after-sign.cjs",
     "appId": "com.homalabs.narrate",
     "productName": "HomaCapture",
     "directories": {

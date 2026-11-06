@@ -182,6 +182,7 @@ app.whenReady().then(async () => {
   server = await AssetServer.start(RECORDINGS)
 
   ipcMain.handle('devices:list', (): Promise<Devices> => recorder.listDevices())
+  ipcMain.handle('app:relaunch', () => { app.relaunch(); app.exit(0) })
   ipcMain.handle('permissions:check', (_e, request: boolean) => recorder.checkPermissions(request))
   ipcMain.handle('settings:open', (_e, which: 'screen' | 'mic') => shell.openExternal(SETTINGS_URL[which]))
   ipcMain.handle('recording:start', async (_e, opts: StartOptions) => {

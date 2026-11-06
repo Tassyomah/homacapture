@@ -39,6 +39,16 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
   }
 
   const loadPerms = (request = false) => window.narrate.checkPermissions(request).then(setPerms)
+  // Coming back from System Settings: the banner clears by itself as soon as the permission is on.
+  const waitingForScreen = !!perms && !perms.screen
+  useEffect(() => {
+    if (!waitingForScreen) return
+    const check = () => { void loadPerms().catch(() => {}) }
+    const timer = setInterval(check, 2000)
+    window.addEventListener('focus', check)
+    return () => { clearInterval(timer); window.removeEventListener('focus', check) }
+  }, [waitingForScreen])
+  const [hidePermission, setHidePermission] = useState(false)
   useEffect(() => {
     loadPerms()
     window.narrate.listUnfinished().then(setUnfinished).catch(() => {})
@@ -109,14 +119,16 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
   return (
     <div className={'home' + (dragging ? ' dropping' : '')} onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true) } }}
       onDragLeave={(e) => { if (e.currentTarget === e.target) setDragging(false) }} onDrop={onDrop}>
-      {needsScreen && (
+      {needsScreen && !hidePermission && (
         <div className="permission">
-          <b>HomaCapture needs permission to record the screen.</b>
-          <p>macOS asks once. Nothing is captured until you press Record, and recordings stay on {machine}.
-             After allowing it, quit and reopen the app.</p>
+          <b>Turn on screen recording to record your screen.</b>
+          <p>Only recording needs this; uploading and editing work without it. Nothing is captured until you press Record, and recordings stay on {machine}.
+             This goes away by itself once it is on. If it stays after you turn it on, reopen the app.</p>
           <div className="row">
             <button className="primary" onClick={() => loadPerms(true)}>Allow screen recording</button>
             <button onClick={() => window.narrate.openSettings('screen')}>Open System Settings</button>
+            <button onClick={() => void window.narrate.relaunch()}>Reopen HomaCapture</button>
+            <button onClick={() => setHidePermission(true)}>Hide for now</button>
           </div>
         </div>
       )}
