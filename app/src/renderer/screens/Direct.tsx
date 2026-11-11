@@ -22,9 +22,10 @@ export function Direct({ selKey, canMove, onTogglePlay, onPick, onStart, onMove,
   const layer = useRef<HTMLDivElement>(null)
   const [box, setBox] = useState<Box | null>(null)
   const [guides, setGuides] = useState<{ v: boolean; h: boolean }>({ v: false, h: false })
-  const gesture = useRef<{ kind: 'move' | 'scale' | 'rotate'; sx: number; sy: number; cx: number; cy: number; x0: number; y0: number; s0: number; r0: number; a0: number; d0: number; started: boolean } | null>(null)
+  const gesture = useRef<{ key: string; kind: 'move' | 'scale' | 'rotate'; sx: number; sy: number; cx: number; cy: number; x0: number; y0: number; s0: number; r0: number; a0: number; d0: number; started: boolean } | null>(null)
 
-  const frame = () => document.querySelector('[data-hc-frame]')?.getBoundingClientRect() ?? null
+  // Text and stickers are placed in the text space (the whole canvas on split/stack shorts); overlays in the video frame.
+  const frame = (key = selKey) => ((key?.startsWith('broll:') ? null : document.querySelector('[data-hc-space]')) ?? document.querySelector('[data-hc-frame]'))?.getBoundingClientRect() ?? null
   const elOf = (key: string) => document.querySelector(`[data-hc-item="${key}"]`)
   // Follow the selected item every frame: it may be animating, playing or moved by a slider.
   useEffect(() => {
@@ -41,10 +42,10 @@ export function Direct({ selKey, canMove, onTogglePlay, onPick, onStart, onMove,
   }, [selKey])
 
   const begin = (e: React.PointerEvent, kind: 'move' | 'scale' | 'rotate', key: string) => {
-    const el = elOf(key), F = frame(); if (!el || !F) return
+    const el = elOf(key), F = frame(key); if (!el || !F) return
     const r = el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2
     try { layer.current?.setPointerCapture(e.pointerId) } catch { /* synthetic events have no pointer */ }
-    gesture.current = { kind, sx: e.clientX, sy: e.clientY, cx, cy, x0: (cx - F.left) / F.width, y0: (cy - F.top) / F.height, s0: scaleOf(), r0: rotateOf(),
+    gesture.current = { key, kind, sx: e.clientX, sy: e.clientY, cx, cy, x0: (cx - F.left) / F.width, y0: (cy - F.top) / F.height, s0: scaleOf(), r0: rotateOf(),
       a0: Math.atan2(e.clientY - cy, e.clientX - cx), d0: Math.max(4, Math.hypot(e.clientX - cx, e.clientY - cy)), started: false }
   }
   const down = (e: React.PointerEvent) => {
@@ -59,7 +60,7 @@ export function Direct({ selKey, canMove, onTogglePlay, onPick, onStart, onMove,
     if (key) begin(e, 'move', key)
   }
   const move = (e: React.PointerEvent) => {
-    const g = gesture.current, F = frame(); if (!g || !F) return
+    const g = gesture.current, F = g && frame(g.key); if (!g || !F) return
     if (!g.started) { if (Math.hypot(e.clientX - g.sx, e.clientY - g.sy) < 3) return; if (g.kind === 'move' && !canMove) { gesture.current = null; return } g.started = true; onStart() }
     if (g.kind === 'move') {
       let x = g.x0 + (e.clientX - g.sx) / F.width, y = g.y0 + (e.clientY - g.sy) / F.height

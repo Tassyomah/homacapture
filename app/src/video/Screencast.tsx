@@ -14,7 +14,9 @@ const BACKGROUNDS: Record<string, string> = {
 }
 
 /** Design-space layout: canvas size, where the screen frame sits, and the viewport the camera works in. */
-export interface Layout { width: number; height: number; frame: { x: number; y: number; w: number; h: number }; vp: Viewport }
+type Rect = { x: number; y: number; w: number; h: number }
+/** `space` = where text and stickers are placed (the frame, or the whole canvas for split/stack); `panel` = the card area of the split layout. */
+export interface Layout { width: number; height: number; frame: Rect; vp: Viewport; space: Rect; panel?: Rect }
 
 /**
  * - 'source': canvas = screen + padding; the frame is the screen at 1:1.
@@ -26,16 +28,28 @@ export function layout(ev: RecordingEvents, cfg: RenderConfig): Layout {
   const W = ev.display.width, H = ev.display.height, pad = Math.round(W * cfg.padding)
   const even = (n: number) => { const r = Math.round(n); return r % 2 ? r + 1 : r }
   const ratio = ASPECTS.find((a) => a.id === cfg.aspect)?.ratio ?? null
-  if (ratio === null) return { width: even(W + 2 * pad), height: even(H + 2 * pad), frame: { x: pad, y: pad, w: W, h: H }, vp: { FW: W, FH: H, base: 1, crop: false } }
+  const withSpace = (l: Omit<Layout, 'space'>): Layout => ({ ...l, space: l.frame })
+  if (ratio === null) return withSpace({ width: even(W + 2 * pad), height: even(H + 2 * pad), frame: { x: pad, y: pad, w: W, h: H }, vp: { FW: W, FH: H, base: 1, crop: false } })
+  if (ratio <= 1 && cfg.layout && cfg.layout !== 'full') {
+    // Short templates: split = cards on top, the speaker below; stack = a framed, cropped screen with room above and below.
+    const height = even(H), width = even(height * ratio), canvas = { x: 0, y: 0, w: width, h: height }
+    if (cfg.layout === 'split') {
+      const top = Math.round(height * 0.4), fw = width, fh = height - top
+      return { width, height, frame: { x: 0, y: top, w: fw, h: fh }, vp: { FW: fw, FH: fh, base: Math.max(fw / W, fh / H), crop: true }, space: canvas, panel: { x: 0, y: 0, w: width, h: top } }
+    }
+    const fw = Math.round(width * 0.9), fh = Math.min(Math.round(height * 0.56), Math.round(fw * (H > W ? 1.35 : 1)))
+    const fx = Math.round((width - fw) / 2), fy = Math.round(height * 0.22)
+    return { width, height, frame: { x: fx, y: fy, w: fw, h: fh }, vp: { FW: fw, FH: fh, base: Math.max(fw / W, fh / H), crop: true }, space: canvas }
+  }
   if (ratio >= 1) {
     const width = even(W + 2 * pad), height = even(width / ratio)
     const fit = Math.min((width - 2 * pad) / W, (height - 2 * pad) / H)
     const fw = Math.round(W * fit), fh = Math.round(H * fit)
-    return { width, height, frame: { x: Math.round((width - fw) / 2), y: Math.round((height - fh) / 2), w: fw, h: fh }, vp: { FW: fw, FH: fh, base: fit, crop: false } }
+    return withSpace({ width, height, frame: { x: Math.round((width - fw) / 2), y: Math.round((height - fh) / 2), w: fw, h: fh }, vp: { FW: fw, FH: fh, base: fit, crop: false } })
   }
   const height = even(H + 2 * pad), width = even(height * ratio)
   const fw = width - 2 * pad, fh = height - 2 * pad
-  return { width, height, frame: { x: pad, y: pad, w: fw, h: fh }, vp: { FW: fw, FH: fh, base: Math.max(fw / W, fh / H), crop: true } }
+  return withSpace({ width, height, frame: { x: pad, y: pad, w: fw, h: fh }, vp: { FW: fw, FH: fh, base: Math.max(fw / W, fh / H), crop: true } })
 }
 
 /** One kept range of the recording, rendered at source time = srcStart + local frame. */
@@ -46,6 +60,7 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
   const t = srcStart + (frame / fps) * rate
   const W = ev.display.width, H = ev.display.height
   const { frame: F, vp } = L
+  const S = L.space
   const cam = cameraAt(ev, keys, t, W, H, vp)
   const tx = F.w / 2 - cam.cx * cam.scale, ty = F.h / 2 - cam.cy * cam.scale
   const pos = smoothCursor(ev, t)
@@ -124,13 +139,21 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
       {overlays.filter((o) => t >= o.t && t < o.t + o.duration && assets.media?.[o.file]).map((o) => (
         <BRoll key={o.id} o={o} src={assets.media![o.file]} t={t} srcStart={srcStart} fps={fps} rate={rate} F={F} faceLeft={(ev.focus?.[0] ?? W / 2) < W / 2} />))}
       {tr === 'flash' && q > 0 && <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, background: '#EFEEE8', opacity: 0.85 * q * q, pointerEvents: 'none' }} />}
-      {stickers.filter((s) => t >= s.t && t < s.t + s.duration).map((s) => <StickerView key={s.id} s={s} t={t} F={F} />)}
+      <div data-hc-space="" style={{ position: 'absolute', left: S.x, top: S.y, width: S.w, height: S.h, pointerEvents: 'none' }} />
+      {L.panel && <StepPanel texts={texts} t={t} P={L.panel} />}
+      <Checklist texts={texts} t={t} S={S} />
+      {stickers.filter((s) => t >= s.t && t < s.t + s.duration).map((s) => <StickerView key={s.id} s={s} t={t} F={S} />)}
       {!ins && cfg.keycaps && ev.keys && ev.keys.length > 0 && <Keycaps keys={ev.keys} t={t} t0={ev.t0Video} F={F} />}
-      {shownTexts(texts, t).map((x) => x.style === 'name' ? <NameTag key={x.id} x={x} t={t} F={F} portrait={F.h > F.w} L={L} /> : <TextView key={x.id} tp={x} t={t} F={F} portrait={F.h > F.w} />)}
-      {!ins && transcript && cfg.captions !== 'off' && (
-        <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, pointerEvents: 'none' }}>
-          <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={F.h} portrait={L.vp.crop || F.h > F.w} highlight={cfg.capHighlight} emoji={cfg.capEmoji} />
-        </div>
+      {shownTexts(texts, t).map((x) => x.style === 'name' ? <NameTag key={x.id} x={x} t={t} F={S} portrait={S.h > S.w} L={L} />
+        : x.style === 'point' ? <PointCard key={x.id} x={x} t={t} F={S} /> : x.style === 'band' ? <Band key={x.id} x={x} t={t} F={S} /> : <TextView key={x.id} tp={x} t={t} F={S} portrait={S.h > S.w} />)}
+      {!ins && transcript && cfg.captions !== 'off' && (cfg.captions === 'line' && cfg.layout === 'stack' && L.space !== L.frame
+        // Stack layout: the calm caption line sits in the space under the framed screen.
+        ? <div style={{ position: 'absolute', left: F.x, top: F.y + F.h + Math.round(L.height * 0.035), width: F.w, height: L.height - (F.y + F.h), pointerEvents: 'none' }}>
+            <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={L.height} portrait anchor="top" highlight={cfg.capHighlight} emoji={cfg.capEmoji} color={cfg.capColor} />
+          </div>
+        : <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, pointerEvents: 'none' }}>
+            <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={F.h} portrait={L.vp.crop || F.h > F.w} highlight={cfg.capHighlight} emoji={cfg.capEmoji} color={cfg.capColor} />
+          </div>
       )}
       {!ins && assets.mic && cfg.micVolume > 0 && <TimedAudio src={(cfg.voiceFx !== 'none' ? assets.media?.[`media/voice-${cfg.voiceFx}.wav`] : null) ?? (cfg.voice === 'clean' && assets.micClean ? assets.micClean : assets.mic)} start={micStart} fps={fps} volume={cfg.micVolume} rate={rate} />}
       {!ins && assets.system && cfg.systemVolume > 0 && <TimedAudio src={assets.system} start={sysStart} fps={fps} volume={cfg.systemVolume} rate={rate} />}
@@ -203,6 +226,90 @@ const Bookends: React.FC<{ cfg: RenderConfig; W: number; H: number; total: numbe
   return <>{t < INTRO && card(kin, cfg.introTitle, cfg.introSub, false)}{t > total - OUTRO && card(kout, cfg.outroText, cfg.outroSub, true)}</>
 }
 
+const SERIF = 'Georgia, "Times New Roman", serif'
+const SANS = 'Aeonik, Archivo, Inter, system-ui, sans-serif'
+const fontOf = (f: string | undefined, fallback: string) => (f ? `"${f}", ${fallback}` : fallback)
+/** 0→1 over `d` seconds from the item's start, and its alpha with a short fade at the end. */
+const inOut = (x: TextPop, t: number, d = 0.35, fade = 0.25) => {
+  const age = t - x.t, left = x.t + x.duration - t
+  return { p: Math.min(1, Math.max(0, age / d)), alpha: Math.max(0, Math.min(1, age / 0.08, left / fade)), age }
+}
+
+/**
+ * Split layout: the card panel above the speaker (Step cards template). It shows the latest 'step' text: a coral
+ * label pill (`sub`) and a big serif heading in ink on paper. Flat shapes, no borders.
+ */
+const StepPanel: React.FC<{ texts: TextPop[]; t: number; P: Rect }> = ({ texts, t, P }) => {
+  const x = [...texts].filter((y) => y.style === 'step' && t >= y.t && t < y.t + y.duration).pop()
+  if (!x) return null
+  const { p, alpha } = inOut(x, t, 0.4)
+  const e = 1 - (1 - p) ** 3
+  const fs = Math.round(Math.min(P.w * 0.11, (P.w * 0.84) / Math.max(5, Math.min(x.text.length, 22) * 0.48)) * (x.scale ?? 1))
+  return (
+    <div style={{ position: 'absolute', left: P.x, top: P.y, width: P.w, height: P.h, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
+      <div data-hc-item={`text:${x.id}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: Math.round(fs * 0.4), maxWidth: '86%', opacity: alpha,
+                    transform: `translateY(${((1 - e) * 18).toFixed(1)}%)` }}>
+        {x.sub && <div style={{ background: x.bg ?? '#FB8B73', color: '#14140F', fontFamily: SANS, fontWeight: 800, fontSize: Math.round(fs * 0.42), borderRadius: 999,
+                               padding: `${Math.round(fs * 0.16)}px ${Math.round(fs * 0.5)}px`, transform: `scale(${(0.7 + 0.3 * easeOutBack(Math.min(1, p * 1.4))).toFixed(3)})` }}>{x.sub}</div>}
+        <div style={{ fontFamily: fontOf(x.font, SERIF), fontWeight: 600, fontSize: fs, lineHeight: 1.05, letterSpacing: '-0.015em', color: x.color ?? '#14140F', textAlign: 'center', textWrap: 'balance' as never }}>{x.text}</div>
+      </div>
+    </div>)
+}
+
+/** Numbered point (Numbered points template): a coral number disc beside a paper card, above the speaker's head. */
+const PointCard: React.FC<{ x: TextPop; t: number; F: Rect }> = ({ x, t, F }) => {
+  const { p, alpha, age } = inOut(x, t, 0.3)
+  const hand = x.x != null || !!x.kf?.length
+  const at = placedAt({ x: x.x ?? 0.5, y: x.y ?? 0.17, scale: x.scale ?? 1, rotate: x.rotate ?? 0, opacity: x.opacity ?? 1 }, x.kf, age)
+  const fs = Math.round(F.w * (F.h > F.w ? 0.062 : 0.034) * at.scale)
+  const s = 0.75 + 0.25 * easeOutBack(p)
+  return (
+    <div style={{ position: 'absolute', left: F.x + F.w * at.x, top: F.y + F.h * at.y, transform: 'translate(-50%, -50%)', width: 'max-content', pointerEvents: 'none' }}>
+      <div data-hc-item={`text:${x.id}`} style={{ display: 'flex', alignItems: 'center', gap: Math.round(fs * 0.3), opacity: alpha * at.opacity, transform: `scale(${s.toFixed(3)}) rotate(${at.rotate}deg)`, maxWidth: F.w * 0.9 }}>
+        {x.sub && <div style={{ flex: 'none', width: Math.round(fs * 1.7), height: Math.round(fs * 1.7), borderRadius: '50%', background: x.bg ?? '#FB8B73', color: '#14140F', fontFamily: SANS, fontWeight: 900,
+                               fontSize: Math.round(fs * 0.95), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.sub}</div>}
+        <div style={{ background: '#EFEEE8', color: x.color ?? '#14140F', borderRadius: Math.round(fs * 0.4), padding: `${Math.round(fs * 0.4)}px ${Math.round(fs * 0.65)}px`, fontFamily: fontOf(x.font, SANS),
+                      fontWeight: 800, fontSize: fs, lineHeight: 1.1, boxShadow: '0 12px 40px rgba(20,20,15,0.22)', textWrap: 'balance' as never }}>{x.text}</div>
+      </div>
+    </div>)
+}
+
+/** Colour band (Brand pop template): a full-width flat band in a brand colour with the words in white, sliding in. */
+const Band: React.FC<{ x: TextPop; t: number; F: Rect }> = ({ x, t, F }) => {
+  const { p, alpha, age } = inOut(x, t, 0.28, 0.2)
+  const at = placedAt({ x: 0.5, y: x.y ?? 0.62, scale: x.scale ?? 1, rotate: x.rotate ?? -2, opacity: x.opacity ?? 1 }, x.kf, age)
+  const e = 1 - (1 - p) ** 3
+  const fs = Math.round(Math.min(F.w * 0.085, (F.w * 0.86) / Math.max(5, x.text.length * 0.6)) * at.scale)
+  return (
+    <div style={{ position: 'absolute', left: F.x - F.w * 0.05, width: F.w * 1.1, top: F.y + F.h * at.y, transform: `translateY(-50%) rotate(${at.rotate}deg)`, pointerEvents: 'none', overflow: 'hidden' }}>
+      <div data-hc-item={`text:${x.id}`} style={{ background: x.bg ?? '#6E71E8', padding: `${Math.round(fs * 0.3)}px 0`, textAlign: 'center', opacity: alpha * at.opacity, transform: `translateX(${((1 - e) * -100).toFixed(1)}%)`,
+                    fontFamily: fontOf(x.font, SANS), fontWeight: 900, fontSize: fs, lineHeight: 1.05, color: x.color ?? '#EFEEE8', textTransform: x.font ? undefined : 'uppercase', letterSpacing: '-0.005em' }}>{x.text}</div>
+    </div>)
+}
+
+/** Checklist panel (Kinetic hook template): the 'check' lines showing now stack up in one ink panel with coral ticks. */
+const Checklist: React.FC<{ texts: TextPop[]; t: number; S: Rect }> = ({ texts, t, S }) => {
+  const on = texts.filter((x) => x.style === 'check' && t >= x.t && t < x.t + x.duration).sort((a, b) => a.t - b.t)
+  if (!on.length) return null
+  const first = on[0], end = Math.max(...on.map((x) => x.t + x.duration))
+  const pin = Math.min(1, (t - first.t) / 0.3), alpha = Math.min(1, (end - t) / 0.25)
+  const fs = Math.round(S.w * (S.h > S.w ? 0.045 : 0.024))
+  const right = first.x == null
+  return (
+    <div style={{ position: 'absolute', ...(right ? { right: S.x + Math.round(S.w * 0.05) } : { left: S.x + S.w * (first.x ?? 0.5) }), top: S.y + S.h * (first.y ?? 0.47), pointerEvents: 'none',
+                  transform: `${right ? '' : 'translate(-50%, -50%) '}translateX(${((1 - (1 - (1 - pin) ** 3)) * 30).toFixed(1)}%)`, opacity: Math.min(pin * 1.4, alpha) }}>
+      <div style={{ background: 'rgba(20,20,15,0.9)', borderRadius: Math.round(fs * 0.6), padding: `${Math.round(fs * 0.7)}px ${Math.round(fs * 0.9)}px`, display: 'flex', flexDirection: 'column', gap: Math.round(fs * 0.5), maxWidth: S.w * 0.6 }}>
+        {on.map((x) => {
+          const k = Math.min(1, (t - x.t) / 0.25)
+          return <div key={x.id} data-hc-item={`text:${x.id}`} style={{ display: 'flex', alignItems: 'center', gap: Math.round(fs * 0.5), opacity: k, transform: `translateY(${((1 - k) * 30).toFixed(1)}%)` }}>
+            <div style={{ flex: 'none', width: Math.round(fs * 1.1), height: Math.round(fs * 1.1), borderRadius: Math.round(fs * 0.3), background: x.bg ?? '#FB8B73', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <svg viewBox="0 0 24 24" width={Math.round(fs * 0.8)} height={Math.round(fs * 0.8)}><path d="M5 12.5 L10 17 L19 7" fill="none" stroke="#14140F" strokeWidth={3.4} strokeLinecap="round" strokeLinejoin="round" strokeDasharray={24} strokeDashoffset={24 * (1 - Math.min(1, (t - x.t) / 0.3))} /></svg></div>
+            <span style={{ fontFamily: fontOf(x.font, SANS), fontWeight: 700, fontSize: fs, lineHeight: 1.15, color: x.color ?? '#EFEEE8' }}>{x.text}</span></div>
+        })}
+      </div>
+    </div>)
+}
+
 /** Keyboard shortcut keycaps (spec §46): the most recent combo, bottom-left of the frame, fading after 1.4 s. */
 const Keycaps: React.FC<{ keys: { t: number; keys: string }[]; t: number; t0: number; F: { x: number; y: number; w: number; h: number } }> = ({ keys, t, t0, F }) => {
   let shown: { t: number; keys: string } | null = null
@@ -248,8 +355,8 @@ function leaving(out: string | undefined, left: number): { lift: number; shrink:
 
 /** Texts showing at t: hand-placed ones and name tags always; auto-placed ones share one spot, so only the latest. */
 function shownTexts(texts: TextPop[], t: number): TextPop[] {
-  const on = texts.filter((x) => t >= x.t && t < x.t + x.duration)
-  const shared = on.filter((x) => x.style !== 'name' && x.x == null && !x.kf?.length)
+  const on = texts.filter((x) => t >= x.t && t < x.t + x.duration && x.style !== 'step' && x.style !== 'check')
+  const shared = on.filter((x) => x.style !== 'name' && x.style !== 'band' && x.x == null && !x.kf?.length)
   return on.filter((x) => !shared.includes(x) || x === shared[shared.length - 1])
 }
 

@@ -5,7 +5,7 @@ import { SLOT_GAP, insertsWithin, keptDuration, keptRanges, nextSlot, outToSrc, 
 import { ASPECTS, ASSET_LABEL, CAPTION_STYLES, EXPORT_PRESETS, LOOKS, STICKER_EMOJI, STICKER_SHAPES, TEXT_FONTS, defaultConfig, type AnimOut, type Blend, type BrandKit, type ClipAnim, type ClipOp, type InsertClip, type Keyframe, type OverlayShape, type VoiceFx, type Look, type Sticker, type TextAnim, type Transition, type Analysis, type BackdropFill, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type MusicTrack, type Overlay, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Voiceover, type Transcript, type TranscriptSegment } from '../../shared/types'
 import { smoothCursor } from '../../video/motion'
 import { revealLabel } from '../platform'
-import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconBrush, IconColorFilter, IconCopy, IconDownload, IconLetterT, IconLink, IconMicrophone, IconMoodSmile, IconMusic, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconScissors, IconSnowflake, IconSparkles, IconTrash, IconUpload, IconWand, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
+import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconBrush, IconColorFilter, IconCopy, IconDownload, IconLetterT, IconLink, IconMicrophone, IconMoodSmile, IconMusic, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconScissors, IconSnowflake, IconSparkles, IconTemplate, IconTrash, IconUpload, IconWand, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
 import { Timeline, fmt, fmtShort, piecesOf, sameItem, type DragMode, type Item, type RangeAction } from './Timeline'
 import { Direct } from './Direct'
 import { Director, type DirectorState, type DirectorStatus } from './Director'
@@ -17,10 +17,13 @@ import { niceName } from './Home'
 import { buildContent, thumbnailTimes } from '../content'
 import { generateAssets } from '../generate'
 import { autoEdit, keyPhrase } from '../autoedit'
+import { applyTemplate, LENGTHS, TEMPLATES, type TemplateId } from '../templates'
+import { TemplateThumb } from './TemplateThumb'
+import type { TemplateRun } from '../../shared/types'
 
 const FPS = 60
 const RATES = [0.5, 0.75, 1.25, 1.5, 2, 3]
-type Panel = 'media' | 'text' | 'stickers' | 'audio' | 'captions' | 'effects' | 'brand' | 'smart'
+type Panel = 'shorts' | 'media' | 'text' | 'stickers' | 'audio' | 'captions' | 'effects' | 'brand' | 'smart'
 const TEXT_LOOKS: { id: string; label: string; patch: Partial<TextPop>; css: React.CSSProperties }[] = [
   { id: 'pop', label: 'Pop', patch: { style: 'pop', color: undefined, bg: undefined }, css: { color: '#FB8B73', background: '#14140F' } },
   { id: 'title', label: 'Title card', patch: { style: 'title', color: undefined, bg: undefined }, css: { color: '#14140F', background: '#EFEEE8' } },
@@ -43,7 +46,7 @@ const BGS: { id: Background; label: string; css: string }[] = [
 ]
 
 /** Everything the user can change; one snapshot per undo step. */
-type Edits = { config: RenderConfig; cuts: Cut[]; assets: DerivedAsset[]; zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; music: MusicTrack | null; voiceovers: Voiceover[]; inserts: InsertClip[]; splits: number[]; chapters: Chapter[]; highlights: [number, number][]; director: DirectorState; autoEditedAt?: string }
+type Edits = { config: RenderConfig; cuts: Cut[]; assets: DerivedAsset[]; zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; music: MusicTrack | null; voiceovers: Voiceover[]; inserts: InsertClip[]; splits: number[]; chapters: Chapter[]; highlights: [number, number][]; director: DirectorState; autoEditedAt?: string; template?: TemplateRun | null }
 
 export function Editor({ project }: { project: Project }) {
   // Saved edits win; defaults fill in settings that did not exist when the project was last saved.
@@ -51,7 +54,7 @@ export function Editor({ project }: { project: Project }) {
     // A new upload opens as it was filmed: full frame. The padded, rounded look is for screen recordings.
     config: { ...defaultConfig, ...(project.events.source === 'import' && !project.file ? { padding: 0, radius: 0, background: 'ink' as Background } : {}), ...(project.file?.config ?? {}) }, cuts: project.file?.cuts ?? [],
     assets: project.file?.assets ?? [], zooms: project.file?.zooms ?? [], speeds: project.file?.speeds ?? [], masks: project.file?.masks ?? [],
-    texts: project.file?.texts ?? [], overlays: project.file?.overlays ?? [], stickers: project.file?.stickers ?? [], music: project.file?.music ?? null, voiceovers: project.file?.voiceovers ?? [], inserts: project.file?.inserts ?? [], splits: project.file?.splits ?? [], autoEditedAt: project.file?.autoEditedAt,
+    texts: project.file?.texts ?? [], overlays: project.file?.overlays ?? [], stickers: project.file?.stickers ?? [], music: project.file?.music ?? null, voiceovers: project.file?.voiceovers ?? [], inserts: project.file?.inserts ?? [], splits: project.file?.splits ?? [], autoEditedAt: project.file?.autoEditedAt, template: project.file?.template ?? null,
     chapters: project.file?.chapters ?? [], highlights: project.file?.highlights ?? [],
     director: project.file?.director ?? { accepted: [], rejected: [] },
   }))
@@ -132,7 +135,7 @@ export function Editor({ project }: { project: Project }) {
   useEffect(() => {
     if (!dirty.current) return
     const t = setTimeout(() => {
-      window.narrate.saveProject(project.dir, { version: 1, config: edits.config, cuts: edits.cuts, assets, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, inserts, splits, autoEditedAt: edits.autoEditedAt,
+      window.narrate.saveProject(project.dir, { version: 1, config: edits.config, cuts: edits.cuts, assets, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, inserts, splits, autoEditedAt: edits.autoEditedAt, template: edits.template ?? null,
         chapters, highlights, director, savedAt: new Date().toISOString() })
         .catch((e) => console.warn('autosave failed', e))
     }, 400)
@@ -173,8 +176,30 @@ export function Editor({ project }: { project: Project }) {
   const smartEdit = () => { if (transcript) runAutoEdit(transcript); else { setSmartWanted(true); if (tstatus.kind !== 'running') transcribe() } }
   useEffect(() => { if (smartWanted && transcript) { setSmartWanted(false); runAutoEdit(transcript) } }, [smartWanted, transcript])
   useEffect(() => { if (tstatus.kind === 'error') setSmartWanted(false) }, [tstatus.kind])
+  // Short templates (Shorts panel): the same engine as Smart edit plus a look, a layout and cards. Re-running or switching
+  // replaces only what a template or Smart edit made ("tpl-" / "auto-" ids); the user's own items stay. Undo takes it back.
+  const [tplLen, setTplLen] = useState<number>(project.file?.template?.length ?? 30)
+  const [tplWanted, setTplWanted] = useState<{ id: TemplateId; len: number } | null>(null)
+  const runTemplate = (id: TemplateId, len: number, tr: Transcript | null) => {
+    const r = applyTemplate(id, project.events, tr, len, brand, project.name)
+    const mine = (x: { id: string }) => x.id.startsWith('tpl-') || x.id.startsWith('auto-')
+    apply((e) => ({ ...e, cuts: [...r.cuts, ...e.inserts.flatMap((i) => (i.replaces ? [i.replaces] : []))],
+      config: { ...e.config, ...r.config, voice: micClean || project.assets.micClean ? 'clean' : e.config.voice, outroSub: r.config.outro ? (r.config.outroSub || e.config.outroSub) : e.config.outroSub },
+      zooms: [...e.zooms.filter((z) => !mine(z)), ...r.zooms], texts: [...e.texts.filter((x) => !mine(x) || x.style === 'name'), ...r.texts].sort((a, b) => a.t - b.t),
+      autoEditedAt: e.autoEditedAt ?? new Date().toISOString(), template: { id, length: len, at: new Date().toISOString() } }))
+    setSel(null); setExporting(false)
+    // The short starts at output 0 (everything before its window is cut); seek there once the new cuts are in.
+    setTimeout(() => { playerRef.current?.seekTo(0); setPlayheadSrc(r.window[0]) }, 80)
+  }
+  const useTemplate = (id: TemplateId, len = tplLen) => {
+    if (!project.assets.mic || transcript) { runTemplate(id, len, transcript); return }
+    setTplWanted({ id, len }); if (tstatus.kind !== 'running') transcribe()
+  }
+  useEffect(() => { if (tplWanted && transcript) { setTplWanted(null); runTemplate(tplWanted.id, tplWanted.len, transcript) } }, [tplWanted, transcript])
+  useEffect(() => { if (tstatus.kind === 'error') setTplWanted(null) }, [tstatus.kind])
+  const tplBusy = !!tplWanted && tstatus.kind === 'running'
   const smartBusy = smartWanted && tstatus.kind === 'running'
-  const autoState = smartBusy ? `Smart edit · ${tstatus.message.replace(/…$/, '')}` : null
+  const autoState = smartBusy ? `Smart edit · ${tstatus.message.replace(/…$/, '')}` : tplBusy ? `Making your short · ${tstatus.message.replace(/…$/, '')}` : null
 
   const analysisWithFillers = useMemo<Analysis | null>(() => {
     if (!analysis) return null
@@ -447,6 +472,7 @@ export function Editor({ project }: { project: Project }) {
   const pendingCount = analysisWithFillers && !asset
     ? analysisWithFillers.proposals.filter((p) => p.type !== 'ZOOM' && !director.accepted.includes(p.id) && !director.rejected.includes(p.id)).length : 0
   const panels: { id: Panel; label: string; Icon: typeof IconPhoto; show: boolean; badge?: number }[] = [
+    { id: 'shorts', label: 'Shorts', Icon: IconTemplate, show: !asset },
     { id: 'media', label: 'Media', Icon: IconPhoto, show: !asset },
     { id: 'text', label: 'Text', Icon: IconLetterT, show: !asset },
     { id: 'stickers', label: 'Stickers', Icon: IconMoodSmile, show: !asset },
@@ -473,7 +499,10 @@ export function Editor({ project }: { project: Project }) {
           <span>{c.label}</span></button>))}</div>
       {config.captions !== 'off' && <div className="row-btns">
         <button className={config.capHighlight ? 'on' : ''} aria-pressed={config.capHighlight} onClick={() => set('capHighlight', !config.capHighlight)}>Highlight key words</button>
-        <button className={config.capEmoji ? 'on' : ''} aria-pressed={config.capEmoji} onClick={() => set('capEmoji', !config.capEmoji)}>Add emoji</button></div>}</div>)
+        <button className={config.capEmoji ? 'on' : ''} aria-pressed={config.capEmoji} onClick={() => set('capEmoji', !config.capEmoji)}>Add emoji</button></div>}
+      {config.captions !== 'off' && config.capHighlight && <div className="capcolors" role="group" aria-label="Key word colour">
+        {[...new Set(['#F5C36A', '#FFD43B', '#FB8B73', '#6E71E8', '#EFEEE8', ...brand.colors])].slice(0, 7).map((c) => (
+          <button key={c} className={(config.capColor ?? '#F5C36A').toLowerCase() === c.toLowerCase() ? 'on' : ''} style={{ background: c }} aria-label={`Key words in ${c}`} onClick={() => set('capColor', c)} />))}</div>}</div>)
   const paneHead = (title: string, sub: string, close?: boolean) => (
     <div className="pane-head"><div><h3>{title}</h3><p className="note">{sub}</p></div>
       {close && <button className="icon" aria-label="Close" data-tip="Close · Esc" onClick={() => setSel(null)}><IconX size={16} /></button>}</div>)
@@ -936,12 +965,28 @@ export function Editor({ project }: { project: Project }) {
   // ---------- Left panel: what you can add. One click adds it at the playhead.
   const firstRun = !edits.autoEditedAt && !cuts.length && !texts.length && !stickers.length && !overlays.length && !inserts.length && config.captions === 'off'
   const library = Object.keys(media).filter((f) => { const n = f.split('/').pop() ?? ''; return !n.startsWith('.') && (isPicture(f) || isClip(f)) })
+  const tplHook = texts.find((x) => x.id.startsWith('tpl-h'))
   const addPanel = () => {
+    if (shownPanel === 'shorts') return <>
+      <h3 className="drawer-title">Shorts</h3>
+      <div className="control"><div className="lbl"><span>Length</span></div>
+        {seg(tplLen, LENGTHS, (v) => { setTplLen(v); if (edits.template) useTemplate(edits.template.id as TemplateId, v) })}</div>
+      <div className="tpl-grid">{TEMPLATES.map((d) => (
+        <button key={d.id} className={'tpl' + (edits.template?.id === d.id ? ' on' : '')} disabled={tplBusy} onClick={() => useTemplate(d.id)} aria-label={`Use the ${d.name} template`}>
+          <TemplateThumb id={d.id} poster={poster} />
+          <b>{d.name}</b><i>{d.line}</i>{d.forScreen && upload && <em>Best for screen recordings</em>}
+        </button>))}</div>
+      <span className="note">{tplBusy ? 'Writing down what you say first (on this Mac)…' : 'Click one: it finds your strongest moment, cuts the pauses and edits it in that style. Everything stays editable; Undo brings back what you had.'}</span>
+      {edits.template && tplHook && <div className="control"><div className="lbl"><span>Opening words</span></div>
+        <input type="text" value={tplHook.text} maxLength={60} onChange={(e) => editText(tplHook.id, { text: e.target.value })} />
+        <span className="note">Taken from your first sentence. Click any card on the video to change its words.</span></div>}
+    </>
     if (shownPanel === 'media') return <>
       <h3 className="drawer-title">Media</h3>
       {firstRun && <div className="start">
         <p className="start-title">Start here</p>
         {upload && project.assets.mic && <button onClick={smartEdit} disabled={smartBusy}><IconWand size={18} /><span><b>{smartBusy ? 'Working…' : 'Smart edit'}</b><i>Cuts pauses and filler words, adds captions</i></span></button>}
+        <button onClick={() => go('shorts')}><IconTemplate size={18} /><span><b>Make a short</b><i>Pick a template; it edits the video in that style</i></span></button>
         {project.assets.mic && <button onClick={() => go('captions')}><IconBadgeCc size={18} /><span><b>Add captions</b><i>Writes what you say on the video</i></span></button>}
         <button onClick={() => go('text')}><IconLetterT size={18} /><span><b>Add text</b><i>Type on the video, then drag it where you want</i></span></button>
       </div>}

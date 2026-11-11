@@ -66,7 +66,9 @@ export interface ManualZoom { id: string; t: number; duration: number; x: number
   /** Punch-in: jump straight in and out on a cut instead of easing (talking heads). */
   snap?: boolean }
 /** Kinetic text (auto-edit): a key phrase that pops in big over the video from `t` for `duration` (source seconds). */
-export type TextStyle = 'pop' | 'title' | 'name'
+/** pop / title / name, plus the short-template cards: step (top panel of the split layout, `sub` = its label),
+ *  point (numbered card, `sub` = the number), band (full-width colour band), check (one line of a checklist panel). */
+export type TextStyle = 'pop' | 'title' | 'name' | 'step' | 'point' | 'band' | 'check'
 export type TextAnim = 'pop' | 'slide' | 'type' | 'slam'
 /** A point in an item's movement: `at` = seconds from the item's start. Between keyframes everything eases smoothly. */
 export interface Keyframe { at: number; x: number; y: number; scale: number; rotate: number; opacity: number }
@@ -152,6 +154,7 @@ export interface ProjectFile {
   splits?: number[]
   /** When the automatic first edit of an uploaded video ran (it runs once; "Auto-edit again" redoes it). */
   autoEditedAt?: string
+  template?: TemplateRun | null
   chapters?: Chapter[]
   /** Stand-alone moments (source seconds) the user kept from the Smart Director; future clip sources (add-on §19). */
   highlights?: [number, number][]
@@ -167,11 +170,16 @@ export interface Transcript { version: number; language: string; model: string; 
 
 /** Caption looks: minimal pill, bold sentence, and the social ones that show a few words at a time
  *  (box = coral block behind the spoken word, karaoke = words light up as they are said, word = one big word at a time). */
-export type CaptionStyle = 'off' | 'minimal' | 'bold' | 'box' | 'karaoke' | 'word'
+export type CaptionStyle = 'off' | 'minimal' | 'bold' | 'box' | 'karaoke' | 'word' | 'pill' | 'clean' | 'outline' | 'soft' | 'line'
 export const CAPTION_STYLES: { id: CaptionStyle; label: string }[] = [
   { id: 'off', label: 'Off' }, { id: 'minimal', label: 'Minimal' }, { id: 'bold', label: 'Bold' },
   { id: 'box', label: 'Box' }, { id: 'karaoke', label: 'Karaoke' }, { id: 'word', label: 'One word' },
+  { id: 'pill', label: 'White box' }, { id: 'clean', label: 'Clean' }, { id: 'outline', label: 'Outline' }, { id: 'soft', label: 'Soft serif' }, { id: 'line', label: 'Calm line' },
 ]
+/** Where the video sits: full frame; split = a card panel on top and the speaker below; stack = a framed screen with a headline above and captions under it. */
+export type FrameLayout = 'full' | 'split' | 'stack'
+/** A short made from a template (Shorts panel): which one and how long, so the panel can show it and switch. */
+export interface TemplateRun { id: string; length: number; at: string }
 
 /** analysis.json — written by `narrate_win.py analyze` (add-on spec §7–9). Signals are raw; proposals are editable suggestions. */
 export type ProposalType = 'REMOVE' | 'ZOOM' | 'CHAPTER' | 'HIGHLIGHT' | 'SPEED'
@@ -242,6 +250,9 @@ export interface RenderConfig {
   vignette: boolean; grain: boolean; bars: boolean; shake: boolean
   /** Voice changer: plays media/voice-<fx>.wav instead of the voice track. Same timing, so cuts and captions still line up. */
   voiceFx: VoiceFx
+  layout: FrameLayout
+  /** Colour of highlighted caption words. */
+  capColor: string
 }
 export type VoiceFx = 'none' | 'deep' | 'high' | 'radio' | 'robot' | 'echo'
 export type Look = 'none' | 'warm' | 'cool' | 'punchy' | 'soft' | 'film' | 'mono'
@@ -262,7 +273,7 @@ export const defaultConfig: RenderConfig = {
   sfx: false, sfxVolume: 0.55, backdrop: 'off', backdropColor: 'paper', backdropImage: null,
   progressBar: 'off', look: 'none', brightness: 1, contrast: 1, saturation: 1, transition: 'none', transitionAt: 'big',
   intro: false, introTitle: '', introSub: '', outro: false, outroText: 'Follow for more', outroSub: '',
-  capHighlight: false, capEmoji: false, vignette: false, grain: false, bars: false, shake: false, voiceFx: 'none',
+  capHighlight: false, capEmoji: false, vignette: false, grain: false, bars: false, shake: false, voiceFx: 'none', layout: 'full', capColor: '#F5C36A',
 }
 
 export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[]; transcript?: Transcript | null; [k: string]: unknown }

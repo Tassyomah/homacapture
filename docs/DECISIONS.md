@@ -70,3 +70,15 @@ Tested from a brand-new upload, not an edited project: uploads open full frame; 
 
 ## 2026-11-06 · Choose what to record
 Tassy: "select a screen or area to record". Home has Whole screen / Choose area under Screen. The area layer (`AreaPicker.tsx`, one window over the chosen display) takes a drag, moves it, and offers Free, 16:9, 9:16, 1:1, 4:5. `--crop x,y,w,h` crops inside the capture command, so screen.mp4 is only that area; `display` in events becomes the area and cursor positions are offset, so everything downstream treats it as a whole screen. A dashed line shows the area while recording, sits outside it and is excluded from capture. macOS only for now.
+
+## 2026-11-10 — Short templates (Shorts panel)
+Tassy: "a feature that automatically has templates for shorts… you upload your video it edits it using a template", built from the Editing & shorts folder of her Inspiration Board (all links opened). Seven templates, each a preset on the existing engine, no AI generation:
+- **Step cards** (@thesocialmediaoga): split layout, paper card panel on top with a coral "Step N" pill and serif heading, speaker below, one-word captions with yellow key words.
+- **Kinetic hook** (justyn.ai): huge white opening words that slam in, an ink checklist panel that ticks up, white caption box at chest height, punch-ins + shake + zoom transitions.
+- **Yellow word** (@misstechy): Marker Felt yellow headline on top for the whole short, clean captions with yellow key words.
+- **Brand pop** (@youraveragetechbro): outlined uppercase captions, indigo colour bands, title card, follow card.
+- **Numbered points** (@favoritetechgal): coral number disc + paper card above the head per point.
+- **Calm aesthetic** (@mayaspirationn / @elegantgrace__): soft look + grain, serif italic hook and captions, blur transitions, no punch-ins.
+- **Screen + caption** (@themediaanswer): stack layout, a square cursor-following crop of the screen in a rounded frame, headline above, one calm grey caption line below.
+How it decides (src/renderer/templates.ts): local transcript → real sentences (Whisper segments break mid-sentence) → the strongest run of whole sentences of 15/30/60 s (or whole), at least 85 % of the asked length; key-word density, hook-like opening, connective first word trimmed. Hook = the file's own title when it reads as one, else the project name, else the strongest short line early on. Cards = best 1–3 word phrase per beat (no small words at the edges, no verbs inside, no repeats). Everything is ordinary editable items with ids "tpl-…"; switching template or length replaces only template/Smart edit items; Undo restores. Renderer additions: FrameLayout full/split/stack (Layout.space = where text and stickers live; Direct reads data-hc-space), TextStyle step/point/band/check, caption styles pill/clean/outline/soft/line, capColor (key word colour picker in Captions).
+Test aid: `npx tsx scripts/tpl-check.ts <project> <outdir> <len> <ids|all> [full]` renders stills (and exports) for each template without the app.
