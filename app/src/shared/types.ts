@@ -245,6 +245,8 @@ export interface RenderConfig {
   progressBar: 'off' | 'top' | 'bottom'
   /** Colour look on the video (CapCut "filters") plus three fine adjustments, 1 = unchanged. */
   look: Look
+  /** How strong the look is: 0 = unchanged, 1 = full; 0.6 by default so looks stay subtle. */
+  lookAmount?: number
   brightness: number; contrast: number; saturation: number
   /** Transition at each cut: 'big' = only where more than 2 s was removed (pause trims stay clean jump cuts). */
   transition: Transition
@@ -267,16 +269,30 @@ export interface RenderConfig {
   capMarker?: boolean
 }
 export type VoiceFx = 'none' | 'deep' | 'high' | 'radio' | 'robot' | 'echo'
-export type Look = 'none' | 'warm' | 'cool' | 'punchy' | 'soft' | 'film' | 'mono'
-export const LOOKS: { id: Look; label: string; css: string }[] = [
-  { id: 'none', label: 'None', css: '' },
-  { id: 'warm', label: 'Warm', css: 'sepia(0.16) saturate(1.12) hue-rotate(-6deg) brightness(1.02)' },
-  { id: 'cool', label: 'Cool', css: 'saturate(0.95) hue-rotate(8deg) brightness(1.02) contrast(1.03)' },
-  { id: 'punchy', label: 'Punchy', css: 'contrast(1.14) saturate(1.3)' },
-  { id: 'soft', label: 'Soft', css: 'contrast(0.9) brightness(1.06) saturate(0.92)' },
-  { id: 'film', label: 'Film', css: 'sepia(0.22) contrast(1.08) saturate(0.85) brightness(0.98)' },
-  { id: 'mono', label: 'B&W', css: 'grayscale(1) contrast(1.12)' },
-]
+export type Look = 'none' | 'warm' | 'cool' | 'punchy' | 'soft' | 'film' | 'mono' | 'redroom'
+/**
+ * Colour looks as amounts away from "unchanged", so a strength setting can scale them (cfg.lookAmount, default 0.6:
+ * subtle). Full strength = the values below. 'redroom' (from the Inspiration Board colour-grading reference: dark red
+ * room, neon frames behind, red rim light, natural skin) is drawn in the composition from the cut-out of the speaker.
+ */
+type LookParams = { sepia?: number; saturate?: number; hue?: number; brightness?: number; contrast?: number; grayscale?: number }
+const LOOK_PARAMS: Record<Look, LookParams> = {
+  none: {}, warm: { sepia: 0.18, saturate: 1.12, hue: -6, brightness: 1.02 }, cool: { saturate: 0.94, hue: 8, brightness: 1.02, contrast: 1.03 },
+  punchy: { contrast: 1.14, saturate: 1.28 }, soft: { contrast: 0.9, brightness: 1.05, saturate: 0.92 }, film: { sepia: 0.22, contrast: 1.08, saturate: 0.85, brightness: 0.98 },
+  mono: { grayscale: 1, contrast: 1.1 }, redroom: { contrast: 1.06, saturate: 1.04 },
+}
+/** CSS filter for a look at a strength (0 = unchanged, 1 = full). */
+export function lookFilter(look: Look, amount = 0.6): string {
+  const p = LOOK_PARAMS[look] ?? {}, k = Math.max(0, Math.min(1.5, amount))
+  const mix = (v: number | undefined, neutral: number) => (v == null ? null : +(neutral + (v - neutral) * k).toFixed(3))
+  return [mix(p.sepia, 0) && `sepia(${mix(p.sepia, 0)})`, mix(p.grayscale, 0) && `grayscale(${mix(p.grayscale, 0)})`, mix(p.saturate, 1) != null && `saturate(${mix(p.saturate, 1)})`,
+    mix(p.hue, 0) && `hue-rotate(${mix(p.hue, 0)}deg)`, mix(p.brightness, 1) != null && `brightness(${mix(p.brightness, 1)})`, mix(p.contrast, 1) != null && `contrast(${mix(p.contrast, 1)})`]
+    .filter(Boolean).join(' ')
+}
+export const LOOKS: { id: Look; label: string; css: string }[] = (['none', 'warm', 'cool', 'punchy', 'soft', 'film', 'mono', 'redroom'] as Look[]).map((id) => ({
+  id, label: ({ none: 'None', warm: 'Warm', cool: 'Cool', punchy: 'Punchy', soft: 'Soft', film: 'Film', mono: 'B&W', redroom: 'Red studio' } as Record<Look, string>)[id],
+  css: id === 'redroom' ? 'brightness(0.8) sepia(0.4) hue-rotate(-28deg) saturate(1.8) contrast(1.05)' : lookFilter(id, 0.6),
+}))
 export type Transition = 'none' | 'zoom' | 'flash' | 'blur' | 'whip'
 export const defaultConfig: RenderConfig = {
   aspect: 'source', zoom: 2, padding: 0.06, radius: 24, background: 'indigo', cursorScale: 1.6, outputHeight: 1080, outputFps: 60,

@@ -21,10 +21,10 @@ const brand = { colors: ['#FB8B73', '#6E71E8', '#14140F', '#EFEEE8'], font: 'Aeo
 const serveUrl = await bundle({ entryPoint: resolve(import.meta.dirname, '../src/video/index.ts') })
 for (const t of TEMPLATES.filter((x) => !only || only === 'all' || only.split(',').includes(x.id))) {
   const r = applyTemplate(t.id as TemplateId, events, transcript, len, brand, basename(dir))
-  const config = { ...defaultConfig, ...r.config, outputHeight: 1080 }
+  const config = { ...defaultConfig, ...r.config, ...(process.env.CFG ? JSON.parse(process.env.CFG) : {}), outputHeight: 1080 }
   const ranges = keptRanges(events, r.cuts)
   const total = ranges.reduce((s, x) => s + x.end - x.start, 0)
-  const props: ScreencastProps = { assets, events, config, cuts: r.cuts, zooms: r.zooms, texts: r.texts, transcript }
+  const props: ScreencastProps = { assets, events, config, cuts: r.cuts, zooms: process.env.NOZOOM ? [] : r.zooms, texts: process.env.NOTEXT ? [] : r.texts, transcript }
   console.log(`${t.id}: window ${r.window.map((x) => x.toFixed(1)).join('-')} out ${total.toFixed(1)}s hook "${r.hook}" texts ${r.texts.map((x) => `${x.style}:${x.sub ?? ''}:${x.text}@${x.t.toFixed(1)}`).join(' | ')}`)
   writeFileSync(join(outDir, `${t.id}.json`), JSON.stringify({ ...r, config }, null, 1))
   if (process.env.DRY) continue
@@ -33,7 +33,7 @@ for (const t of TEMPLATES.filter((x) => !only || only === 'all' || only.split(',
   const comp = { ...design, width: 540, height: Math.round(design.height * k / 2) * 2 }
   for (const sec of (process.env.SECS ? process.env.SECS.split(',').map(Number) : [0.6, 3.5, total * 0.45, total * 0.75])) {
     const frame = Math.min(comp.durationInFrames - 1, Math.round(sec * comp.fps))
-    await renderStill({ composition: comp, serveUrl, output: join(outDir, `${t.id}-${sec.toFixed(1)}.png`), inputProps: props, frame, imageFormat: 'png' })
+    await renderStill({ composition: comp, serveUrl, output: join(outDir, `${t.id}${process.env.TAG ?? ''}-${sec.toFixed(1)}.png`), inputProps: props, frame, imageFormat: 'png' })
   }
   if (full) {
     const project: Project = { dir, name: basename(dir), createdAt: '', events, file: { version: 1, config, cuts: r.cuts, zooms: r.zooms, texts: r.texts, savedAt: '' }, transcript, assets }

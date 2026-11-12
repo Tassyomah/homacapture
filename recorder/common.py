@@ -316,14 +316,34 @@ def matte(args):
     fps = 30
     total = max(1, int(ev.get("videoDuration", 0) * fps))
     out = os.path.join(outdir, "screen.cutout.webm"); tmp = out + ".tmp.webm"
+    # Keep the source's colour description (iPhone video is often HDR/HLG, BT.2020): the cut-out is converted back with the
+    # same matrix and tagged the same way, so players and the renderer show it exactly like the video it sits on.
+    tags = []
+    try:
+        pr = json.loads(subprocess.run([FFPROBE, "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=color_space,color_transfer,color_primaries,color_range",
+                                         "-of", "json", os.path.join(outdir, ev["files"]["screen"])], capture_output=True, text=True).stdout)["streams"][0]
+    except Exception: pr = {}
+    space = pr.get("color_space"); matrix = {"bt2020nc": "bt2020", "bt2020c": "bt2020", "bt709": "bt709", "smpte170m": "bt601", "bt470bg": "bt601"}.get(space or "")
+    if matrix and space:
+        tags = ["-colorspace", space] + (["-color_primaries", pr["color_primaries"]] if pr.get("color_primaries") else []) + \
+               (["-color_trc", pr["color_transfer"]] if pr.get("color_transfer") else []) + ["-color_range", "tv"]
+    setp = ":".join(x for x in [f"color_primaries={pr['color_primaries']}" if pr.get("color_primaries") else "", f"color_trc={pr['color_transfer']}" if pr.get("color_transfer") else "",
+                                f"colorspace={space}" if space else "", "range=tv"] if x)
+    out_vf = ["-vf", f"scale=out_color_matrix={matrix}:out_range=tv,setparams={setp}"] if matrix else []
+    if pr.get("color_transfer") == "arib-std-b67":
+        # HDR (HLG, e.g. iPhone): a transparent HDR video loses its transparency in the renderer, so the cut-out is made
+        # standard range instead, through a colour table fitted to how the renderer shows the HLG video it sits on.
+        lut = os.path.join(os.path.dirname(os.path.abspath(__file__)), "luts", "hlg-to-sdr.cube")
+        tags = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709", "-color_range", "tv"]
+        out_vf = ["-vf", f"lut3d='{lut}',scale=out_color_matrix=bt709:out_range=tv,setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709:range=tv"]
     emit(event="matting", done=0, total=total)
     dec = subprocess.Popen([FFMPEG, "-v", "error", "-nostdin", "-i", os.path.join(outdir, ev["files"]["screen"]),
-                            "-vf", f"fps={fps},scale={w}:{h}", "-f", "rawvideo", "-pix_fmt", "bgra", "-"],
+                            "-vf", f"fps={fps},scale={w}:{h}" + (f":in_color_matrix={matrix}" if matrix else ""), "-f", "rawvideo", "-pix_fmt", "bgra", "-"],
                            stdout=subprocess.PIPE, stdin=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     cut = subprocess.Popen([helper, str(w), str(h)], stdin=dec.stdout, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=False)
     dec.stdout.close()
     enc = subprocess.Popen([FFMPEG, "-v", "error", "-y", "-f", "rawvideo", "-pix_fmt", "bgra", "-s", f"{w}x{h}", "-r", str(fps), "-i", "-",
-                            "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", "-b:v", "0", "-crf", "30", "-deadline", "realtime", "-cpu-used", "8",
+                            *out_vf, "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p", *tags, "-b:v", "0", "-crf", "30", "-deadline", "realtime", "-cpu-used", "8",
                             "-row-mt", "1", "-auto-alt-ref", "0", "-f", "webm", tmp], stdin=cut.stdout, stderr=subprocess.PIPE)
     cut.stdout.close()
     enc_err = []

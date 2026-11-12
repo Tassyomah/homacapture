@@ -1,6 +1,6 @@
 import { AbsoluteFill, Audio, Img, OffthreadVideo, Sequence, useCurrentFrame, useVideoConfig } from 'remotion'
 import { useMemo } from 'react'
-import { ASPECTS, LOOKS, type Mask, type Sticker, type MusicTrack, type Overlay, type Voiceover, type InsertClip, type Keyframe, type Placed, type OverlayShape, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type TextPop, type Transcript } from '../shared/types'
+import { ASPECTS, lookFilter, type Mask, type Sticker, type MusicTrack, type Overlay, type Voiceover, type InsertClip, type Keyframe, type Placed, type OverlayShape, type RecordingEvents, type RenderConfig, type ScreencastProps, type ProjectAssets, type TextPop, type Transcript } from '../shared/types'
 import { buildCamera, cameraAt, cursorIdAt, smoothCursor, type CamKey, type Viewport } from './motion'
 import { keptRanges, srcToOut, type Range } from './ranges'
 import { POP, WHOOSH } from './sfx'
@@ -86,7 +86,7 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
   // The camera starts a moment after the screen; show the overlay only once it has frames (no black box at the start).
   const cameraHasFrames = t - (ev.cameraOffset ?? 0) >= 0 && (!ev.camera?.duration || t - (ev.cameraOffset ?? 0) <= ev.camera.duration)
   // Colour look (filter preset + brightness / contrast / saturation) on the video only, never on text or captions.
-  const lookCss = [LOOKS.find((l) => l.id === cfg.look)?.css ?? '', cfg.brightness !== 1 ? `brightness(${cfg.brightness})` : '',
+  const lookCss = [lookFilter(cfg.look, cfg.lookAmount ?? 0.6), cfg.brightness !== 1 ? `brightness(${cfg.brightness})` : '',
     cfg.contrast !== 1 ? `contrast(${cfg.contrast})` : '', cfg.saturation !== 1 ? `saturate(${cfg.saturation})` : ''].filter(Boolean).join(' ') || undefined
   // Transition into this segment (it starts right after a cut): the frame zooms, flashes, blurs or whips in.
   const age = frame / fps
@@ -126,6 +126,7 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
             <OffthreadVideo src={cutout} muted transparent startFrom={Math.round(srcStart * fps)} playbackRate={rate} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, display: 'block' }} />
             <div style={{ width: W, height: H }} />
           </> : <OffthreadVideo src={assets.screen} muted startFrom={Math.round(srcStart * fps)} playbackRate={rate} style={{ width: W, height: H, display: 'block' }} />}
+          {cfg.look === 'redroom' && <RedStudio ev={ev} W={W} H={H} view={F.w / cam.scale} k={cfg.lookAmount ?? 0.6} cutout={assets.cutout ?? null} srcStart={srcStart} fps={fps} rate={rate} />}
           {/* Privacy masks live in screen coordinates, so they follow the zoom and are part of every export (spec §49). */}
           {masks.filter((m) => t >= m.start && t <= m.end).map((m) => (
             <div key={m.id} style={{ position: 'absolute', left: m.x, top: m.y, width: m.w, height: m.h, borderRadius: 8,
@@ -201,6 +202,49 @@ const Cinematic: React.FC<{ cfg: RenderConfig; W: number; H: number; frame: numb
       <rect width={W} height={H} filter={`url(#grain${frame})`} /></svg>}
     {cfg.bars && <><div style={{ position: 'absolute', left: 0, top: 0, width: W, height: bar, background: '#000' }} />
       <div style={{ position: 'absolute', left: 0, bottom: 0, width: W, height: bar, background: '#000' }} /></>}
+  </>
+}
+
+/**
+ * Red studio (colour grade from the Inspiration Board: @thedesignerjoyce): the room behind the speaker goes dark red with
+ * soft neon frames glowing behind the head, the speaker is drawn again on top with natural skin and a red rim light on
+ * their edges. Kept subtle: strength `k` (the look amount) scales every part. Screen coordinates, so it follows punch-ins.
+ * Without the cut-out yet, only a gentle red tint and vignette.
+ */
+const RedStudio: React.FC<{ ev: RecordingEvents; W: number; H: number; view: number; k: number; cutout: string | null; srcStart: number; fps: number; rate: number }> = ({ ev, W, H, view, k, cutout, srcStart, fps, rate }) => {
+  const [fx, fy] = ev.focus ?? [W / 2, H * 0.4]
+  const fw = ev.face?.w ?? Math.min(W, H) * 0.18, fh = ev.face?.h ?? fw
+  const s = Math.max(0.2, Math.min(1.5, k))
+  const neon = '#FF4A3D', u = Math.min(W, H)
+  const bar = (st: React.CSSProperties) => <div style={{ position: 'absolute', borderRadius: u * 0.01, boxShadow: `0 0 ${u * 0.02}px ${u * 0.006}px rgba(255,74,61,${0.55 * s}), inset 0 0 ${u * 0.012}px rgba(255,120,100,${0.5 * s})`, filter: `blur(${(u * 0.0025).toFixed(1)}px)`, ...st }} />
+  return <>
+    {/* the room: darker, red, with a soft falloff to the edges */}
+    {/* darken first (a bright wall would only turn pink), then multiply in deep red, then push the hue to red */}
+    <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, background: `rgba(14,2,4,${Math.min(0.75, 0.62 * s).toFixed(3)})` }} />
+    <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, background: '#C0161F', mixBlendMode: 'multiply', opacity: Math.min(0.9, 0.7 * s) }} />
+    <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, background: '#A3121A', mixBlendMode: 'color', opacity: Math.min(0.85, 0.65 * s) }} />
+    <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, background: `radial-gradient(ellipse 70% 60% at ${(fx / W * 100).toFixed(1)}% ${(fy / H * 100).toFixed(1)}%, rgba(255,60,50,${(0.14 * s).toFixed(3)}) 0%, rgba(0,0,0,0) 45%, rgba(8,0,1,${(0.5 * s).toFixed(3)}) 100%)` }} />
+    {cutout && <>
+      {/* neon frames behind the head: one wide frame above, two upright bars either side */}
+      {/* placed inside what the frame actually shows (a vertical crop sees only a slice of a landscape video) */}
+      {(() => { const half = Math.min(view / 2, fw * 3.4); return <>
+        {bar({ left: fx - half * 0.62, top: fy - fh * 2.1, width: half * 1.24, height: fh * 1.25, border: `${(u * 0.007).toFixed(1)}px solid ${neon}`, opacity: 0.8 })}
+        {bar({ left: fx - half * 0.88, top: fy - fh * 0.5, width: u * 0.011, height: fh * 2.4, background: neon, opacity: 0.55 })}
+        {bar({ left: fx + half * 0.86, top: fy - fh * 0.8, width: u * 0.011, height: fh * 2.7, background: neon, opacity: 0.5 })}</> })()}
+      {/* the speaker again, natural, with a red rim on the lit side and a faint glow around */}
+      <svg width={0} height={0} style={{ position: 'absolute' }} aria-hidden><defs>
+        <filter id="hc-rim" x="-5%" y="-5%" width="110%" height="110%">
+          <feMorphology in="SourceAlpha" operator="erode" radius={(u * 0.006).toFixed(1)} result="in" />
+          <feOffset in="in" dx={(u * 0.007).toFixed(1)} dy={(u * 0.004).toFixed(1)} result="shift" />
+          <feComposite in="SourceAlpha" in2="shift" operator="out" result="edge" />
+          <feGaussianBlur in="edge" stdDeviation={(u * 0.003).toFixed(1)} result="soft" />
+          <feFlood floodColor="#FF3B30" floodOpacity={Math.min(0.9, 0.75 * s).toFixed(2)} /><feComposite in2="soft" operator="in" result="rim" />
+          <feComposite in="rim" in2="SourceAlpha" operator="in" result="rimIn" />
+          <feBlend in="rimIn" in2="SourceGraphic" mode="screen" />
+        </filter></defs></svg>
+      <OffthreadVideo src={cutout} muted transparent startFrom={Math.round(srcStart * fps)} playbackRate={rate}
+        style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, display: 'block', filter: `url(#hc-rim) drop-shadow(0 0 ${(u * 0.012).toFixed(1)}px rgba(255,59,48,${(0.35 * s).toFixed(2)}))` }} />
+    </>}
   </>
 }
 

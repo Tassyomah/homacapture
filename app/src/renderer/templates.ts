@@ -8,7 +8,7 @@ import { brandIn, iconFor } from '../video/icons'
  * key words and how it opens; cards and hooks are the key phrases of what was said. Everything the template makes is
  * an ordinary, editable item with an id starting "tpl-", so another template (or Undo) replaces only its own work.
  */
-export type TemplateId = 'steps' | 'kinetic' | 'yellow' | 'brand' | 'points' | 'calm' | 'screen'
+export type TemplateId = 'steps' | 'kinetic' | 'yellow' | 'brand' | 'points' | 'calm' | 'studio' | 'screen'
 export interface TemplateDef { id: TemplateId; name: string; line: string; forScreen?: boolean }
 export const TEMPLATES: TemplateDef[] = [
   { id: 'steps', name: 'Step cards', line: 'A paper card on top for each step, an icon sticker and an arrow down to you' },
@@ -17,6 +17,7 @@ export const TEMPLATES: TemplateDef[] = [
   { id: 'brand', name: 'Brand pop', line: 'Edge-to-edge words, marquee bands, stickers and notes, outlined captions' },
   { id: 'points', name: 'Numbered points', line: 'Taped cards with hand-circled numbers, number rings and photos' },
   { id: 'calm', name: 'Calm aesthetic', line: 'Polaroids of your moments, handwritten notes, soft colour, serif words' },
+  { id: 'studio', name: 'Red studio', line: 'Colour grade: a dark red room, neon behind you, a red rim light, natural skin' },
   { id: 'screen', name: 'Screen + caption', line: 'Your screen taped on paper, a headline, notes in the margins', forScreen: true },
 ]
 export const LENGTHS: [number, string][] = [[15, '15 s'], [30, '30 s'], [60, '60 s'], [0, 'Whole']]
@@ -268,7 +269,7 @@ export function applyTemplate(id: TemplateId, ev: RecordingEvents, tr: Transcrip
     return out
   }
   const common: Partial<RenderConfig> = { aspect: '9:16', outputFps: 30, padding: 0, radius: 0, zoom: 1, voice: 'clean', captions: tr ? 'word' : 'off', capHighlight: true, capEmoji: false,
-    layout: 'full', look: 'none', brightness: 1, contrast: 1, saturation: 1, transition: 'none', transitionAt: 'big', intro: false, outro: false,
+    layout: 'full', look: 'none', lookAmount: 0.6, brightness: 1, contrast: 1, saturation: 1, transition: 'none', transitionAt: 'big', intro: false, outro: false,
     vignette: false, grain: false, bars: false, shake: false, progressBar: 'off', capColor: '#F5C36A', background: 'ink', sfx: false }
 
   // A visual object for a beat, chosen by what was said: a number counts up in a ring, a named app sends a notification,
@@ -345,7 +346,7 @@ export function applyTemplate(id: TemplateId, ev: RecordingEvents, tr: Transcrip
     const ticks = list.filter((x, i) => i % 3 === 2 && x.text)
     ticks.forEach((x, i) => texts.push({ id: nid('c'), t: x.t, duration: Math.max(0.8, Math.min(end, (ticks[ticks.length - 1]?.t ?? x.t) + 2.6) - x.t), text: x.text, style: 'check', bg: c1, x: 0.27, y: 0.46 }))
     list.filter((_, i) => i % 4 === 1).forEach((x, i) => texts.push({ id: nid('d'), t: x.t + 0.2, duration: 1.6, text: '', style: 'object', obj: 'doodle', shape: i % 2 ? 'sparkle' : 'star', x: i % 2 ? 0.14 : 0.86, y: 0.2, scale: 0.4 }))
-    return { cuts, zooms, texts, window: win, hook, config: { ...common, captions: tr ? 'pill' : 'off', capColor: c2, look: 'punchy', shake: true, transition: 'zoom', sfx: true } }
+    return { cuts, zooms, texts, window: win, hook, config: { ...common, captions: tr ? 'pill' : 'off', capColor: c2, look: 'punchy', lookAmount: 0.5, shake: true, transition: 'zoom', sfx: true } }
   }
   if (id === 'yellow') {
     // Your video as a taped card on grey stripes, the marker headline above it, stickers and notes stuck around the card.
@@ -383,7 +384,13 @@ export function applyTemplate(id: TemplateId, ev: RecordingEvents, tr: Transcrip
     lay(every(4.2), ['photo', 'note'], (k, i) => ({ x: side(i), y: 0.6, scale: 0.72, rotate: i % 2 ? -5 : 5 }), 3.2, ['#FBF6EC', '#F3EDF9', '#FDF0EB'])
     texts.filter((x) => x.obj === 'note' || x.obj === 'photo').forEach((x, i) => texts.push({ id: nid('d'), t: x.t + 0.4, duration: Math.min(2, x.duration - 0.4), text: '', style: 'object', obj: 'doodle', shape: i % 2 ? 'heart' : 'sparkle', x: (x.x ?? 0.5) < 0.5 ? 0.42 : 0.58, y: 0.5, scale: 0.22, color: '#FFFFFF' }))
     texts.filter((x) => x.obj === 'note').forEach((x) => { x.color = '#14140F' })
-    return { cuts, zooms: [], texts, window: win, hook, config: { ...common, captions: tr ? 'soft' : 'off', capHighlight: false, look: 'soft', grain: true, vignette: true, transition: 'blur', saturation: 0.92 } }
+    return { cuts, zooms: [], texts, window: win, hook, config: { ...common, captions: tr ? 'soft' : 'off', capHighlight: false, look: 'soft', lookAmount: 0.55, grain: true, transition: 'blur' } }
+  }
+  if (id === 'studio') {
+    // The colour grade from the board (@thedesignerjoyce): red studio room, neon behind, rim light; calm objects in the room's colours.
+    if (hook) texts.push({ id: nid('h'), t: t0 + 0.2, duration: 2.6, text: hook, style: 'object', obj: 'note', x: 0.5, y: 0.11, scale: 0.85, rotate: -3, bg: '#FBF8F2' })
+    lay(every(4), ['sticker', 'photo', 'stat', 'notify', 'note'], lowPlace, 3, ['#FF6B5E', '#FBF8F2', '#F5C36A'])
+    return { cuts, zooms, texts, window: win, hook, config: { ...common, look: 'redroom', lookAmount: 0.6, captions: tr ? 'clean' : 'off', capColor: '#FF8A7A', transition: 'none', sfx: true } }
   }
   // screen: the screen taped onto warm paper, a headline above, one calm line under it, notes and stickers in the margins.
   if (hook) texts.push({ id: nid('h'), t: t0, duration: Math.max(1, end - t0), text: hook, style: 'title', anim: 'slide', bg: 'transparent', color: '#14140F', x: 0.5, y: 0.1 })

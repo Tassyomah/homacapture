@@ -45,7 +45,8 @@
           "mac/homacapture-sysaudio",
           "mac/homacapture-mic",
           "mac/homacapture-face",
-          "mac/homacapture-matte"
+          "mac/homacapture-matte",
+          "luts/*.cube"
         ]
       },
       {

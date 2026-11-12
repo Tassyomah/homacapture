@@ -58,6 +58,12 @@ export function TemplateThumb({ id, poster }: { id: TemplateId; poster: string |
     {polaroid({ right: 6, top: '54%', transform: 'rotate(6deg)' })}
     <span style={abs({ left: 6, top: '56%', background: '#F3EDF9', padding: '4px 5px', fontFamily: HAND, fontSize: 7, fontWeight: 700, transform: 'rotate(-5deg)', boxShadow: '0 3px 8px rgba(0,0,0,.25)' })}>coffee first</span>
     <div style={abs({ left: '10%', right: '10%', bottom: '12%', textAlign: 'center', fontFamily: 'Georgia, serif', fontStyle: 'italic', fontSize: 7, color: '#fff' })}>this is how I start my day</div></>
+  else if (id === 'studio') body = <>
+    <div style={photo(abs({ inset: 0 }))} />
+    <div style={abs({ inset: 0, background: 'rgba(10,0,2,.35)' })} /><div style={abs({ inset: 0, background: '#A3121A', mixBlendMode: 'color', opacity: 0.6 })} />
+    <div style={abs({ left: '18%', right: '18%', top: '8%', height: '16%', border: '2px solid #FF4A3D', borderRadius: 3, boxShadow: '0 0 10px 2px rgba(255,74,61,.6)' })} />
+    <div style={abs({ left: '8%', top: '30%', width: 3, height: '30%', background: '#FF4A3D', boxShadow: '0 0 10px 2px rgba(255,74,61,.6)' })} />
+    <div style={abs({ left: 0, right: 0, bottom: '14%', textAlign: 'center', fontWeight: 800, fontSize: 9, color: '#fff', textShadow: '0 1px 4px #000a' })}>keep it <span style={{ color: '#FF8A7A' }}>simple</span></div></>
   else body = <>
     <div style={abs({ inset: 0, background: '#F4EEE3' })} />
     <div style={abs({ left: 0, right: 0, top: '7%', textAlign: 'center', fontWeight: 800, fontSize: 10, color: INK })}>HOW I DO IT</div>

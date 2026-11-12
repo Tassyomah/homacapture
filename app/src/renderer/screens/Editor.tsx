@@ -189,10 +189,7 @@ export function Editor({ project }: { project: Project }) {
       autoEditedAt: e.autoEditedAt ?? new Date().toISOString(), template: { id, length: len, at: new Date().toISOString() } }))
     setSel(null); setExporting(false)
     // Words behind you need you cut out of the video: made once, in the background, here on the Mac (Apple Vision).
-    if (r.texts.some((x) => x.obj === 'behind') && !cutout && !matting) {
-      setMatting('Cutting you out for the words behind you…')
-      window.narrate.matteProject(project.dir).then((p) => { setCutout(p.assets.cutout ?? null); setMatting(null) }).catch(() => setMatting(null))
-    }
+    if (r.texts.some((x) => x.obj === 'behind') || r.config.look === 'redroom') cutMeOut()
     // The short starts at output 0 (everything before its window is cut); seek there once the new cuts are in.
     setTimeout(() => { playerRef.current?.seekTo(0); setPlayheadSrc(r.window[0]) }, 80)
   }
@@ -360,6 +357,12 @@ export function Editor({ project }: { project: Project }) {
   const editVoice = (id: string, patch: Partial<Voiceover>) => apply((e) => ({ ...e, voiceovers: e.voiceovers.map((x) => x.id === id ? { ...x, ...patch } : x) }))
   const removeVoice = (id: string) => apply((e) => ({ ...e, voiceovers: e.voiceovers.filter((x) => x.id !== id) }))
   const setMusic = (patch: Partial<MusicTrack>) => apply((e) => ({ ...e, music: e.music ? { ...e.music, ...patch } : null }))
+  /** The speaker cut out of the video (Apple Vision, on this Mac), made once in the background for the words-behind and Red studio looks. */
+  const cutMeOut = () => {
+    if (cutout || matting) return
+    setMatting('Cutting you out…')
+    window.narrate.matteProject(project.dir).then((p) => { setCutout(p.assets.cutout ?? null); setMatting(null) }).catch(() => setMatting(null))
+  }
   const removeBackground = () => {
     setMatting('Cutting you out…')
     window.narrate.matteProject(project.dir)
@@ -1058,8 +1061,10 @@ export function Editor({ project }: { project: Project }) {
       <h3 className="drawer-title">Effects</h3>
       <div className="control"><div className="lbl"><span>Look</span></div>
         <div className="looks">{LOOKS.map((l) => (
-          <button key={l.id} className={config.look === l.id ? 'on' : ''} onClick={() => set('look', l.id as Look)}>
+          <button key={l.id} className={config.look === l.id ? 'on' : ''} onClick={() => { set('look', l.id as Look); if (l.id === 'redroom') cutMeOut() }}>
             <span className="look-swatch" style={{ filter: l.css || undefined, backgroundImage: poster ? `url("${poster}")` : undefined, backgroundSize: 'cover', backgroundPosition: 'center' }} /><span>{l.label}</span></button>))}</div></div>
+      {config.look !== 'none' && slider('Strength', `${Math.round((config.lookAmount ?? 0.6) * 100)}%`, 0.1, 1, 0.05, config.lookAmount ?? 0.6, (v) => set('lookAmount', v), 'How strong the look is. It starts subtle.')}
+      {config.look === 'redroom' && <span className="note">{matting ? `${matting} The red room appears once it is done.` : cutout ? 'Your room goes dark red with soft neon behind you and a red rim light on your edges; your skin stays natural.' : ''}</span>}
       {slider('Brightness', `${Math.round(config.brightness * 100)}%`, 0.6, 1.4, 0.02, config.brightness, (v) => set('brightness', v))}
       {slider('Contrast', `${Math.round(config.contrast * 100)}%`, 0.6, 1.4, 0.02, config.contrast, (v) => set('contrast', v))}
       {slider('Saturation', `${Math.round(config.saturation * 100)}%`, 0, 1.8, 0.02, config.saturation, (v) => set('saturation', v))}
