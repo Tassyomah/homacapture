@@ -56,9 +56,16 @@ const easeOutBack = (p: number) => { const c1 = 1.70158, c3 = c1 + 1; return 1 +
  */
 export const Captions: React.FC<{ transcript: Transcript; t: number; style: CaptionStyle; FW: number; FH: number; portrait: boolean; highlight?: boolean; emoji?: boolean
   /** Colour of highlighted words. */ color?: string
+  /** Key words get a highlighter swipe behind them instead of only a colour. */ marker?: boolean
   /** 'top' = the captions hang from the top of their box (the line under a framed screen) instead of sitting at the bottom. */ anchor?: 'bottom' | 'top' }> =
-  ({ transcript, t, style, FW, FH, portrait, highlight = false, emoji = false, color, anchor = 'bottom' }) => {
+  ({ transcript, t, style, FW, FH, portrait, highlight = false, emoji = false, color, anchor = 'bottom', marker = false }) => {
   const HI = color || MUSTARD
+  /** Highlighter: a slightly skewed band that swipes in left to right from the moment the word is said. */
+  const swipe = (w: TranscriptWord, ink = INK): React.CSSProperties => {
+    const k = Math.max(0, Math.min(1, (t - w.start) / 0.22))
+    return { color: k > 0.5 ? ink : undefined, textShadow: k > 0.5 ? 'none' : undefined, backgroundImage: `linear-gradient(100deg, transparent 2%, ${HI} 4%, ${HI} 96%, transparent 98%)`,
+      backgroundRepeat: 'no-repeat', backgroundSize: `${(k * 100).toFixed(1)}% 78%`, backgroundPosition: '0 70%', padding: '0 0.12em', margin: '0 -0.04em', borderRadius: '0.12em' }
+  }
   const key = (w: string, i: number) => highlight && isKeyWord(w, i)
   if (style === 'off') return null
   const seg = segmentAt(transcript, t)
@@ -103,7 +110,7 @@ export const Captions: React.FC<{ transcript: Transcript; t: number; style: Capt
       return wrap(
         <div style={{ fontFamily: FONT, fontWeight: 800, fontSize: fs, lineHeight: 1.18, textAlign: 'center', color: PAPER, maxWidth: '100%', textWrap: 'balance' as never,
                       textShadow: '0 3px 14px rgba(0,0,0,0.55), 0 0 2px rgba(0,0,0,0.75)', opacity: Math.min(1, lineAge / 0.08) }}>
-          {line.map((w, i) => <span key={i} style={{ color: key(w.word, idx(w)) ? HI : undefined }}>{(i ? ' ' : '') + w.word.trim()}</span>)}{emo(line)}
+          {line.map((w, i) => <span key={i}>{i ? ' ' : ''}<span style={key(w.word, idx(w)) ? (marker ? swipe(w) : { color: HI }) : undefined}>{w.word.trim()}</span></span>)}{emo(line)}
         </div>)
     }
     // soft (serif italic on video) and line (calm grey line under a framed screen): whole short lines that fade in.
@@ -142,7 +149,7 @@ export const Captions: React.FC<{ transcript: Transcript; t: number; style: Capt
     const fontSize = Math.round(Math.min(FW * (portrait ? 0.13 : 0.075), (FW * 0.86) / Math.max(3, text.length * 0.62)))
     return wrap(
       <div style={{ transform: `scale(${scale})`, transformOrigin: '50% 70%', fontFamily: FONT, fontWeight: 900, fontSize, lineHeight: 1, letterSpacing: '-0.01em',
-                    color: key(cur.word, 1) ? HI : PAPER, textShadow: shadow }}>{text}{emoji ? emojiFor([cur]) && ' ' + emojiFor([cur]) : ''}</div>)
+                    color: key(cur.word, 1) ? HI : PAPER, textShadow: shadow, ...(marker && key(cur.word, 1) ? swipe(cur) : {}) }}>{text}{emoji ? emojiFor([cur]) && ' ' + emojiFor([cur]) : ''}</div>)
   }
 
   const groups = chunks(seg.words, portrait ? 4 : 6)

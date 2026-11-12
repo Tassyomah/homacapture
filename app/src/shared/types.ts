@@ -68,7 +68,13 @@ export interface ManualZoom { id: string; t: number; duration: number; x: number
 /** Kinetic text (auto-edit): a key phrase that pops in big over the video from `t` for `duration` (source seconds). */
 /** pop / title / name, plus the short-template cards: step (top panel of the split layout, `sub` = its label),
  *  point (numbered card, `sub` = the number), band (full-width colour band), check (one line of a checklist panel). */
-export type TextStyle = 'pop' | 'title' | 'name' | 'step' | 'point' | 'band' | 'check'
+export type TextStyle = 'pop' | 'title' | 'name' | 'step' | 'point' | 'band' | 'check' | 'object'
+/** Visual objects made from what was said (short templates; `style: 'object'`). Everything is drawn, nothing generated:
+ *  sticker = an icon on a die-cut sticker with a handwritten label; stat = a number counting up in a ring; search = a search
+ *  bar typing the words; notify = a notification card (app or brand named); note = a taped paper note in handwriting;
+ *  photo = a taped polaroid of this very moment; behind = one giant word behind the speaker (needs the cut-out); edge =
+ *  huge words bleeding off the frame edge; marquee = a scrolling band; doodle = a hand-drawn circle / underline / arrow / star. */
+export type ObjKind = 'sticker' | 'stat' | 'search' | 'notify' | 'note' | 'photo' | 'behind' | 'edge' | 'marquee' | 'doodle'
 export type TextAnim = 'pop' | 'slide' | 'type' | 'slam'
 /** A point in an item's movement: `at` = seconds from the item's start. Between keyframes everything eases smoothly. */
 export interface Keyframe { at: number; x: number; y: number; scale: number; rotate: number; opacity: number }
@@ -81,7 +87,9 @@ export interface TextPop extends Placed { id: string; t: number; duration: numbe
   /** Second line of a name tag ('name' style): the person's role, e.g. "Principal engineer, Microsoft". */
   sub?: string
   /** How it comes in: pop (springs up), slide (rises in), type (typewriter), slam (drops in big). Default pop. */
-  anim?: TextAnim }
+  anim?: TextAnim
+  /** style 'object': which object, its icon (Tabler name), the number for a stat, a doodle's shape. */
+  obj?: ObjKind; icon?: string; num?: number; unit?: string; shape?: 'circle' | 'underline' | 'arrow' | 'star' | 'sparkle' | 'heart' | 'squiggle' }
 /** Stickers: an emoji or a flat brand shape on top of the video. x/y = centre as a fraction of the frame; size = fraction of frame width. */
 export type StickerShape = 'arrow' | 'star' | 'sparkle' | 'heart' | 'burst'
 export interface Sticker { id: string; t: number; duration: number; emoji?: string; shape?: StickerShape; color?: Background; x: number; y: number; size: number; rotate: number; opacity?: number; kf?: Keyframe[] }
@@ -177,7 +185,7 @@ export const CAPTION_STYLES: { id: CaptionStyle; label: string }[] = [
   { id: 'pill', label: 'White box' }, { id: 'clean', label: 'Clean' }, { id: 'outline', label: 'Outline' }, { id: 'soft', label: 'Soft serif' }, { id: 'line', label: 'Calm line' },
 ]
 /** Where the video sits: full frame; split = a card panel on top and the speaker below; stack = a framed screen with a headline above and captions under it. */
-export type FrameLayout = 'full' | 'split' | 'stack'
+export type FrameLayout = 'full' | 'split' | 'stack' | 'card'
 /** A short made from a template (Shorts panel): which one and how long, so the panel can show it and switch. */
 export interface TemplateRun { id: string; length: number; at: string }
 
@@ -253,6 +261,10 @@ export interface RenderConfig {
   layout: FrameLayout
   /** Colour of highlighted caption words. */
   capColor: string
+  /** What the canvas is made of around the video on split / stack / card layouts: flat colour, grainy warm paper, or grey stripes. */
+  surface?: 'flat' | 'paper' | 'stripes'
+  /** Key words in the captions get a highlighter swipe behind them. */
+  capMarker?: boolean
 }
 export type VoiceFx = 'none' | 'deep' | 'high' | 'radio' | 'robot' | 'echo'
 export type Look = 'none' | 'warm' | 'cool' | 'punchy' | 'soft' | 'film' | 'mono'

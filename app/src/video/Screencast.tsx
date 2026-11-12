@@ -5,6 +5,8 @@ import { buildCamera, cameraAt, cursorIdAt, smoothCursor, type CamKey, type View
 import { keptRanges, srcToOut, type Range } from './ranges'
 import { POP, WHOOSH } from './sfx'
 import { Captions } from './Captions'
+import { Doodle, EdgeWords, KitDefs, KitObject, Paper, Stripes, Tape } from './kit'
+import { Icon } from './icons'
 
 const BACKGROUNDS: Record<string, string> = {
   indigo: 'linear-gradient(135deg, #6E71E8 0%, #8B78D6 100%)',
@@ -37,6 +39,12 @@ export function layout(ev: RecordingEvents, cfg: RenderConfig): Layout {
       const top = Math.round(height * 0.4), fw = width, fh = height - top
       return { width, height, frame: { x: 0, y: top, w: fw, h: fh }, vp: { FW: fw, FH: fh, base: Math.max(fw / W, fh / H), crop: true }, space: canvas, panel: { x: 0, y: 0, w: width, h: top } }
     }
+    if (cfg.layout === 'card') {
+      // The video as a tilted, taped photo card on the surface, room above for a headline and below for captions.
+      const fw = Math.round(width * 0.8), fh = Math.min(Math.round(height * 0.58), Math.round(fw * 1.3))
+      const fx = Math.round((width - fw) / 2), fy = Math.round(height * 0.21)
+      return { width, height, frame: { x: fx, y: fy, w: fw, h: fh }, vp: { FW: fw, FH: fh, base: Math.max(fw / W, fh / H), crop: true }, space: canvas }
+    }
     const fw = Math.round(width * 0.9), fh = Math.min(Math.round(height * 0.56), Math.round(fw * (H > W ? 1.35 : 1)))
     const fx = Math.round((width - fw) / 2), fy = Math.round(height * 0.22)
     return { width, height, frame: { x: fx, y: fy, w: fw, h: fh }, vp: { FW: fw, FH: fh, base: Math.max(fw / W, fh / H), crop: true }, space: canvas }
@@ -61,6 +69,9 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
   const W = ev.display.width, H = ev.display.height
   const { frame: F, vp } = L
   const S = L.space
+  const objects = texts.filter((x) => x.style === 'object' && t >= x.t && t < x.t + x.duration)
+  const behind = objects.filter((x) => x.obj === 'behind')
+  const facePos = ev.focus ? `${Math.round(ev.focus[0] / ev.display.width * 100)}% ${Math.round(ev.focus[1] / ev.display.height * 100)}%` : '50% 40%'
   const cam = cameraAt(ev, keys, t, W, H, vp)
   const tx = F.w / 2 - cam.cx * cam.scale, ty = F.h / 2 - cam.cy * cam.scale
   const pos = smoothCursor(ev, t)
@@ -98,8 +109,13 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
 
   return (
     <>
+      {L.space !== F && cfg.surface === 'paper' && !L.panel && <Paper r={{ x: 0, y: 0, w: L.width, h: L.height }} />}
+      {L.space !== F && cfg.surface === 'stripes' && !L.panel && <Stripes r={{ x: 0, y: 0, w: L.width, h: L.height }} />}
+      {L.panel && cfg.surface === 'paper' && <Paper r={L.panel} />}
+      {L.panel && cfg.surface === 'stripes' && <Stripes r={L.panel} />}
       <div data-hc-frame="" style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, borderRadius: cfg.radius,
-                    overflow: 'hidden', boxShadow: '0 40px 120px rgba(20,20,15,0.35)', background: '#14140F', ...frameFx }}>
+                    overflow: 'hidden', boxShadow: cfg.layout === 'card' ? `0 0 0 ${Math.round(F.w * 0.025)}px #FDFCF8, 0 ${Math.round(F.w * 0.05)}px ${Math.round(F.w * 0.14)}px rgba(20,20,15,0.35)` : '0 40px 120px rgba(20,20,15,0.35)',
+                    background: '#14140F', ...frameFx, ...(cfg.layout === 'card' ? { transform: `${frameFx.transform ?? ''} rotate(-1.5deg)` } : {}) }}>
         {ins ? <InlineClip ins={ins} src={assets.media?.[ins.file] ?? null} age={age} len={segLen} fps={fps} filter={lookCss} /> : <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${cam.scale})`, filter: lookCss }}>
           {cutout ? <>
             {/* Remove / blur background: what sits behind the speaker, then the speaker cut out (transparent video) on top. */}
@@ -126,6 +142,12 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
               width: shape.size[0] * cs, height: shape.size[1] * cs, filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.35))' }} />
           )}
         </div>}
+        {!ins && behind.length > 0 && assets.cutout && <>
+          {/* Words behind the speaker: the word sits over the video, the cut-out speaker is drawn again on top of it. */}
+          {behind.map((x) => <EdgeWords key={x.id} x={x} t={t} S={{ x: 0, y: 0, w: F.w, h: F.h }} behind />)}
+          <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${cam.scale})`, filter: lookCss, pointerEvents: 'none' }}>
+            <OffthreadVideo src={assets.cutout} muted transparent startFrom={Math.round(srcStart * fps)} playbackRate={rate} style={{ width: W, height: H, display: 'block' }} /></div>
+        </>}
         <Cinematic cfg={cfg} W={F.w} H={F.h} frame={frame} />
       </div>
       {!ins && webcam && assets.camera && (
@@ -140,19 +162,23 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
         <BRoll key={o.id} o={o} src={assets.media![o.file]} t={t} srcStart={srcStart} fps={fps} rate={rate} F={F} faceLeft={(ev.focus?.[0] ?? W / 2) < W / 2} />))}
       {tr === 'flash' && q > 0 && <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, background: '#EFEEE8', opacity: 0.85 * q * q, pointerEvents: 'none' }} />}
       <div data-hc-space="" style={{ position: 'absolute', left: S.x, top: S.y, width: S.w, height: S.h, pointerEvents: 'none' }} />
+      {cfg.layout === 'card' && L.space !== F && <>
+        <Tape w={F.w * 0.3} h={F.w * 0.075} color="#F5C36A" rotate={-14} style={{ left: F.x - F.w * 0.06, top: F.y - F.w * 0.02 }} />
+        <Tape w={F.w * 0.3} h={F.w * 0.075} color="#FB8B73" rotate={12} style={{ left: F.x + F.w * 0.76, top: F.y + F.h - F.w * 0.05 }} /></>}
       {L.panel && <StepPanel texts={texts} t={t} P={L.panel} />}
+      {objects.map((x) => <KitObject key={x.id} x={x} t={t} S={S} screen={assets.screen} fps={fps} pos={facePos} hasCutout={!!assets.cutout} />)}
       <Checklist texts={texts} t={t} S={S} />
       {stickers.filter((s) => t >= s.t && t < s.t + s.duration).map((s) => <StickerView key={s.id} s={s} t={t} F={S} />)}
       {!ins && cfg.keycaps && ev.keys && ev.keys.length > 0 && <Keycaps keys={ev.keys} t={t} t0={ev.t0Video} F={F} />}
       {shownTexts(texts, t).map((x) => x.style === 'name' ? <NameTag key={x.id} x={x} t={t} F={S} portrait={S.h > S.w} L={L} />
         : x.style === 'point' ? <PointCard key={x.id} x={x} t={t} F={S} /> : x.style === 'band' ? <Band key={x.id} x={x} t={t} F={S} /> : <TextView key={x.id} tp={x} t={t} F={S} portrait={S.h > S.w} />)}
-      {!ins && transcript && cfg.captions !== 'off' && (cfg.captions === 'line' && cfg.layout === 'stack' && L.space !== L.frame
+      {!ins && transcript && cfg.captions !== 'off' && (cfg.captions === 'line' && (cfg.layout === 'stack' || cfg.layout === 'card') && L.space !== L.frame
         // Stack layout: the calm caption line sits in the space under the framed screen.
         ? <div style={{ position: 'absolute', left: F.x, top: F.y + F.h + Math.round(L.height * 0.035), width: F.w, height: L.height - (F.y + F.h), pointerEvents: 'none' }}>
-            <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={L.height} portrait anchor="top" highlight={cfg.capHighlight} emoji={cfg.capEmoji} color={cfg.capColor} />
+            <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={L.height} portrait anchor="top" highlight={cfg.capHighlight} emoji={cfg.capEmoji} color={cfg.capColor} marker={!!cfg.capMarker} />
           </div>
         : <div style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, pointerEvents: 'none' }}>
-            <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={F.h} portrait={L.vp.crop || F.h > F.w} highlight={cfg.capHighlight} emoji={cfg.capEmoji} color={cfg.capColor} />
+            <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={F.h} portrait={L.vp.crop || F.h > F.w} highlight={cfg.capHighlight} emoji={cfg.capEmoji} color={cfg.capColor} marker={!!cfg.capMarker} />
           </div>
       )}
       {!ins && assets.mic && cfg.micVolume > 0 && <TimedAudio src={(cfg.voiceFx !== 'none' ? assets.media?.[`media/voice-${cfg.voiceFx}.wav`] : null) ?? (cfg.voice === 'clean' && assets.micClean ? assets.micClean : assets.mic)} start={micStart} fps={fps} volume={cfg.micVolume} rate={rate} />}
@@ -242,35 +268,51 @@ const inOut = (x: TextPop, t: number, d = 0.35, fade = 0.25) => {
 const StepPanel: React.FC<{ texts: TextPop[]; t: number; P: Rect }> = ({ texts, t, P }) => {
   const x = [...texts].filter((y) => y.style === 'step' && t >= y.t && t < y.t + y.duration).pop()
   if (!x) return null
-  const { p, alpha } = inOut(x, t, 0.4)
-  const e = 1 - (1 - p) ** 3
-  const fs = Math.round(Math.min(P.w * 0.11, (P.w * 0.84) / Math.max(5, Math.min(x.text.length, 22) * 0.48)) * (x.scale ?? 1))
+  const { p, alpha } = inOut(x, t, 0.45)
+  const age = t - x.t, e = 1 - (1 - p) ** 3
+  const icon = !!x.icon
+  // Big enough to read at a glance: sized so the longest word fits and the heading takes at most two lines.
+  const longest = Math.max(...x.text.split(' ').map((w) => w.length)), perLine = Math.max(longest, Math.ceil(x.text.length / 2))
+  const fs = Math.round(Math.min(P.h * 0.26, (P.w * (icon ? 0.55 : 0.84)) / Math.max(4, perLine * 0.56)) * (x.scale ?? 1))
+  const d = P.h * 0.5
   return (
-    <div style={{ position: 'absolute', left: P.x, top: P.y, width: P.w, height: P.h, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
-      <div data-hc-item={`text:${x.id}`} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: Math.round(fs * 0.4), maxWidth: '86%', opacity: alpha,
-                    transform: `translateY(${((1 - e) * 18).toFixed(1)}%)` }}>
-        {x.sub && <div style={{ background: x.bg ?? '#FB8B73', color: '#14140F', fontFamily: SANS, fontWeight: 800, fontSize: Math.round(fs * 0.42), borderRadius: 999,
-                               padding: `${Math.round(fs * 0.16)}px ${Math.round(fs * 0.5)}px`, transform: `scale(${(0.7 + 0.3 * easeOutBack(Math.min(1, p * 1.4))).toFixed(3)})` }}>{x.sub}</div>}
-        <div style={{ fontFamily: fontOf(x.font, SERIF), fontWeight: 600, fontSize: fs, lineHeight: 1.05, letterSpacing: '-0.015em', color: x.color ?? '#14140F', textAlign: 'center', textWrap: 'balance' as never }}>{x.text}</div>
+    <div style={{ position: 'absolute', left: P.x, top: P.y, width: P.w, height: P.h, pointerEvents: 'none', opacity: alpha }}>
+      <div data-hc-item={`text:${x.id}`} style={{ position: 'absolute', left: P.w * 0.08, right: P.w * (icon ? 0.36 : 0.08), top: 0, bottom: 0, display: 'flex', flexDirection: 'column', justifyContent: 'center',
+                    alignItems: icon ? 'flex-start' : 'center', gap: Math.round(fs * 0.35), transform: `translateY(${((1 - e) * 14).toFixed(1)}%)` }}>
+        {x.sub && (() => { const lf = P.h * 0.1; return <div style={{ position: 'relative', padding: `${Math.round(lf * 0.3)}px ${Math.round(lf * 0.8)}px`, transform: `rotate(-3deg) scale(${(0.6 + 0.4 * easeOutBack(Math.min(1, p * 1.3))).toFixed(3)})`, transformOrigin: 'left center' }}>
+          <Tape w={lf * (x.sub.length * 0.55 + 1.6)} h={lf * 1.6} color={x.bg ?? '#FB8B73'} rotate={0} style={{ left: 0, top: 0 }} />
+          <span style={{ position: 'relative', fontFamily: '"Bradley Hand", cursive', fontWeight: 700, fontSize: Math.round(lf), color: '#14140F', whiteSpace: 'nowrap' }}>{x.sub}</span></div> })()}
+        <div style={{ fontFamily: fontOf(x.font, SANS), fontWeight: 800, fontSize: fs, lineHeight: 1.0, letterSpacing: '-0.025em', color: x.color ?? '#14140F', textAlign: icon ? 'left' : 'center', textWrap: 'balance' as never }}>{x.text}</div>
       </div>
+      {icon && <div style={{ position: 'absolute', right: P.w * 0.07, top: (P.h - d) / 2, width: d, height: d, filter: 'url(#hc-diecut)',
+        transform: `scale(${(0.3 + 0.7 * easeOutBack(Math.min(1, age / 0.5))).toFixed(3)}) rotate(${(8 + Math.sin(age * 2 + x.t) * 3).toFixed(2)}deg)` }}>
+        <div style={{ width: '100%', height: '100%', borderRadius: '44% 56% 50% 50% / 52% 46% 54% 48%', background: x.bg ?? '#FB8B73', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Icon name={x.icon} size={d * 0.56} color="#14140F" stroke={2} /></div></div>}
+      <div style={{ position: 'absolute', left: P.w * 0.44, bottom: -P.h * 0.04, opacity: Math.min(1, Math.max(0, (age - 0.5) / 0.3)) }}>
+        <Doodle shape="arrow" size={P.h * 0.26} p={(age - 0.5) / 0.5} color="#FB8B73" stroke={4} /></div>
     </div>)
 }
 
 /** Numbered point (Numbered points template): a coral number disc beside a paper card, above the speaker's head. */
 const PointCard: React.FC<{ x: TextPop; t: number; F: Rect }> = ({ x, t, F }) => {
-  const { p, alpha, age } = inOut(x, t, 0.3)
-  const hand = x.x != null || !!x.kf?.length
-  const at = placedAt({ x: x.x ?? 0.5, y: x.y ?? 0.17, scale: x.scale ?? 1, rotate: x.rotate ?? 0, opacity: x.opacity ?? 1 }, x.kf, age)
-  const fs = Math.round(F.w * (F.h > F.w ? 0.062 : 0.034) * at.scale)
-  const s = 0.75 + 0.25 * easeOutBack(p)
+  const { p, alpha, age } = inOut(x, t, 0.35)
+  const at = placedAt({ x: x.x ?? 0.5, y: x.y ?? 0.16, scale: x.scale ?? 1, rotate: x.rotate ?? -2, opacity: x.opacity ?? 1 }, x.kf, age)
+  const w = F.w * 0.8 * at.scale, fs = Math.min(w * 0.1, (w * 0.62) / Math.max(5, x.text.length * 0.5))
+  const n = w * 0.22
   return (
-    <div style={{ position: 'absolute', left: F.x + F.w * at.x, top: F.y + F.h * at.y, transform: 'translate(-50%, -50%)', width: 'max-content', pointerEvents: 'none' }}>
-      <div data-hc-item={`text:${x.id}`} style={{ display: 'flex', alignItems: 'center', gap: Math.round(fs * 0.3), opacity: alpha * at.opacity, transform: `scale(${s.toFixed(3)}) rotate(${at.rotate}deg)`, maxWidth: F.w * 0.9 }}>
-        {x.sub && <div style={{ flex: 'none', width: Math.round(fs * 1.7), height: Math.round(fs * 1.7), borderRadius: '50%', background: x.bg ?? '#FB8B73', color: '#14140F', fontFamily: SANS, fontWeight: 900,
-                               fontSize: Math.round(fs * 0.95), display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{x.sub}</div>}
-        <div style={{ background: '#EFEEE8', color: x.color ?? '#14140F', borderRadius: Math.round(fs * 0.4), padding: `${Math.round(fs * 0.4)}px ${Math.round(fs * 0.65)}px`, fontFamily: fontOf(x.font, SANS),
-                      fontWeight: 800, fontSize: fs, lineHeight: 1.1, boxShadow: '0 12px 40px rgba(20,20,15,0.22)', textWrap: 'balance' as never }}>{x.text}</div>
+    // A taped paper card: a big handwritten number circled in coral, the point in Aeonik, an icon sticker on the corner.
+    <div style={{ position: 'absolute', left: F.x + F.w * at.x - w / 2, top: F.y + F.h * at.y - w * 0.14, width: w, pointerEvents: 'none', opacity: alpha * at.opacity,
+                  transform: `translateY(${((1 - easeOutBack(p)) * -40).toFixed(1)}%) rotate(${at.rotate + Math.sin(age * 2 + x.t) * 0.6}deg)` }}>
+      <div data-hc-item={`text:${x.id}`} style={{ position: 'relative', background: '#FBF8F2', boxShadow: '0 16px 40px rgba(20,20,15,0.28)', display: 'flex', alignItems: 'center', gap: w * 0.04, padding: `${w * 0.05}px ${w * 0.06}px`, minHeight: w * 0.28, overflow: 'hidden' }}>
+        <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, mixBlendMode: 'multiply', opacity: 0.3 }}><rect width="100%" height="100%" filter="url(#hc-grain)" /></svg>
+        {x.sub && <div style={{ position: 'relative', flex: 'none', width: n, height: n, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ position: 'absolute', inset: -n * 0.08 }}><Doodle shape="circle" size={n * 1.16} p={(age - 0.15) / 0.5} color={x.bg ?? '#FB8B73'} stroke={5} /></div>
+          <span style={{ fontFamily: '"Bradley Hand", cursive', fontWeight: 700, fontSize: n * 0.7, color: '#14140F', lineHeight: 1 }}>{x.sub}</span></div>}
+        <div style={{ position: 'relative', fontFamily: fontOf(x.font, SANS), fontWeight: 800, fontSize: fs, lineHeight: 1.05, letterSpacing: '-0.02em', color: x.color ?? '#14140F', textWrap: 'balance' as never, paddingRight: x.icon ? w * 0.12 : 0 }}>{x.text}</div>
       </div>
+      <Tape w={w * 0.26} h={w * 0.07} color="#6E71E8" rotate={-5} style={{ left: w * 0.37, top: -w * 0.035 }} />
+      {x.icon && <div style={{ position: 'absolute', right: -w * 0.05, top: -w * 0.07, width: w * 0.2, height: w * 0.2, filter: 'url(#hc-diecut)', transform: `scale(${(0.3 + 0.7 * easeOutBack(Math.min(1, (age - 0.2) / 0.4))).toFixed(3)}) rotate(12deg)` }}>
+        <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: '#F5C36A', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={x.icon} size={w * 0.11} color="#14140F" stroke={2} /></div></div>}
     </div>)
 }
 
@@ -355,7 +397,7 @@ function leaving(out: string | undefined, left: number): { lift: number; shrink:
 
 /** Texts showing at t: hand-placed ones and name tags always; auto-placed ones share one spot, so only the latest. */
 function shownTexts(texts: TextPop[], t: number): TextPop[] {
-  const on = texts.filter((x) => t >= x.t && t < x.t + x.duration && x.style !== 'step' && x.style !== 'check')
+  const on = texts.filter((x) => t >= x.t && t < x.t + x.duration && x.style !== 'step' && x.style !== 'check' && x.style !== 'object')
   const shared = on.filter((x) => x.style !== 'name' && x.style !== 'band' && x.x == null && !x.kf?.length)
   return on.filter((x) => !shared.includes(x) || x === shared[shared.length - 1])
 }
@@ -382,12 +424,19 @@ const TextView: React.FC<{ tp: TextPop; t: number; F: { x: number; y: number; w:
   const base = F.w * (portrait ? (title ? 0.075 : 0.12) : (title ? 0.045 : 0.07))
   const fontSize = Math.round(Math.min(base, (F.w * (portrait ? 0.84 : 0.7)) / Math.max(4, Math.min(text.length, 14) * 0.6)) * at.scale)
   const boxed = title || !!tp.bg
+  // Title cards are taped paper strips (scrapbook), unless the user gave them their own background.
+  const paperTitle = title && (!tp.bg || tp.bg === '#EFEEE8')
   const body = (
     <div data-hc-item={`text:${tp.id}`} style={{ transform: `translateY(${((lift + gone.lift) * 100).toFixed(1)}%) scale(${scale * gone.shrink}) rotate(${at.rotate}deg)`, opacity: alpha * at.opacity, transformOrigin: '50% 60%', maxWidth: hand ? F.w * 0.94 : portrait ? '86%' : '72%', textAlign: 'center',
                   fontFamily: `${tp.font ? `"${tp.font}", ` : ''}Aeonik, Archivo, Inter, system-ui, sans-serif`, fontWeight: 800, fontSize, lineHeight: 1.02, letterSpacing: '-0.01em', textWrap: 'balance' as never,
                   color: tp.color ?? (title ? '#14140F' : '#FB8B73'), background: tp.bg ?? (title ? '#EFEEE8' : 'transparent'), borderRadius: boxed ? fontSize * 0.45 : 0,
                   padding: boxed ? `${Math.round(fontSize * 0.4)}px ${Math.round(fontSize * 0.7)}px` : 0,
-                  textShadow: boxed ? undefined : `0 ${Math.round(fontSize * 0.06)}px ${Math.round(fontSize * 0.3)}px rgba(20,20,15,0.55)` }}>{text}</div>)
+                  textShadow: boxed ? undefined : `0 ${Math.round(fontSize * 0.06)}px ${Math.round(fontSize * 0.3)}px rgba(20,20,15,0.55)`,
+                  ...(paperTitle ? { position: 'relative', borderRadius: 2, boxShadow: '0 14px 40px rgba(20,20,15,0.26)', background: '#FBF8F2' } : {}) }}>
+      {paperTitle && <svg width="100%" height="100%" style={{ position: 'absolute', inset: 0, mixBlendMode: 'multiply', opacity: 0.3, pointerEvents: 'none' }}><rect width="100%" height="100%" filter="url(#hc-grain)" /></svg>}
+      <span style={{ position: 'relative' }}>{text}</span>
+      {paperTitle && <Tape w={fontSize * 2.6} h={fontSize * 0.7} color="#FB8B73" rotate={-6} style={{ left: `calc(50% - ${fontSize * 1.3}px)`, top: -fontSize * 0.35 }} />}
+    </div>)
   if (hand) return <div style={{ position: 'absolute', left: F.x + F.w * at.x, top: F.y + F.h * at.y, transform: 'translate(-50%, -50%)', width: 'max-content', pointerEvents: 'none' }}>{body}</div>
   return <div style={{ position: 'absolute', left: F.x, top: F.y + Math.round(F.h * (portrait ? 0.13 : 0.1)), width: F.w, display: 'flex', justifyContent: 'center', pointerEvents: 'none' }}>{body}</div>
 }
@@ -575,6 +624,7 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
   return (
     <AbsoluteFill style={{ background: BACKGROUNDS[cfg.background] ?? BACKGROUNDS.indigo }}>
       <div style={{ position: 'absolute', left: 0, top: 0, width: L.width, height: L.height, transformOrigin: '0 0', transform: `scale(${VW / L.width})` }}>
+        <KitDefs scale={Math.min(L.width, L.height) / 1080} />
         {ranges.map((r, i) => {
           const len = Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps))
           const seq = (

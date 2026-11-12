@@ -188,6 +188,11 @@ export function Editor({ project }: { project: Project }) {
       zooms: [...e.zooms.filter((z) => !mine(z)), ...r.zooms], texts: [...e.texts.filter((x) => !mine(x) || x.style === 'name'), ...r.texts].sort((a, b) => a.t - b.t),
       autoEditedAt: e.autoEditedAt ?? new Date().toISOString(), template: { id, length: len, at: new Date().toISOString() } }))
     setSel(null); setExporting(false)
+    // Words behind you need you cut out of the video: made once, in the background, here on the Mac (Apple Vision).
+    if (r.texts.some((x) => x.obj === 'behind') && !cutout && !matting) {
+      setMatting('Cutting you out for the words behind you…')
+      window.narrate.matteProject(project.dir).then((p) => { setCutout(p.assets.cutout ?? null); setMatting(null) }).catch(() => setMatting(null))
+    }
     // The short starts at output 0 (everything before its window is cut); seek there once the new cuts are in.
     setTimeout(() => { playerRef.current?.seekTo(0); setPlayheadSrc(r.window[0]) }, 80)
   }
@@ -814,7 +819,8 @@ export function Editor({ project }: { project: Project }) {
     }
     if (it.kind === 'text') {
       const x = texts.find((y) => y.id === it.id)!
-      return <>{paneHead(x.style === 'name' ? 'Name tag' : 'Text', `${x.style === 'name' ? 'Slides in' : 'Pops up'} for ${x.duration.toFixed(1)} s. Drag it on the video to move it.`, true)}
+      const OBJ_NAME: Record<string, string> = { sticker: 'Sticker', stat: 'Number ring', search: 'Search bar', notify: 'App card', note: 'Note', photo: 'Polaroid', behind: 'Words behind you', edge: 'Big words', marquee: 'Moving band', doodle: 'Doodle' }
+      return <>{paneHead(x.style === 'name' ? 'Name tag' : x.style === 'object' ? OBJ_NAME[x.obj ?? ''] ?? 'Object' : x.style === 'step' ? 'Step card' : x.style === 'point' ? 'Point card' : 'Text', `${x.style === 'name' ? 'Slides in' : 'Pops up'} for ${x.duration.toFixed(1)} s. Drag it on the video to move it.`, true)}
         <div className="control"><div className="lbl"><span>{x.style === 'name' ? 'Name' : 'Words'}</span></div>
           <input ref={wordsInput} type="text" value={x.text} maxLength={60} onChange={(e) => editText(x.id, { text: e.target.value })} /></div>
         {x.style === 'name' && <div className="control"><div className="lbl"><span>Role</span></div>
@@ -977,6 +983,7 @@ export function Editor({ project }: { project: Project }) {
           <b>{d.name}</b><i>{d.line}</i>{d.forScreen && upload && <em>Best for screen recordings</em>}
         </button>))}</div>
       <span className="note">{tplBusy ? 'Writing down what you say first (on this Mac)…' : 'Click one: it finds your strongest moment, cuts the pauses and edits it in that style. Everything stays editable; Undo brings back what you had.'}</span>
+      {matting && <span className="note"><b>{matting}</b> The big words go behind you once it is done.</span>}
       {edits.template && tplHook && <div className="control"><div className="lbl"><span>Opening words</span></div>
         <input type="text" value={tplHook.text} maxLength={60} onChange={(e) => editText(tplHook.id, { text: e.target.value })} />
         <span className="note">Taken from your first sentence. Click any card on the video to change its words.</span></div>}

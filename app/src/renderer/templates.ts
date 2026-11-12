@@ -1,5 +1,6 @@
 import type { BrandKit, Cut, ManualZoom, RecordingEvents, RenderConfig, TextPop, Transcript, TranscriptWord } from '../shared/types'
 import { autoEdit } from './autoedit'
+import { brandIn, iconFor } from '../video/icons'
 
 /**
  * Short templates: upload a video, pick a look and a length, and it is edited in that style. No AI generation: the
@@ -10,13 +11,13 @@ import { autoEdit } from './autoedit'
 export type TemplateId = 'steps' | 'kinetic' | 'yellow' | 'brand' | 'points' | 'calm' | 'screen'
 export interface TemplateDef { id: TemplateId; name: string; line: string; forScreen?: boolean }
 export const TEMPLATES: TemplateDef[] = [
-  { id: 'steps', name: 'Step cards', line: 'Split screen: a card on top for each step, you below' },
-  { id: 'kinetic', name: 'Kinetic hook', line: 'Huge opening words, a checklist that builds, white caption box' },
-  { id: 'yellow', name: 'Yellow word', line: 'Marker headline on top, one yellow word per caption' },
-  { id: 'brand', name: 'Brand pop', line: 'Outlined captions, colour bands, punch-ins and a follow card' },
-  { id: 'points', name: 'Numbered points', line: 'Each point as a numbered card above your head' },
-  { id: 'calm', name: 'Calm aesthetic', line: 'Soft colour, serif words, gentle fades, no punch-ins' },
-  { id: 'screen', name: 'Screen + caption', line: 'Your screen framed, a headline above, one calm line below', forScreen: true },
+  { id: 'steps', name: 'Step cards', line: 'A paper card on top for each step, an icon sticker and an arrow down to you' },
+  { id: 'kinetic', name: 'Kinetic hook', line: 'A giant word behind you, app cards, a search bar, a checklist that ticks' },
+  { id: 'yellow', name: 'Yellow word', line: 'You as a taped card on stripes, stickers and polaroids around it' },
+  { id: 'brand', name: 'Brand pop', line: 'Edge-to-edge words, marquee bands, stickers and notes, outlined captions' },
+  { id: 'points', name: 'Numbered points', line: 'Taped cards with hand-circled numbers, number rings and photos' },
+  { id: 'calm', name: 'Calm aesthetic', line: 'Polaroids of your moments, handwritten notes, soft colour, serif words' },
+  { id: 'screen', name: 'Screen + caption', line: 'Your screen taped on paper, a headline, notes in the margins', forScreen: true },
 ]
 export const LENGTHS: [number, string][] = [[15, '15 s'], [30, '30 s'], [60, '60 s'], [0, 'Whole']]
 
@@ -194,21 +195,28 @@ function hookFor(ev: RecordingEvents, units: Unit[], t0: number, name?: string):
 }
 
 /** Beats of at least `min` seconds (whole clauses), each with its best phrase as a card heading; phrases never repeat. */
-function beats(units: Unit[], min: number, kept: (t: number) => boolean): { t: number; end: number; text: string }[] {
-  const out: { t: number; end: number; text: string }[] = []
+type Beat = { t: number; end: number; text: string; words: TranscriptWord[] }
+/**
+ * Beats of about `min` seconds of the FINISHED short (cut pauses don't count), split at word level and preferably at
+ * punctuation, each with its best phrase as a heading (or none: it then gets a picture, not words). Phrases never repeat.
+ */
+function beats(units: Unit[], min: number, kept: (t: number) => boolean, len: (a: number, b: number) => number): Beat[] {
+  const out: Beat[] = []
   const used = new Set<string>()
   let cur: TranscriptWord[] = []
   const flush = () => {
-    const ws = cur.filter((w) => kept((w.start + w.end) / 2)); cur = []
+    const ws = cur; cur = []
     if (!ws.length) return
     const k = cardPhrase(ws, used)
-    if (!k) return
+    if (!k) { out.push({ t: ws[0].start, end: ws[ws.length - 1].end, text: '', words: ws }); return }
     used.add(k.text.toLowerCase())
-    out.push({ t: Math.max(ws[0].start, k.start - 0.4), end: ws[ws.length - 1].end, text: k.text })
+    out.push({ t: Math.max(ws[0].start, k.start - 0.4), end: ws[ws.length - 1].end, text: k.text, words: ws })
   }
-  for (const c of units.flatMap(clauses)) {
-    cur.push(...c.words)
-    if (c.end - cur[0].start >= min) flush()
+  for (const w of units.flatMap((u) => u.words)) {
+    if (!kept((w.start + w.end) / 2)) continue
+    cur.push(w)
+    const span = len(cur[0].start, w.end)
+    if (span >= min && (/[,;:.!?]["')]*$/.test(w.word.trim()) || span >= min * 1.4)) flush()
   }
   flush()
   return out
@@ -239,49 +247,147 @@ export function applyTemplate(id: TemplateId, ev: RecordingEvents, tr: Transcrip
   const zooms = base.zooms.filter((z) => kept(z.t)).map((z, i) => ({ ...z, id: `tpl-z${i}` }))
   const texts: TextPop[] = []
   const nid = (k: string) => `tpl-${k}${texts.length}`
-  const after = (min: number) => beats(segs, min, kept).filter((x) => x.t > t0 + 2.2)
+  const span = (x: number, y: number) => keptLen(cuts, x, y)
+  const after = (min: number) => beats(segs, min, kept, span).filter((x) => x.t > t0 + 2.2 && x.text)
+  // The object track runs on a fixed rhythm of the finished short: a slot every `gap` seconds of output, filled from the
+  // words spoken in that slot (a phrase if there is one, else a picture), so the screen never goes quiet for long.
+  const keptIv: [number, number][] = []
+  { let c = a; for (const [x, y] of cuts) { if (y <= a || x >= b) continue; if (x > c) keptIv.push([c, Math.min(x, b)]); c = Math.max(c, y) } if (c < b) keptIv.push([c, b]) }
+  const srcAt = (o: number) => { let acc = 0; for (const [x, y] of keptIv) { if (acc + (y - x) >= o) return x + (o - acc); acc += y - x } return b }
+  const allWords = segs.flatMap((u) => u.words).filter((w) => kept((w.start + w.end) / 2))
+  const every = (gap: number): Beat[] => {
+    const used = new Set<string>(), out: Beat[] = []
+    for (let o = 2.5; o < lenOut - 1.4; o += gap) {
+      const s0 = srcAt(o), s1 = srcAt(o + gap)
+      const ws = allWords.filter((w) => w.start >= s0 - 0.05 && w.start < s1)
+      if (!ws.length) continue
+      const k = cardPhrase(ws, used)
+      if (k) used.add(k.text.toLowerCase())
+      out.push({ t: s0, end: s1, text: k?.text ?? '', words: ws })
+    }
+    return out
+  }
   const common: Partial<RenderConfig> = { aspect: '9:16', outputFps: 30, padding: 0, radius: 0, zoom: 1, voice: 'clean', captions: tr ? 'word' : 'off', capHighlight: true, capEmoji: false,
     layout: 'full', look: 'none', brightness: 1, contrast: 1, saturation: 1, transition: 'none', transitionAt: 'big', intro: false, outro: false,
     vignette: false, grain: false, bars: false, shake: false, progressBar: 'off', capColor: '#F5C36A', background: 'ink', sfx: false }
 
+  // A visual object for a beat, chosen by what was said: a number counts up in a ring, a named app sends a notification,
+  // a question types into a search bar, a key word becomes an icon sticker, anything else a handwritten note.
+  const NUMW: Record<string, number> = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, fifty: 50, hundred: 100, thousand: 1000, million: 1000000 }
+  const FILL = ['sparkles', 'star', 'bulb', 'heart', 'flame', 'bolt', 'thumb', 'rocket']
+  type Kind = 'stat' | 'notify' | 'search' | 'sticker' | 'note' | 'photo'
+  const objectFor = (bt: Beat, allow: Kind[], lastKind?: string): Partial<TextPop> & { obj: Kind } => {
+    const ws = bt.words.map((w) => clean(w.word.trim())).filter(Boolean)
+    const lower = ws.map((w) => w.toLowerCase())
+    const ni = lower.findIndex((w, i) => (/^[$£€₦]?\d[\d,.]*/.test(w) || (NUMW[w] != null && i < lower.length - 1 && !STOPW.has(lower[i + 1]))) && !/^(one)$/.test(w))
+    const want = (k: Kind) => allow.includes(k) && k !== lastKind
+    if (ni >= 0 && want('stat')) {
+      const raw = lower[ni], num = NUMW[raw] ?? Number(raw.replace(/[^\d.]/g, ''))
+      // The unit is the next real word or two ("years", "GB", "hours a week"), never a small word like "to".
+      const after = ws.slice(ni + 1, ni + 3).filter((w, k) => !STOPW.has(w.toLowerCase()) && (k === 0 || !STOPW.has(ws[ni + 1].toLowerCase())))
+      const unit = (/^[$£€₦]/.test(ws[ni]) ? ws[ni][0] + ' ' : '') + (STOPW.has((ws[ni + 1] ?? '').toLowerCase()) ? '' : after.join(' '))
+      if (isFinite(num) && num > 0) return { obj: 'stat', num, unit: unit.trim() || bt.text, text: bt.text }
+    }
+    const br = brandIn(ws)
+    // Clauses of this slot, so a card quotes one whole thought, not a slice across two.
+    const parts: string[] = []
+    { let cur: string[] = []; for (const w of bt.words) { const r = w.word.trim(); cur.push(r); if (/[,;:.!?]["')]*$/.test(r)) { parts.push(cur.join(' ')); cur = [] } } if (cur.length) parts.push(cur.join(' ')) }
+    if (br && want('notify')) {
+      const line = parts.find((c) => c.toLowerCase().includes(br.name.toLowerCase())) ?? parts[0] ?? ''
+      return { obj: 'notify', icon: br.icon, bg: br.color, unit: `${br.name}|${line.split(' ').slice(0, 9).join(' ')}`, text: bt.text || br.name }
+    }
+    const q = parts.find((c) => /\?["')]*$/.test(c)) ?? parts.find((c) => /^(how|why|what|where|which)\b/i.test(c))
+    if (q && want('search')) {
+      const words = q.replace(/[?.,!]+$/, '').split(' ')
+      const from = Math.max(0, words.length - 6)                                   // the end of the question carries it
+      return { obj: 'search', text: words.slice(from).join(' ').toLowerCase().replace(/^(and|so|but)\s+/, '') }
+    }
+    const icon = iconFor(lower)
+    if (icon && want('sticker')) return { obj: 'sticker', icon, text: bt.text }
+    if (want('photo')) return { obj: 'photo', text: bt.text }
+    if (want('note') && bt.text) return { obj: 'note', text: bt.text }
+    if (allow.includes('sticker') && lastKind !== 'sticker') return { obj: 'sticker', icon: icon ?? FILL[Math.round(bt.t * 7) % FILL.length], text: bt.text }
+    if (allow.includes('photo')) return { obj: 'photo', text: bt.text }
+    return { obj: 'sticker', icon: icon ?? FILL[Math.round(bt.t * 7) % FILL.length], text: bt.text }
+  }
+  /** Lay objects along the beats: never the same kind twice in a row, alternating sides, each up for `stay` seconds. */
+  const lay = (list: Beat[], allow: Kind[], place: (k: Kind, i: number) => Partial<TextPop>, stay = 2.6, colors = [c1, c2, '#F5C36A']) => {
+    let last: string | undefined
+    list.forEach((bt, i) => {
+      const o = objectFor(bt, allow, last); last = o.obj
+      const next = list[i + 1]?.t ?? end
+      const bg = o.obj === 'notify' ? o.bg : colors[i % colors.length]
+      texts.push({ id: nid('o'), t: bt.t, duration: Math.max(1.2, Math.min(span(bt.t, next) > stay + 1.2 ? stay : 99, next - bt.t - 0.25)), style: 'object', ...o, bg, ...place(o.obj, i) } as TextPop)
+    })
+  }
+  const side = (i: number) => (i % 2 ? 0.24 : 0.76)
+  const lowPlace = (k: Kind, i: number): Partial<TextPop> =>
+    k === 'notify' ? { x: 0.5, y: 0.1 } : k === 'search' ? { x: 0.5, y: 0.14 } : k === 'stat' ? { x: side(i), y: 0.6, scale: 0.82 }
+    : k === 'photo' ? { x: side(i), y: 0.58, scale: 0.78, rotate: i % 2 ? -6 : 6 } : k === 'note' ? { x: side(i), y: 0.6, scale: 0.9, rotate: i % 2 ? 5 : -5 } : { x: side(i), y: 0.58, scale: 0.85, rotate: i % 2 ? 8 : -8 }
+
   if (id === 'steps') {
-    // Hook card first (no label), then Step 1, 2… one per beat; each card stays until the next one.
-    const list = [{ t: t0, end: 0, text: hook, sub: '' }, ...after(Math.max(4, lenOut / 6)).slice(0, 6).map((x, i) => ({ ...x, sub: `Step ${i + 1}` }))].filter((x) => x.text)
-    list.forEach((x, i) => texts.push({ id: nid('s'), t: x.t, duration: Math.max(1, (list[i + 1]?.t ?? end) - x.t), text: x.text, sub: x.sub || undefined, style: 'step', bg: c1 }))
-    return { cuts, zooms: [], texts, window: win, hook, config: { ...common, layout: 'split', background: 'paper', captions: tr ? 'word' : 'off', capColor: '#F5C36A', sfx: true } }
+    // Paper card panel on top: hook first, then Step 1, 2… each with an icon sticker for what it is about and an arrow to you.
+    const list = [{ t: t0, text: hook, sub: '', icon: undefined as string | undefined }, ...after(Math.max(4, lenOut / 6)).slice(0, 6).map((x, i) => ({ t: x.t, text: x.text, sub: `Step ${i + 1}`, icon: iconFor(x.words.map((w) => clean(w.word.trim()).toLowerCase())) ?? 'stairs' }))].filter((x) => x.text)
+    list.forEach((x, i) => texts.push({ id: nid('s'), t: x.t, duration: Math.max(1, (list[i + 1]?.t ?? end) - x.t), text: x.text, sub: x.sub || undefined, icon: x.icon, style: 'step', bg: c1 }))
+    // On the video below: the odd number ring, app card or polaroid when the words call for it.
+    const extra = after(Math.max(6, lenOut / 4)).filter((bt) => /\d|figma|google|linkedin|microsoft|claude|chatgpt|youtube|instagram|tiktok|notion/i.test(bt.words.map((w) => w.word).join(' ')))
+    lay(extra.slice(0, 3), ['stat', 'notify', 'photo'], (k, i) => (k === 'notify' ? { x: 0.5, y: 0.47, scale: 0.9 } : { x: side(i), y: 0.66, scale: 0.7 }), 2.4)
+    return { cuts, zooms: [], texts, window: win, hook, config: { ...common, layout: 'split', background: 'paper', surface: 'paper', captions: tr ? 'word' : 'off', capColor: '#F5C36A', capMarker: true, sfx: true } }
   }
   if (id === 'kinetic') {
-    if (hook) texts.push({ id: nid('h'), t: t0, duration: 2.4, text: hook, style: 'pop', anim: 'slam', color: '#FFFFFF', x: 0.5, y: 0.4, rotate: 0, scale: 1.3, animOut: 'shrink' })
-    // Checklist: up to four ticks per panel; each panel stays until its last line has been on for a while.
-    const items = after(Math.max(3.5, lenOut / 8)).slice(0, 6)
-    for (let g = 0; g < items.length; g += 4) {
-      const group = items.slice(g, g + 4), close = Math.min(end, (items[g + 4]?.t ?? end) - 0.1, group[group.length - 1].t + 4)
-      for (const x of group) texts.push({ id: nid('c'), t: x.t, duration: Math.max(0.8, close - x.t), text: x.text, style: 'check', bg: c1 })
-    }
+    // Giant opening words behind you (cut out on top), then a different object every beat, a checklist that builds, doodles.
+    // The giant word is the hook's key word (one or two words fill the width); the full hook follows as a handwritten note.
+    const big = (cardPhrase(firstWords)?.text ?? hook.split(' ').sort((p, q) => q.length - p.length)[0] ?? '').split(' ').slice(0, 2).join(' ')
+    if (big) texts.push({ id: nid('h'), t: t0, duration: 2.6, text: big, style: 'object', obj: 'behind', y: 0.33, color: c2 })
+    if (hook && hook.toLowerCase() !== big.toLowerCase()) texts.push({ id: nid('h'), t: t0 + 0.35, duration: 2.25, text: hook, style: 'object', obj: 'note', x: 0.5, y: 0.11, scale: 0.85, rotate: -3, bg: '#FBF8F2' })
+    const list = every(2.8)
+    lay(list.filter((x, i) => i % 3 !== 2 || !x.text), ['notify', 'search', 'stat', 'sticker', 'photo'], (k, i) => (k === 'notify' || k === 'search' ? lowPlace(k, i) : { ...lowPlace(k, 0), x: 0.78, y: 0.62 }), 3.2)
+    const ticks = list.filter((x, i) => i % 3 === 2 && x.text)
+    ticks.forEach((x, i) => texts.push({ id: nid('c'), t: x.t, duration: Math.max(0.8, Math.min(end, (ticks[ticks.length - 1]?.t ?? x.t) + 2.6) - x.t), text: x.text, style: 'check', bg: c1, x: 0.27, y: 0.46 }))
+    list.filter((_, i) => i % 4 === 1).forEach((x, i) => texts.push({ id: nid('d'), t: x.t + 0.2, duration: 1.6, text: '', style: 'object', obj: 'doodle', shape: i % 2 ? 'sparkle' : 'star', x: i % 2 ? 0.14 : 0.86, y: 0.2, scale: 0.4 }))
     return { cuts, zooms, texts, window: win, hook, config: { ...common, captions: tr ? 'pill' : 'off', capColor: c2, look: 'punchy', shake: true, transition: 'zoom', sfx: true } }
   }
   if (id === 'yellow') {
-    // The marker headline stays on top for the whole short.
-    if (hook) texts.push({ id: nid('h'), t: t0, duration: Math.max(1, end - t0), text: hook, style: 'pop', anim: 'pop', font: 'Marker Felt', color: '#FFD43B', x: 0.5, y: 0.12, rotate: -2, scale: 0.85 })
-    return { cuts, zooms, texts, window: win, hook, config: { ...common, captions: tr ? 'clean' : 'off', capColor: '#FFD43B' } }
+    // Your video as a taped card on grey stripes, the marker headline above it, stickers and notes stuck around the card.
+    if (hook) texts.push({ id: nid('h'), t: t0, duration: Math.max(1, end - t0), text: hook, style: 'pop', anim: 'pop', font: 'Marker Felt', color: '#FFD43B', x: 0.5, y: 0.1, rotate: -2, scale: 0.8 })
+    lay(every(3), ['sticker', 'stat', 'notify', 'note', 'search', 'photo'], (k, i) =>
+      k === 'notify' || k === 'search' ? { x: 0.5, y: 0.86, scale: 0.9 } : { x: i % 2 ? 0.2 : 0.8, y: 0.34 + (i % 3) * 0.16, scale: k === 'note' ? 0.8 : k === 'photo' ? 0.66 : 0.82, rotate: i % 2 ? -10 : 10 }, 2.8, ['#FFD43B', c1, c2])
+    return { cuts, zooms: [], texts, window: win, hook, config: { ...common, layout: 'card', surface: 'stripes', background: 'paper', captions: tr ? 'clean' : 'off', capColor: '#FFD43B', capMarker: true, sfx: true } }
   }
   if (id === 'brand') {
-    if (hook) texts.push({ id: nid('h'), t: t0, duration: 2.5, text: hook, style: 'title', anim: 'pop', x: 0.5, y: 0.2, animOut: 'fade' })
-    for (const x of after(Math.max(5, lenOut / 5)).slice(0, 5)) texts.push({ id: nid('b'), t: x.t, duration: 1.8, text: x.text, style: 'band', bg: c2 })
+    // Loud: edge-bleed opening words, marquee bands, icon stickers with a burst, outlined captions, whip cuts.
+    const big = (cardPhrase(firstWords)?.text ?? hook.split(' ').sort((p, q) => q.length - p.length)[0] ?? '').split(' ').slice(0, 2).join(' ')
+    if (big) texts.push({ id: nid('h'), t: t0, duration: 2.6, text: big, style: 'object', obj: 'edge', y: 0.62, color: c1 })
+    if (hook) texts.push({ id: nid('h'), t: t0 + 0.3, duration: 2.3, text: hook, style: 'object', obj: 'note', x: 0.5, y: 0.11, scale: 0.85, rotate: -3, bg: '#FBF8F2' })
+    const list = every(3)
+    list.forEach((bt, i) => {
+      if (!bt.text && i % 3 === 1) return
+      if (i % 3 === 1) texts.push({ id: nid('m'), t: bt.t, duration: 2.2, text: bt.text, style: 'object', obj: 'marquee', bg: i % 2 ? c2 : c1, y: 0.66, rotate: i % 2 ? 4 : -4 })
+    })
+    lay(list.filter((_, i) => i % 3 !== 1), ['sticker', 'stat', 'notify', 'search', 'note'], lowPlace, 2.4, [c2, c1, '#F5C36A'])
     return { cuts, zooms, texts, window: win, hook, config: { ...common, captions: tr ? 'outline' : 'off', capColor: c2, capEmoji: true, transition: 'whip', sfx: true,
       outro: true, outroText: 'Follow for more', outroSub: brand.handle } }
   }
   if (id === 'points') {
-    if (hook) texts.push({ id: nid('h'), t: t0, duration: 2.4, text: hook, style: 'title', anim: 'pop', x: 0.5, y: 0.18 })
-    after(Math.max(4, lenOut / 6)).slice(0, 7).forEach((x, i, all) => texts.push({ id: nid('p'), t: x.t, duration: Math.max(1.2, Math.min(5, (all[i + 1]?.t ?? end) - x.t - 0.1)), text: x.text, sub: String(i + 1), style: 'point', bg: c1 }))
-    return { cuts, zooms, texts, window: win, hook, config: { ...common, captions: tr ? 'word' : 'off', capColor: c1, sfx: true, outro: true, outroText: 'Follow for more', outroSub: brand.handle } }
+    // Numbered paper cards taped above your head, an icon for each point, a polaroid or number ring when it fits.
+    if (hook) texts.push({ id: nid('h'), t: t0, duration: 2.4, text: hook, style: 'title', anim: 'pop', x: 0.5, y: 0.16 })
+    const list = after(Math.max(4, lenOut / 6)).slice(0, 7)
+    list.forEach((x, i) => texts.push({ id: nid('p'), t: x.t, duration: Math.max(1.2, Math.min(5, (list[i + 1]?.t ?? end) - x.t - 0.1)), text: x.text, sub: String(i + 1), style: 'point', bg: c1,
+      icon: iconFor(x.words.map((w) => clean(w.word.trim()).toLowerCase())) ?? undefined }))
+    lay(every(3.2).filter((bt) => !list.some((q) => Math.abs(q.t - bt.t) < 1.2)), ['stat', 'notify', 'photo', 'sticker'], (k, i) => (k === 'notify' ? { x: 0.5, y: 0.36, scale: 0.86 } : { x: side(i), y: 0.6, scale: 0.72, rotate: i % 2 ? -6 : 6 }), 2.4)
+    return { cuts, zooms, texts, window: win, hook, config: { ...common, captions: tr ? 'word' : 'off', capColor: c1, capMarker: true, sfx: true, outro: true, outroText: 'Follow for more', outroSub: brand.handle } }
   }
   if (id === 'calm') {
+    // Soft: polaroids of your own moments, handwritten notes, small sparkles; serif words, no punch-ins.
     if (hook) texts.push({ id: nid('h'), t: t0, duration: 3, text: hook, style: 'pop', anim: 'slide', animOut: 'fade', font: 'Georgia', color: '#FFFFFF', x: 0.5, y: 0.46, rotate: 0, scale: 0.6 })
-    return { cuts, zooms: [], texts, window: win, hook, config: { ...common, captions: tr ? 'soft' : 'off', capHighlight: false, look: 'soft', grain: true, transition: 'blur', saturation: 0.92 } }
+    lay(every(4.2), ['photo', 'note'], (k, i) => ({ x: side(i), y: 0.6, scale: 0.72, rotate: i % 2 ? -5 : 5 }), 3.2, ['#FBF6EC', '#F3EDF9', '#FDF0EB'])
+    texts.filter((x) => x.obj === 'note' || x.obj === 'photo').forEach((x, i) => texts.push({ id: nid('d'), t: x.t + 0.4, duration: Math.min(2, x.duration - 0.4), text: '', style: 'object', obj: 'doodle', shape: i % 2 ? 'heart' : 'sparkle', x: (x.x ?? 0.5) < 0.5 ? 0.42 : 0.58, y: 0.5, scale: 0.22, color: '#FFFFFF' }))
+    texts.filter((x) => x.obj === 'note').forEach((x) => { x.color = '#14140F' })
+    return { cuts, zooms: [], texts, window: win, hook, config: { ...common, captions: tr ? 'soft' : 'off', capHighlight: false, look: 'soft', grain: true, vignette: true, transition: 'blur', saturation: 0.92 } }
   }
-  // screen: framed, cursor-following crop with click zooms; the headline above stays, one calm line under it.
-  if (hook) texts.push({ id: nid('h'), t: t0, duration: Math.max(1, end - t0), text: hook, style: 'title', anim: 'slide', bg: '#EFEEE8', color: '#14140F', x: 0.5, y: 0.11 })
-  return { cuts, zooms: [], texts, window: win, hook, config: { ...common, layout: 'stack', background: 'paper', radius: 28, zoom: ev.source === 'import' ? 1 : 1.6,
+  // screen: the screen taped onto warm paper, a headline above, one calm line under it, notes and stickers in the margins.
+  if (hook) texts.push({ id: nid('h'), t: t0, duration: Math.max(1, end - t0), text: hook, style: 'title', anim: 'slide', bg: 'transparent', color: '#14140F', x: 0.5, y: 0.1 })
+  lay(every(3.6), ['sticker', 'note', 'stat', 'search'], (k, i) => (k === 'search' ? { x: 0.5, y: 0.9, scale: 0.86 } : { x: i % 2 ? 0.17 : 0.83, y: 0.24 + (i % 2) * 0.56, scale: 0.62, rotate: i % 2 ? -8 : 8 }), 3)
+  return { cuts, zooms: [], texts, window: win, hook, config: { ...common, layout: 'card', surface: 'paper', background: 'paper', zoom: ev.source === 'import' ? 1 : 1.6,
     captions: tr ? 'line' : 'off', capHighlight: false } }
 }
