@@ -207,8 +207,8 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
           block('sticker', { kind: 'sticker', id: k.id }, k.t, k.t + k.duration, `Sticker ${k.emoji ?? k.shape} · ${fmt(k.t)} · click to edit`, k.emoji ?? k.shape, stickerRows.rowOf.get(k))), stickerRows.rows)}
         {overlays.length > 0 && lane('Overlay', 'Pictures and clips shown over the video.', overlays.map((o) =>
           block('broll', { kind: 'broll', id: o.id }, o.t, o.t + o.duration, `${o.name} · ${fmt(o.t)}–${fmt(o.t + o.duration)} · click to edit`, o.name, overlayRows.rowOf.get(o))), overlayRows.rows)}
-        {voiceovers.length > 0 && lane('Voice', 'Voiceovers made from text. Click one to change it.', voiceovers.map((v) =>
-          block('voice', { kind: 'voice', id: v.id }, v.t, v.t + v.duration, `“${v.text}” · ${v.voice} · click to edit`, v.text, voiceRows.rowOf.get(v))), voiceRows.rows)}
+        {voiceovers.length > 0 && lane('Voice', 'Voiceovers: recorded with your mic or made from text. Click one to change it, drag to move it.', voiceovers.map((v) =>
+          block('voice', { kind: 'voice', id: v.id }, v.t, v.t + v.duration, v.recorded ? `Your voiceover · ${v.duration.toFixed(1)} s · click to edit` : `“${v.text}” · ${v.voice} · click to edit`, v.recorded && v.text === 'Your voice' ? '🎙 Your voice' : v.text, voiceRows.rowOf.get(v))), voiceRows.rows)}
         {music && lane('Music', 'Music under the whole video. Change it in Audio.', <div className="blk pill music" style={{ left: 0, width: '100%' }} data-info={`${music.name} · ${Math.round(music.volume * 100)}%${music.duck ? ' · quieter when you talk' : ''}`}><span>{music.name}</span></div>)}
         {zooms.length > 0 && lane('Zoom', upload ? 'Punch-ins: closer framings on the speaker.' : 'Zoom-ins you added. Automatic zoom follows your clicks on its own.', zooms.map((z) =>
           block('zoom', { kind: 'zoom', id: z.id }, z.t, z.t + z.duration, `${z.snap ? 'Punch-in' : 'Zoom'} ${z.level.toFixed(1)}× · ${fmt(z.t)}–${fmt(z.t + z.duration)} · click to edit`, `${z.level.toFixed(1)}×`)))}

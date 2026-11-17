@@ -61,8 +61,8 @@ export function layout(ev: RecordingEvents, cfg: RenderConfig): Layout {
 }
 
 /** One kept range of the recording, rendered at source time = srcStart + local frame. */
-const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; transIn: boolean; punches: number[]; ins?: InsertClip; segLen: number }> =
-  ({ ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts, overlays, stickers, transIn, punches, ins, segLen }) => {
+const Segment: React.FC<{ outStart: number; duck: [number, number][]; ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; transIn: boolean; punches: number[]; ins?: InsertClip; segLen: number }> =
+  ({ outStart, duck, ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts, overlays, stickers, transIn, punches, ins, segLen }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = srcStart + (frame / fps) * rate
@@ -182,8 +182,8 @@ const Segment: React.FC<{ ev: RecordingEvents; cfg: RenderConfig; assets: Projec
             <Captions transcript={transcript} t={t} style={cfg.captions} FW={F.w} FH={F.h} portrait={L.vp.crop || F.h > F.w} highlight={cfg.capHighlight} emoji={cfg.capEmoji} color={cfg.capColor} marker={!!cfg.capMarker} />
           </div>
       )}
-      {!ins && assets.mic && cfg.micVolume > 0 && <TimedAudio src={(cfg.voiceFx !== 'none' ? assets.media?.[`media/voice-${cfg.voiceFx}.wav`] : null) ?? (cfg.voice === 'clean' && assets.micClean ? assets.micClean : assets.mic)} start={micStart} fps={fps} volume={cfg.micVolume} rate={rate} />}
-      {!ins && assets.system && cfg.systemVolume > 0 && <TimedAudio src={assets.system} start={sysStart} fps={fps} volume={cfg.systemVolume} rate={rate} />}
+      {!ins && assets.mic && cfg.micVolume > 0 && <TimedAudio src={(cfg.voiceFx !== 'none' ? assets.media?.[`media/voice-${cfg.voiceFx}.wav`] : null) ?? (cfg.voice === 'clean' && assets.micClean ? assets.micClean : assets.mic)} start={micStart} fps={fps} volume={duck.length ? (sec: number) => cfg.micVolume * duckGain(duck, outStart + sec) : cfg.micVolume} rate={rate} />}
+      {!ins && assets.system && cfg.systemVolume > 0 && <TimedAudio src={assets.system} start={sysStart} fps={fps} volume={duck.length ? (sec: number) => cfg.systemVolume * duckGain(duck, outStart + sec) : cfg.systemVolume} rate={rate} />}
     </>
   )
 }
@@ -612,6 +612,16 @@ const ProgressBar: React.FC<{ where: 'top' | 'bottom'; W: number; H: number }> =
     </div>)
 }
 
+/** The video's own sound under ducking voiceovers: down to a fifth, easing in and out over 0.25 s. */
+function duckGain(spans: [number, number][], t: number): number {
+  let g = 1
+  for (const [a, b] of spans) {
+    const d = t < a ? a - t : t > b ? t - b : 0
+    g = Math.min(g, 0.2 + 0.8 * Math.min(1, d / 0.25))
+  }
+  return g
+}
+
 /** A video whose own time axis starts `start` seconds into this segment (negative = it begins later than the segment). */
 const TimedVideo: React.FC<{ src: string; start: number; fps: number; rate: number; style: React.CSSProperties; transparent?: boolean }> = ({ src, start, fps, rate, style, transparent }) =>
   start >= 0
@@ -619,10 +629,14 @@ const TimedVideo: React.FC<{ src: string; start: number; fps: number; rate: numb
     : <Sequence from={Math.round((-start / rate) * fps)} layout="none"><OffthreadVideo src={src} muted transparent={transparent} playbackRate={rate} style={style} /></Sequence>
 
 /** An audio track whose own time axis starts `start` seconds into this segment (negative = it begins later). */
-const TimedAudio: React.FC<{ src: string; start: number; fps: number; volume: number; rate: number }> = ({ src, start, fps, volume, rate }) =>
-  start >= 0
-    ? <Audio src={src} startFrom={Math.round(start * fps)} volume={volume} playbackRate={rate} />
-    : <Sequence from={Math.round((-start / rate) * fps)} layout="none"><Audio src={src} volume={volume} playbackRate={rate} /></Sequence>
+const TimedAudio: React.FC<{ src: string; start: number; fps: number; volume: number | ((segSec: number) => number); rate: number }> = ({ src, start, fps, volume, rate }) => {
+  // volume as a function gets seconds since the segment started, whichever way the audio is placed in it
+  const lead = start >= 0 ? 0 : Math.round((-start / rate) * fps)
+  const vol = typeof volume === 'number' ? volume : (f: number) => volume((f + lead) / fps)
+  return start >= 0
+    ? <Audio src={src} startFrom={Math.round(start * fps)} volume={vol} playbackRate={rate} />
+    : <Sequence from={lead} layout="none"><Audio src={src} volume={vol} playbackRate={rate} /></Sequence>
+}
 
 /** Camera box in frame pixels, relative to the frame's top-left. Size is a fraction of the frame width. */
 export function cameraRect(cfg: RenderConfig, camera: { width: number; height: number }, FW: number, FH: number) {
@@ -652,6 +666,8 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
   const spans = useMemo(() => (music?.duck ? [...speechSpans(transcript, ranges), ...voices.map(({ v, at }) => [at, at + v.duration] as [number, number])].sort((a, b) => a[0] - b[0]) : []),
     [music?.duck, transcript, ranges, voices])
   const punches = useMemo(() => zooms.map((z) => z.t), [zooms])
+  // Where a recorded voiceover asks for it, the video's own sound dips underneath (output seconds).
+  const duckSpans = useMemo(() => voices.filter(({ v }) => v.duck).map(({ v, at }) => [at, at + v.duration] as [number, number]), [voices])
   // Sound effects (output seconds): a whoosh that peaks on each zoom / punch-in and B-roll, a pop on each text.
   // A transition plays where a cut joins two kept stretches ('big' = more than 2 s was removed there).
   const transIn = useMemo(() => ranges.map((r, i) => i > 0 && (!!r.ins || !!ranges[i - 1].ins || r.start - ranges[i - 1].end > (cfg.transitionAt === 'all' ? 0.01 : 2))), [ranges, cfg.transitionAt])
@@ -673,7 +689,7 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
           const len = Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps))
           const seq = (
             <Sequence key={i} from={from} durationInFrames={len}>
-              <Segment ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} overlays={overlays} stickers={stickers} transIn={transIn[i]} punches={punches} ins={r.ins} segLen={len / fps} />
+              <Segment outStart={from / fps} duck={duckSpans} ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} overlays={overlays} stickers={stickers} transIn={transIn[i]} punches={punches} ins={r.ins} segLen={len / fps} />
             </Sequence>
           )
           from += len

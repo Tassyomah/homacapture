@@ -773,3 +773,53 @@ html.overlay-page, html.overlay-page body, html.overlay-page #root { background:
 .capcolors { display: flex; gap: 8px; margin-top: 8px; }
 .capcolors button { width: 26px; height: 26px; padding: 0; border-radius: 50%; box-shadow: inset 0 0 0 1px var(--ink-10); }
 .capcolors button.on { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* Script: edit the video by its words. Removed words stay visible with a red line through them. */
+.script { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.script-tools { display: flex; flex-wrap: wrap; gap: 6px; }
+.script-tools button { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 7px 11px; }
+.script-tools button.on { background: var(--ink); color: var(--paper); }
+.script-tools button.rec { background: var(--coral); color: var(--ink); }
+.script-body { position: relative; max-height: calc(100vh - 380px); overflow: auto; padding: 4px 2px 40px; font-size: 15px; line-height: 1.75; user-select: text; cursor: text; }
+.script-line { margin: 0 0 12px; }
+.script-t { font: 11px/1 ui-monospace, Menlo, monospace; color: var(--ink-60); background: none; padding: 2px 6px 2px 0; border-radius: 4px; vertical-align: 1px; }
+.script-t:hover { color: var(--ink); background: none; }
+.script .w { border-radius: 4px; padding: 1px 0; transition: background .12s; }
+.script .w:hover { background: var(--ink-5); }
+.script .w.um { color: #9a6b00; }
+.script .w.cut { color: #C23B3B; text-decoration: line-through; text-decoration-color: #E5484D; text-decoration-thickness: 2px; opacity: .75; }
+.script .w.now { background: rgba(251,139,115,.35); }
+.script .w::selection { background: rgba(110,113,232,.28); }
+.script-bar { position: absolute; z-index: 5; display: flex; gap: 4px; padding: 4px; background: var(--ink); border-radius: 12px; box-shadow: 0 10px 30px rgba(20,20,15,.25); }
+.script-bar button { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; padding: 6px 10px; background: transparent; color: var(--paper); border-radius: 8px; }
+.script-bar button:hover { background: rgba(239,238,232,.14); }
+.script-bar button.danger { background: #E5484D; color: #fff; }
+.script-broll { margin-top: 10px; padding: 10px; border-radius: 12px; background: var(--ink-5); display: flex; flex-direction: column; gap: 8px; }
+.script-broll .lbl { display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+.script-broll .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.script-broll .tile-main { padding: 0; aspect-ratio: 16/10; overflow: hidden; border-radius: 8px; }
+.script-broll .tile-main video, .script-broll .tile-main img { width: 100%; height: 100%; object-fit: cover; display: block; }
+button.wide.rec { background: var(--coral); color: var(--ink); }
+.vo-play { width: 100%; height: 44px; margin: 4px 0 8px; display: block; }
+
+/* Voiceover recorder: a card floating over the bottom of the preview, CapCut-style. */
+.stage { position: relative; }
+.vrec { position: absolute; z-index: 20; left: 50%; bottom: 16px; transform: translateX(-50%); width: min(440px, calc(100% - 24px)); background: #fff; border-radius: 18px;
+  box-shadow: 0 24px 60px rgba(20,20,15,.28), 0 0 0 1px var(--ink-10); padding: 14px 16px 16px; display: flex; flex-direction: column; gap: 10px; }
+.vrec-head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; }
+.vrec .hint { margin: 0; font-size: 12.5px; color: var(--ink-60); }
+.vrec textarea { width: 100%; font: inherit; font-size: 13px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--ink-10); resize: vertical; }
+.vrec-opt { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.vrec-big { display: inline-flex; justify-content: center; align-items: center; gap: 8px; background: var(--coral); color: var(--ink); font-weight: 600; padding: 12px; border-radius: 12px; }
+.vrec-big.stop { background: var(--ink); color: var(--paper); }
+.vrec-prompt { margin: 0; font-size: 16px; line-height: 1.5; max-height: 120px; overflow: auto; }
+.vrec-live { display: flex; align-items: center; gap: 12px; }
+.vrec-count { font-size: 34px; font-weight: 800; width: 36px; text-align: center; animation: vrecPop .5s cubic-bezier(.2,.9,.3,1.3); }
+@keyframes vrecPop { from { transform: scale(1.6); opacity: 0 } to { transform: scale(1); opacity: 1 } }
+.vrec-dot { width: 14px; height: 14px; border-radius: 50%; background: #E5484D; animation: vrecBlink 1s infinite; margin: 0 11px; }
+@keyframes vrecBlink { 50% { opacity: .3 } }
+.vrec-time { font: 600 14px ui-monospace, Menlo, monospace; min-width: 72px; }
+.vrec-meter { flex: 1; height: 8px; border-radius: 4px; background: var(--ink-10); overflow: hidden; }
+.vrec-meter i { display: block; height: 100%; background: var(--coral); transition: width .06s linear; }
+.vrec audio { width: 100%; }
+.stage > .vrec { border-radius: 18px; }

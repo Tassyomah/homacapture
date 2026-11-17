@@ -5,7 +5,7 @@ import { SLOT_GAP, insertsWithin, keptDuration, keptRanges, nextSlot, outToSrc, 
 import { ASPECTS, ASSET_LABEL, CAPTION_STYLES, EXPORT_PRESETS, LOOKS, STICKER_EMOJI, STICKER_SHAPES, TEXT_FONTS, defaultConfig, type AnimOut, type Blend, type BrandKit, type ClipAnim, type ClipOp, type InsertClip, type Keyframe, type OverlayShape, type VoiceFx, type Look, type Sticker, type TextAnim, type Transition, type Analysis, type BackdropFill, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type MusicTrack, type Overlay, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Voiceover, type Transcript, type TranscriptSegment } from '../../shared/types'
 import { smoothCursor } from '../../video/motion'
 import { revealLabel } from '../platform'
-import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconBrush, IconColorFilter, IconCopy, IconDownload, IconLetterT, IconLink, IconMicrophone, IconMoodSmile, IconMusic, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconScissors, IconSnowflake, IconSparkles, IconTemplate, IconTrash, IconUpload, IconWand, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
+import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconBrush, IconColorFilter, IconCopy, IconDownload, IconLetterT, IconLink, IconMicrophone, IconMoodSmile, IconMusic, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconScissors, IconSnowflake, IconFileText, IconSparkles, IconTemplate, IconTrash, IconUpload, IconWand, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
 import { Timeline, fmt, fmtShort, piecesOf, sameItem, type DragMode, type Item, type RangeAction } from './Timeline'
 import { Direct } from './Direct'
 import { Director, type DirectorState, type DirectorStatus } from './Director'
@@ -19,11 +19,13 @@ import { generateAssets } from '../generate'
 import { autoEdit, keyPhrase } from '../autoedit'
 import { applyTemplate, LENGTHS, TEMPLATES, type TemplateId } from '../templates'
 import { TemplateThumb } from './TemplateThumb'
+import { ScriptPanel } from './ScriptPanel'
+import { VoiceRecorder, type Take } from './VoiceRecorder'
 import type { TemplateRun } from '../../shared/types'
 
 const FPS = 60
 const RATES = [0.5, 0.75, 1.25, 1.5, 2, 3]
-type Panel = 'shorts' | 'media' | 'text' | 'stickers' | 'audio' | 'captions' | 'effects' | 'brand' | 'smart'
+type Panel = 'shorts' | 'script' | 'media' | 'text' | 'stickers' | 'audio' | 'captions' | 'effects' | 'brand' | 'smart'
 const TEXT_LOOKS: { id: string; label: string; patch: Partial<TextPop>; css: React.CSSProperties }[] = [
   { id: 'pop', label: 'Pop', patch: { style: 'pop', color: undefined, bg: undefined }, css: { color: '#FB8B73', background: '#14140F' } },
   { id: 'title', label: 'Title card', patch: { style: 'title', color: undefined, bg: undefined }, css: { color: '#14140F', background: '#EFEEE8' } },
@@ -356,6 +358,40 @@ export function Editor({ project }: { project: Project }) {
   }
   const editVoice = (id: string, patch: Partial<Voiceover>) => apply((e) => ({ ...e, voiceovers: e.voiceovers.map((x) => x.id === id ? { ...x, ...patch } : x) }))
   const removeVoice = (id: string) => apply((e) => ({ ...e, voiceovers: e.voiceovers.filter((x) => x.id !== id) }))
+  // ---- Voiceover recorded with the mic (CapCut-style): from the playhead, or again over an existing one
+  const [recFor, setRecFor] = useState<{ t: number; replace?: string } | null>(null)
+  const openRecorder = (t: number, replace?: string) => { playerRef.current?.pause(); setExporting(false); setRecFor({ t, replace }) }
+  const recPlay = (muted: boolean) => { if (!recFor) return; seekSrc(recFor.t); if (muted) playerRef.current?.mute(); playerRef.current?.play() }
+  const recStop = () => { playerRef.current?.pause(); playerRef.current?.unmute() }
+  const recSave = async (take: Take, opts: { duck: boolean; text: string }) => {
+    if (!recFor) return
+    const r = await window.narrate.saveVoice(project.dir, await take.blob.arrayBuffer())
+    setMedia((x) => ({ ...x, [r.file]: r.url }))
+    const dur = r.duration || take.seconds
+    if (recFor.replace) {
+      const id = recFor.replace
+      apply((e) => ({ ...e, voiceovers: e.voiceovers.map((x) => x.id === id ? { ...x, file: r.file, duration: dur, duck: opts.duck, text: opts.text || x.text } : x) }))
+      setSel({ kind: 'voice', id })
+    } else {
+      const id = newId('v'), t = recFor.t
+      apply((e) => ({ ...e, voiceovers: [...e.voiceovers, { id, t, text: opts.text || 'Your voice', voice: 'Your voice', recorded: true, duck: opts.duck, file: r.file, duration: dur, volume: 1 }].sort((a, b) => a.t - b.t) }))
+      setSel({ kind: 'voice', id })
+    }
+    setRecFor(null)
+  }
+  // ---- Script editing: cut a stretch, bring a stretch back (also out of the middle of a bigger cut), B-roll over words
+  const keepRange = (a: number, b: number) => setCuts((cs) => cs.flatMap(([x, y]) => {
+    const lo = Math.min(x, y), hi = Math.max(x, y)
+    if (hi <= a || lo >= b) return [[lo, hi] as Cut]
+    return [...(lo < a - 0.03 ? [[lo, a] as Cut] : []), ...(hi > b + 0.03 ? [[b, hi] as Cut] : [])]
+  }))
+  const [brollFor, setBrollFor] = useState<{ a: number; b: number; words: string } | null>(null)
+  const brollOver = (f: string, name: string, kind: 'image' | 'video', len?: number) => {
+    if (!brollFor) return
+    const id = newId('o'), { a, b } = brollFor
+    apply((e) => ({ ...e, overlays: [...e.overlays, { id, t: a, duration: Math.max(0.5, b - a), file: f, kind, name, fit: 'full', length: len } as Overlay].sort((x, y) => x.t - y.t) }))
+    setBrollFor(null); setSel({ kind: 'broll', id })
+  }
   const setMusic = (patch: Partial<MusicTrack>) => apply((e) => ({ ...e, music: e.music ? { ...e.music, ...patch } : null }))
   /** The speaker cut out of the video (Apple Vision, on this Mac), made once in the background for the words-behind and Red studio looks. */
   const cutMeOut = () => {
@@ -452,6 +488,7 @@ export function Editor({ project }: { project: Project }) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if ((e.target as HTMLElement).closest?.('input, select, textarea')) return
+      if (recFor) return                                  // recording a voiceover: no shortcut may stop the video or delete anything
       const k = e.key.toLowerCase()
       if (e.ctrlKey || e.metaKey) {
         if (k === 'b' && !asset) { e.preventDefault(); splitHere() }
@@ -481,6 +518,7 @@ export function Editor({ project }: { project: Project }) {
     ? analysisWithFillers.proposals.filter((p) => p.type !== 'ZOOM' && !director.accepted.includes(p.id) && !director.rejected.includes(p.id)).length : 0
   const panels: { id: Panel; label: string; Icon: typeof IconPhoto; show: boolean; badge?: number }[] = [
     { id: 'shorts', label: 'Shorts', Icon: IconTemplate, show: !asset },
+    { id: 'script', label: 'Script', Icon: IconFileText, show: !!project.assets.mic },
     { id: 'media', label: 'Media', Icon: IconPhoto, show: !asset },
     { id: 'text', label: 'Text', Icon: IconLetterT, show: !asset },
     { id: 'stickers', label: 'Stickers', Icon: IconMoodSmile, show: !asset },
@@ -842,9 +880,13 @@ export function Editor({ project }: { project: Project }) {
     }
     if (it.kind === 'voice') {
       const v = voiceovers.find((y) => y.id === it.id)!
-      return <>{paneHead('Voiceover', `${v.voice} · ${v.duration.toFixed(1)} s.`, true)}
-        <p className="vo-quote">“{v.text}”</p>
+      return <>{paneHead(v.recorded ? 'Your voiceover' : 'Voiceover', `${v.recorded ? 'Recorded' : v.voice} · ${v.duration.toFixed(1)} s. Drag it on the timeline to move it.`, true)}
+        {(!v.recorded || v.text !== 'Your voice') && <p className="vo-quote">“{v.text}”</p>}
+        {media[v.file] && <audio className="vo-play" src={media[v.file]} controls />}
         {slider('Volume', `${Math.round(v.volume * 100)}%`, 0.1, 1.5, 0.05, v.volume, (n) => editVoice(v.id, { volume: n }))}
+        <div className="control"><div className="lbl"><span>Video's own sound</span></div>
+          {seg(!!v.duck, [[true, 'Dips under it'], [false, 'Stays the same']], (d) => editVoice(v.id, { duck: d }))}</div>
+        {v.recorded && <button className="wide" onClick={() => openRecorder(v.t, v.id)}><IconMicrophone size={15} />Record it again</button>}
         {foot(v.t)}</>
     }
     if (it.kind === 'sticker') {
@@ -1033,7 +1075,10 @@ export function Editor({ project }: { project: Project }) {
           {seg(music.duck, [[true, 'Dips when you talk'], [false, 'Same level']], (v) => setMusic({ duck: v }))}
           <div className="row-btns"><button onClick={addMusic}>Change</button><button className="danger" onClick={() => apply((e) => ({ ...e, music: null }))}><IconTrash size={15} />Remove</button></div></>}
         <span className="note">Use music you have the rights to; the YouTube Audio Library is safe.</span></div>
-      {voiceList.length > 0 && <div className="control"><div className="lbl"><span>Voiceover</span><span>{voiceovers.length ? `${voiceovers.length} added` : ''}</span></div>
+      <div className="control"><div className="lbl"><span>Your voice over the video</span></div>
+        <button className="wide rec" disabled={!!asset} onClick={() => openRecorder(playheadSrc)}><IconMicrophone size={16} />Record voiceover at {fmt(srcToOut(kept, playheadSrc))}</button>
+        <span className="note">The video plays while you talk. Your take lands on the timeline here and the video's sound dips under it.</span></div>
+      {voiceList.length > 0 && <div className="control"><div className="lbl"><span>Computer voice</span><span>{voiceovers.length ? `${voiceovers.length} added` : ''}</span></div>
         <textarea rows={3} value={vo.text} maxLength={600} placeholder="Type what the voice should say" onChange={(e) => setVo((o) => ({ ...o, text: e.target.value }))} />
         <select value={vo.voice} onChange={(e) => setVo((o) => ({ ...o, voice: e.target.value }))}>
           {voiceList.map((v) => <option key={v.name} value={v.name}>{v.name} · {v.lang.replace('en_', '')}</option>)}</select>
@@ -1050,6 +1095,23 @@ export function Editor({ project }: { project: Project }) {
         {config.sfx && slider('Effects volume', `${Math.round(config.sfxVolume * 100)}%`, 0.05, 1, 0.05, config.sfxVolume, (v) => set('sfxVolume', v))}
         <span className="note">A whoosh on every zoom and overlay, a pop on every text. Made in HomaCapture, so no copyright claims.</span></div>
       {project.assets.system && slider('Computer sound', config.systemVolume === 0 ? 'Muted' : `${Math.round(config.systemVolume * 100)}%`, 0, 1.5, 0.05, config.systemVolume, (v) => set('systemVolume', v))}
+    </>
+    if (shownPanel === 'script') return <>
+      <h3 className="drawer-title">Script</h3>
+      <ScriptPanel transcript={transcript} status={tstatus} hasMic={!!project.assets.mic} cuts={cuts} playhead={playheadSrc} playing={playing}
+        onCreate={transcribe} onSeek={seekSrc} onCut={(a, b) => { addCut(a, b) }} onKeep={keepRange}
+        onCutMany={(rs) => { if (rs.length) setCuts((c) => [...c, ...rs]) }}
+        onBroll={(a, b, words) => setBrollFor({ a, b, words })} onVoice={(t) => openRecorder(t)} />
+      {brollFor && <div className="script-broll">
+        <div className="lbl"><span>B-roll over “{brollFor.words.length > 40 ? brollFor.words.slice(0, 40) + '…' : brollFor.words}”</span>
+          <button className="icon" aria-label="Cancel" onClick={() => setBrollFor(null)}><IconX size={14} /></button></div>
+        {library.length > 0 && <div className="gallery">{library.map((f) => {
+          const clip = isClip(f), name = f.split('/').pop()!
+          return <button key={f} className="tile-main" onClick={() => brollOver(f, name, clip ? 'video' : 'image', lengths[f])}>
+            {clip ? <video src={media[f]} muted preload="metadata" /> : <img src={media[f]} alt="" />}</button> })}</div>}
+        <button className="wide" onClick={() => void window.narrate.addMedia(project.dir, 'broll').then((m) => { if (m) { setMedia((x) => ({ ...x, [m.file]: m.url })); brollOver(m.file, m.name, m.kind === 'video' ? 'video' : 'image', m.duration) } })}>
+          <IconUpload size={15} />Choose a clip or picture…</button>
+      </div>}
     </>
     if (shownPanel === 'captions') return <>
       <h3 className="drawer-title">Captions</h3>
@@ -1152,6 +1214,7 @@ export function Editor({ project }: { project: Project }) {
             <t.Icon size={20} stroke={1.6} /><span>{t.label}</span>{!!t.badge && <i className="badge">{t.badge}</i>}</button>))}</nav>
         <aside className="drawer">{addPanel()}</aside>
         <div className="stage">
+          {recFor && <VoiceRecorder startLabel={fmt(srcToOut(kept, recFor.t))} replacing={!!recFor.replace} onPlay={recPlay} onStop={recStop} onSave={recSave} onClose={() => setRecFor(null)} />}
           <Player ref={playerRef} component={Screencast} inputProps={props} durationInFrames={frames} fps={FPS} acknowledgeRemotionLicense
             compositionWidth={size.width} compositionHeight={size.height} clickToPlay={false} style={{ width: '100%', height: '100%' }} />
           <Direct selKey={selKey} canMove={canMove} onTogglePlay={() => playerRef.current?.toggle()} onPick={(k) => { playerRef.current?.pause(); if (!k) { setSel(null); return } const [kind, id] = k.split(':') as ['text' | 'sticker' | 'broll', string]; setExporting(false); setSel({ kind, id }) }}
@@ -1170,6 +1233,7 @@ export function Editor({ project }: { project: Project }) {
           <button aria-label="Split" data-tip="Split at the playhead · Cmd+B" onClick={splitHere}><IconScissors size={16} />Split</button>
           <button aria-label="Duplicate" data-tip="Duplicate · Cmd+D" disabled={!selItem || selItem.kind === 'cut' || selItem.kind === 'speed' || selItem.kind === 'mask'} onClick={() => { if (selItem) void duplicate(selItem) }}><IconCopy size={16} />Duplicate</button>
           <button aria-label="Delete" data-tip="Delete · Backspace" disabled={!selItem} onClick={() => { if (selItem) removeItem(selItem) }}><IconTrash size={16} />Delete</button>
+          <button aria-label="Voiceover" data-tip="Record your voice over the video from here" onClick={() => openRecorder(playheadSrc)}><IconMicrophone size={16} />Voiceover</button>
           <button aria-label="Freeze" data-tip="Hold this frame for 3 seconds" disabled={!!working || !onClipNow || !!onClipNow.ins} onClick={() => void freezeHere()}><IconSnowflake size={16} />Freeze</button>
         </div>}
         <span className="spacer" />

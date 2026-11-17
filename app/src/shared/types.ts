@@ -115,7 +115,11 @@ export interface InsertClip { id: string; at: number; v: number; file: string; k
 /** Background music: one track under the whole video, looped, ducked while anyone speaks. `file` is relative (media/…). */
 export interface MusicTrack { file: string; name: string; volume: number; duck: boolean }
 /** A spoken line made from typed text with one of the computer's own voices (macOS `say`), placed at source time t. */
-export interface Voiceover { id: string; t: number; text: string; voice: string; file: string; duration: number; volume: number }
+export interface Voiceover { id: string; t: number; text: string; voice: string; file: string; duration: number; volume: number
+  /** Recorded with the microphone in the editor (CapCut-style voiceover), rather than made from typed text. */
+  recorded?: boolean
+  /** The video's own sound (voice and computer sound) dips while this voiceover plays. */
+  duck?: boolean }
 export type ClipOp = 'reverse' | 'slowmo' | 'stabilise' | 'copy'
 /** Saved once for the whole app: the colours, font, handle and logo used across every project. */
 export interface BrandKit { colors: string[]; font: string; handle: string; logo: string | null }
@@ -411,6 +415,8 @@ export interface NarrateApi {
   /** The computer's own voices for voiceovers (macOS), and a spoken file made from text into the project's media/. */
   listVoices(): Promise<{ name: string; lang: string }[]>
   speak(dir: string, text: string, voice: string): Promise<{ file: string; url: string; duration: number }>
+  /** A voiceover take recorded in the editor (webm/opus bytes) → cleaned, level-matched audio in the project's media/. */
+  saveVoice(dir: string, data: ArrayBuffer): Promise<{ file: string; url: string; duration: number }>
   /** A still of the recording at t seconds into media/ (freeze frames and the picture on the look tiles). */
   grabFrame(dir: string, t: number, poster?: boolean): Promise<MediaFile>
   /** Makes a new file from a stretch: reversed, smooth slow motion or steadied. */

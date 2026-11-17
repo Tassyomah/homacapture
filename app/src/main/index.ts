@@ -193,6 +193,8 @@ recorder.on('event', (raw: RecorderEvent) => {
   broadcast(ev)
 })
 
+// Tests only: a fake microphone (a tone) so the voiceover recorder can be exercised without a real mic or a prompt.
+if (process.env.NARRATE_FAKE_MIC) { app.commandLine.appendSwitch('use-fake-device-for-media-stream'); app.commandLine.appendSwitch('use-fake-ui-for-media-stream') }
 app.whenReady().then(async () => {
   if (process.env.NARRATE_SCREENSHOT) app.dock?.hide()
   await mkdir(RECORDINGS, { recursive: true })
@@ -483,6 +485,24 @@ app.whenReady().then(async () => {
     const probe = ff.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'))
     try { duration = Number(execFileSync(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', dest], { encoding: 'utf8' }).trim()) || 0 } catch { /* unknown */ }
     if (!duration) duration = text.trim().split(/\s+/).length / 2.6 + 0.5   // ~156 words a minute, so it is never cut short
+    return { file: `media/${name}`, url: server.url(dest), duration }
+  })
+  // A voiceover take recorded in the editor: kept as a clean, level-matched m4a in media/ (the raw take is not kept).
+  ipcMain.handle('project:saveVoice', async (_e, dir: string, data: ArrayBuffer): Promise<{ file: string; url: string; duration: number }> => {
+    const ff = findFfmpeg(); if (!ff) throw new Error('ffmpeg is needed for voiceovers.')
+    mkdirSync(join(dir, 'media'), { recursive: true })
+    let name = 'your-voice.m4a'
+    for (let i = 2; existsSync(join(dir, 'media', name)); i++) name = `your-voice-${i}.m4a`
+    const raw = join(dir, 'media', `.take-${Date.now()}.webm`), dest = join(dir, 'media', name)
+    writeFileSync(raw, Buffer.from(data))
+    try {
+      // low rumble out, gentle noise reduction, speech level (-16 LUFS, like the cleaned voice track)
+      await new Promise<void>((res, rej) => { const p = spawn(ff, ['-v', 'error', '-y', '-i', raw, '-ac', '1', '-ar', '48000', '-af', 'highpass=f=80,afftdn=nf=-25,loudnorm=I=-16:TP=-1.5:LRA=11', '-c:a', 'aac', '-b:a', '192k', dest])
+        p.on('error', rej); p.on('close', (c) => c === 0 ? res() : rej(new Error('The voiceover could not be saved.'))) })
+    } finally { rmSync(raw, { force: true }) }
+    let duration = 0
+    const probe = ff.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'))
+    try { duration = Number(execFileSync(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', dest], { encoding: 'utf8' }).trim()) || 0 } catch { /* unknown */ }
     return { file: `media/${name}`, url: server.url(dest), duration }
   })
   ipcMain.handle('project:matte', async (_e, dir: string): Promise<Project> => {
