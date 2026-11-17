@@ -9,6 +9,7 @@ import { Recorder } from './recorder'
 import { AssetServer } from './assetServer'
 import { exportProject, findFfmpeg, renderThumbnails } from './exporter'
 import { getShareSettings, saveShareSettings, shareFile } from './share'
+import { askClaude, cancelAsk, claudeSignIn, claudeStatus } from './claude'
 
 const IS_WIN = process.platform === 'win32'
 const APP_ROOT = resolve(app.getAppPath())
@@ -298,6 +299,11 @@ app.whenReady().then(async () => {
       { zooms: p.file?.zooms ?? [], speeds: p.file?.speeds ?? [], masks: p.file?.masks ?? [], texts: p.file?.texts ?? [], overlays: p.file?.overlays ?? [], stickers: p.file?.stickers ?? [], music: p.file?.music ?? null, voiceovers: p.file?.voiceovers ?? [], inserts: p.file?.inserts ?? [] })
       .then(() => app.quit(), (e) => { console.log('[dev] export failed', e.message); app.quit() })
   }
+  // Ask Claude (optional): the local Claude Code CLI answers with edit operations; the renderer checks and applies them.
+  ipcMain.handle('claude:status', (_e, fresh?: boolean) => claudeStatus(!!fresh))
+  ipcMain.handle('claude:signin', () => claudeSignIn())
+  ipcMain.handle('claude:ask', (_e, brief: string, request: string) => askClaude(String(brief ?? ''), String(request ?? '')))
+  ipcMain.handle('claude:cancel', () => cancelAsk())
   ipcMain.handle('share:settings', () => getShareSettings())
   ipcMain.handle('share:save', (_e, i) => saveShareSettings(i))
   ipcMain.handle('share:file', (_e, file: string, title: string) => shareFile(file, title, (p) => win?.webContents.send('share:progress', p)))

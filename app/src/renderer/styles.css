@@ -823,3 +823,24 @@ button.wide.rec { background: var(--coral); color: var(--ink); }
 .vrec-meter i { display: block; height: 100%; background: var(--coral); transition: width .06s linear; }
 .vrec audio { width: 100%; }
 .stage > .vrec { border-radius: 18px; }
+
+/* Ask Claude drawer (optional; only when the Claude Code CLI is on this computer) */
+.ask-box { position: relative; }
+.drawer .ask-box textarea { padding-right: 44px; min-height: 76px; resize: none; }
+.ask-box.busy textarea { opacity: 0.6; }
+.ask-send { position: absolute; right: 8px; bottom: 8px; width: 30px; height: 30px; padding: 0; border-radius: 50%; display: grid; place-items: center; background: var(--text); color: var(--bg); }
+.ask-send:disabled { opacity: 0.3; }
+.ask-send.stop { background: var(--coral); color: var(--ink); }
+.ask-examples { display: flex; flex-wrap: wrap; gap: 6px; }
+.ask-examples button { font-size: 12px; padding: 5px 9px; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-2); color: var(--muted); }
+.ask-examples button:hover { color: var(--text); }
+.ask-signin { display: flex; flex-direction: column; gap: 10px; }
+.ask-log { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.ask-log > li { border-top: 1px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+.ask-log > li.undone { opacity: 0.55; }
+.ask-req { margin: 0; font-size: 13px; font-weight: 600; color: var(--text); }
+.ask-res { margin: 0; font-size: 13px; color: var(--text); line-height: 1.45; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ask-res.err { color: var(--coral); }
+.ask-res .spin { animation: spin 0.9s linear infinite; }
+.ask-lines { margin: 0; padding-left: 16px; font-size: 12px; color: var(--muted); line-height: 1.5; }
+.ask-undo { align-self: flex-start; font-size: 12px; padding: 5px 10px; display: inline-flex; align-items: center; gap: 5px; }

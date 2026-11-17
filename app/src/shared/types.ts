@@ -391,6 +391,12 @@ export interface NarrateApi {
   /** Cleaned voice track (noise reduction + loudness) → mic.clean.wav; resolves with the reloaded project. */
   enhanceAudio(dir: string): Promise<Project>
   /** Render one asset of the recording; `suffix` names the output file (`<stamp>-<suffix>.mp4`). */
+  /** Ask Claude (optional): is the Claude Code CLI on this computer and signed in; sign in (opens her browser);
+   *  one request (project brief JSON + what she typed) → edit operations; stop the request that is running. */
+  claudeStatus(fresh?: boolean): Promise<import('./askclaude').ClaudeStatus>
+  claudeSignIn(): Promise<import('./askclaude').ClaudeStatus>
+  askClaude(brief: string, request: string): Promise<import('./askclaude').AskResult>
+  cancelAsk(): Promise<void>
   getShareSettings(): Promise<ShareSettings>
   saveShareSettings(s: ShareSettingsInput): Promise<ShareSettings>
   /** Uploads an exported MP4 + player page; resolves to the public link. Progress arrives on onShareProgress (0–1). */
