@@ -1359,7 +1359,7 @@ export function Editor({ project }: { project: Project }) {
       </div>
       <Timeline ev={project.events} cuts={cuts} ranges={kept} splits={splits} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks} texts={texts}
         overlays={overlays} stickers={stickers} music={music} voiceovers={voiceovers} inserts={shownInserts} transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset} scale={tlScale}
-        onSeek={seekSrc} onRange={setRange} onSelect={pick} onAction={rangeAction} onDragStart={dragStart} onDragItem={dragItem} onDragEnd={dragEnd} onMenu={(it, x, y) => setMenu({ it, x, y })} onZoom={setTlScale} onHover={setHoverInfo} strip={strip} />
+        onSeek={seekSrc} onRange={setRange} onSelect={pick} onAction={rangeAction} onDragStart={dragStart} onDragItem={dragItem} onDragEnd={dragEnd} onMenu={(it, x, y) => setMenu({ it, x, y })} onZoom={setTlScale} grow={lay.timeline > 0} onHover={setHoverInfo} strip={strip} />
       {menu && <div className="ctx" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
         <button onClick={() => { setMenu(null); splitHere() }}>Split at playhead<kbd>⌘B</kbd></button>
         {menu.it.kind !== 'cut' && menu.it.kind !== 'speed' && menu.it.kind !== 'mask' && <button onClick={() => { const it = menu.it; setMenu(null); void duplicate(it) }}>Duplicate<kbd>⌘D</kbd></button>}

@@ -32,7 +32,7 @@ export function piecesOf(ranges: Range[], splits: number[]): Range[] {
  * stays in place when the cut changes.
  */
 export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, voiceovers = [], inserts = [], transcript, playhead, range, selected, editable, scale = 1,
-  onSeek, onRange, onSelect, onAction, onDragStart, onDragItem, onDragEnd, onMenu, onZoom, onHover, strip }: {
+  onSeek, onRange, onSelect, onAction, onDragStart, onDragItem, onDragEnd, onMenu, onZoom, grow = false, onHover, strip }: {
   ev: RecordingEvents; cuts: Cut[]; ranges: Range[]; splits?: number[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[]
   transcript?: Transcript | null; playhead: number; range: [number, number] | null; selected: Item | null
   /** False while editing a derived version: only cuts belong to it, so the other tracks are read-only. */
@@ -44,6 +44,8 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
   onMenu: (it: Item, x: number, y: number) => void
   /** Cmd/Ctrl + scroll or a trackpad pinch zooms the timeline around the pointer (CapCut-style). */
   onZoom?: (next: number) => void
+  /** The user dragged the timeline taller: the video track grows into the space (bigger thumbnails), up to 260 px. */
+  grow?: boolean
   /** What the pointer is over, for the status line. */
   onHover: (text: string | null) => void
   strip?: { strip: string; frames: number; aspect: number; wave: string | null } | null
@@ -60,6 +62,16 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
   const [snap, setSnap] = useState<number | null>(null)
   const scroller = useRef<HTMLDivElement>(null)
   const [areaW, setAreaW] = useState(0)
+  // How tall the video track is: 56 px, or (timeline dragged taller) whatever room the other lanes leave, up to 260 px.
+  const root = useRef<HTMLDivElement>(null)
+  const otherRows = useRef(0)
+  const [tlH, setTlH] = useState(0)
+  useEffect(() => {
+    const r = root.current; if (!r) return
+    const ro = new ResizeObserver(() => setTlH(r.clientHeight)); ro.observe(r); setTlH(r.clientHeight)
+    return () => ro.disconnect()
+  }, [])
+  const vh = grow && tlH ? Math.round(Math.max(56, Math.min(260, tlH - 22 - 30 - otherRows.current * 25))) : 56
   useEffect(() => {
     const a = area.current; if (!a) return
     const ro = new ResizeObserver(() => setAreaW(a.clientWidth)); ro.observe(a); setAreaW(a.clientWidth)
@@ -192,7 +204,7 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
   // The video track shows the video: frames across, the shape of the sound along the bottom.
   const film = (p: Range) => {
     if (!strip || !areaW) return null
-    const pieceW = (playLen(p) / total) * areaW, tileW = Math.max(24, 52 * strip.aspect), n = Math.min(240, Math.ceil(pieceW / tileW)), rec = ev.videoDuration
+    const pieceW = (playLen(p) / total) * areaW, tileW = Math.max(24, (vh - 4) * strip.aspect), n = Math.min(240, Math.ceil(pieceW / tileW)), rec = ev.videoDuration
     const sound = strip.wave && <i className="wave" style={{ width: pieceW * (rec / Math.max(0.01, p.end - p.start)), left: -(p.start / Math.max(0.01, p.end - p.start)) * pieceW, backgroundImage: `url("${strip.wave}")` }} />
     return <>{Array.from({ length: n }, (_, i) => {
       const t = p.start + ((i + 0.5) * tileW / Math.max(1, pieceW)) * (p.end - p.start)
@@ -211,7 +223,7 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
   const overlayRows = stack(overlays, (x) => [x.t, x.t + x.duration]), voiceRows = stack(voiceovers, (x) => [x.t, x.t + x.duration])
 
   return (
-    <div className="tl" onContextMenu={menu}>
+    <div className="tl" ref={root} style={{ '--vh': `${vh}px` } as React.CSSProperties} onContextMenu={menu}>
       <div className="tl-scroll" ref={scroller}><div className="tl-area" ref={area} style={{ width: `${scale * 100}%` }} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerLeave={() => { setHover(null); onHover(null) }}>
         <div className="ruler" data-info="Drag here to scrub">
           {ticks.map((t) => <span key={t} style={{ left: `${(t / total) * 100}%` }}>{fmtShort(t)}</span>)}
@@ -267,6 +279,7 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
         <div className="playhead" style={{ left: pct(playhead) }} />
         {hover && <div className="ghost" style={{ left: hover.x }} />}
       </div></div>
+      {(() => { otherRows.current = labels.slice(1).reduce((n, l) => n + l.rows, 0); return null })()}
       <div className="tl-labels">{labels.map((l) => <span key={l.name} style={l.rows > 1 ? { height: 22 * l.rows } : undefined}>{l.name}</span>)}</div>
     </div>
   )

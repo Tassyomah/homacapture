@@ -863,3 +863,24 @@ body.resizing-v iframe, body.resizing-h iframe, body.resizing-v video, body.resi
 .drawer .looks { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
 .drawer .gallery { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
 .capstyles { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+/* the video track grows when the timeline is dragged taller */
+.tl .ruler + .lane { height: var(--vh, 56px); }
+.tl-labels span:first-child { height: var(--vh, 56px); }
+/* Script selection (own selection, not the browser's): selected words in indigo, bar under them, menu on right-click */
+.script-body { user-select: none; -webkit-user-select: none; cursor: default; }
+.script .w { cursor: pointer; }
+.script .w.sel { background: rgba(110,113,232,.22); box-shadow: 0 0 0 2px rgba(110,113,232,.22); }
+.script .w.sel.cut { background: rgba(229,72,77,.12); box-shadow: 0 0 0 2px rgba(229,72,77,.12); }
+.script-bar { flex-wrap: wrap; max-width: 300px; }
+.script-bar button.x { padding: 6px 8px; }
+.script-menu { position: absolute; z-index: 6; min-width: 210px; display: flex; flex-direction: column; padding: 5px; background: var(--bg, #fff); border-radius: 10px;
+  box-shadow: 0 14px 40px rgba(20,20,15,.22), 0 0 0 1px var(--line, rgba(20,20,15,.1)); }
+.script-menu button { display: flex; align-items: center; gap: 8px; justify-content: flex-start; background: transparent; padding: 8px 10px; border-radius: 6px; font-size: 13px; color: var(--text, #14140F); }
+.script-menu button:hover { background: var(--well, rgba(20,20,15,.06)); }
+.script-menu button.danger { color: #C23B3B; background: transparent; }
+.script-menu button.danger:hover { background: rgba(229,72,77,.08); }
+.script-bar { flex-wrap: nowrap; max-width: none; gap: 2px; padding: 3px; border-radius: 10px; }
+.drawer .script-bar button { box-shadow: none; border: 0; background: transparent; color: var(--paper, #EFEEE8); padding: 5px 8px; font-size: 12px; white-space: nowrap; }
+.drawer .script-bar button:hover { background: rgba(239,238,232,.14); }
+.drawer .script-bar button.danger { background: #E5484D; color: #fff; }
+.drawer .script-menu button { box-shadow: none; border: 0; }
