@@ -44,7 +44,7 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
   onMenu: (it: Item, x: number, y: number) => void
   /** Cmd/Ctrl + scroll or a trackpad pinch zooms the timeline around the pointer (CapCut-style). */
   onZoom?: (next: number) => void
-  /** The user dragged the timeline taller: the video track grows into the space (bigger thumbnails), up to 260 px. */
+  /** The user dragged the timeline taller: the video track grows a little (bigger thumbnails), up to 96 px. */
   grow?: boolean
   /** What the pointer is over, for the status line. */
   onHover: (text: string | null) => void
@@ -71,7 +71,8 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
     const ro = new ResizeObserver(() => setTlH(r.clientHeight)); ro.observe(r); setTlH(r.clientHeight)
     return () => ro.disconnect()
   }, [])
-  const vh = grow && tlH ? Math.round(Math.max(56, Math.min(260, tlH - 22 - 30 - otherRows.current * 25))) : 56
+  // grows gently with the spare room (half of it), never past 96 px, so it never takes over the timeline
+  const vh = grow && tlH ? Math.round(Math.max(56, Math.min(96, 56 + (tlH - 22 - 30 - otherRows.current * 25 - 56) * 0.5))) : 56
   useEffect(() => {
     const a = area.current; if (!a) return
     const ro = new ResizeObserver(() => setAreaW(a.clientWidth)); ro.observe(a); setAreaW(a.clientWidth)
