@@ -71,8 +71,17 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
     const ro = new ResizeObserver(() => setTlH(r.clientHeight)); ro.observe(r); setTlH(r.clientHeight)
     return () => ro.disconnect()
   }, [])
-  // grows gently with the spare room (half of it), never past 96 px, so it never takes over the timeline
-  const vh = grow && tlH ? Math.round(Math.max(56, Math.min(96, 56 + (tlH - 22 - 30 - otherRows.current * 25 - 56) * 0.5))) : 56
+  // The video track's height is the user's: drag its bottom edge (32–240 px), remembered on this Mac, double-click resets.
+  const [vh, setVh] = useState<number>(() => { try { const v = Number(localStorage.getItem('hc.trackH')); return v >= 32 && v <= 240 ? v : 56 } catch { return 56 } })
+  useEffect(() => { try { localStorage.setItem('hc.trackH', String(vh)) } catch { /* private storage */ } }, [vh])
+  const trackDrag = (e: React.PointerEvent) => {
+    e.stopPropagation(); e.preventDefault()
+    const y0 = e.clientY, h0 = vh
+    document.body.classList.add('resizing-h')
+    const mv = (ev: PointerEvent) => setVh(Math.round(Math.max(32, Math.min(240, h0 + ev.clientY - y0))))
+    const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up); document.body.classList.remove('resizing-h') }
+    window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up)
+  }
   useEffect(() => {
     const a = area.current; if (!a) return
     const ro = new ResizeObserver(() => setAreaW(a.clientWidth)); ro.observe(a); setAreaW(a.clientWidth)
@@ -229,7 +238,8 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
         <div className="ruler" data-info="Drag here to scrub">
           {ticks.map((t) => <span key={t} style={{ left: `${(t / total) * 100}%` }}>{fmtShort(t)}</span>)}
         </div>
-        {lane('Video', 'Your video. Click a piece to edit it, drag its ends to trim.', <>
+        {lane('Video', 'Your video. Click a piece to edit it, drag its ends to trim. Drag the bottom edge to make the track taller or shorter.', <>
+          <i className="track-h" onPointerDown={trackDrag} onDoubleClick={(e) => { e.stopPropagation(); setVh(56) }} data-info="Drag to make the video track taller or shorter · double-click to reset" />
           {pieces.map((p, i) => {
             const x: Item = p.ins ? { kind: 'insert', id: p.ins.id } : { kind: 'piece', a: p.start, b: p.end }
             const from = pieces.slice(0, i).reduce((s, q) => s + playLen(q), 0)

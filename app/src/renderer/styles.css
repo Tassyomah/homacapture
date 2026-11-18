@@ -884,3 +884,7 @@ body.resizing-v iframe, body.resizing-h iframe, body.resizing-v video, body.resi
 .drawer .script-bar button:hover { background: rgba(239,238,232,.14); }
 .drawer .script-bar button.danger { background: #E5484D; color: #fff; }
 .drawer .script-menu button { box-shadow: none; border: 0; }
+/* bottom edge of the video track: drag to set its height */
+.lane-body .track-h { position: absolute; left: 0; right: 0; bottom: 0; height: 7px; z-index: 6; cursor: row-resize; }
+.lane-body .track-h::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--coral); opacity: 0; transition: opacity .12s; }
+.lane-body .track-h:hover::after { opacity: 1; }
