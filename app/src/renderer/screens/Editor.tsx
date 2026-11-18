@@ -1210,6 +1210,9 @@ export function Editor({ project }: { project: Project }) {
     if (shownPanel === 'script') return <>
       <h3 className="drawer-title">Script</h3>
       <ScriptPanel transcript={transcript} status={tstatus} hasMic={!!project.assets.mic} cuts={cuts} playhead={playheadSrc} playing={playing}
+        texts={texts} onRedo={transcribe}
+        onAddText={(a, b, text) => { const id = newId('t'); apply((e) => ({ ...e, texts: [...e.texts, { id, t: a, duration: Math.max(2, Math.min(8, b - a + 0.6)), text, style: 'pop' as TextStyle, x: 0.5, y: 0.22 }].sort((p, q) => p.t - q.t) })) }}
+        onEditText={(id, text) => editText(id, { text })} onRemoveText={(id) => removeText(id)}
         onCreate={transcribe} onSeek={seekSrc} onCut={(a, b) => { addCut(a, b) }} onKeep={keepRange}
         onCutMany={(rs) => { if (rs.length) setCuts((c) => [...c, ...rs]) }}
         onBroll={(a, b, words) => setBrollFor({ a, b, words })} onVoice={(t) => openRecorder(t)} />

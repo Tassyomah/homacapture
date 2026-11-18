@@ -893,3 +893,19 @@ body.resizing-v iframe, body.resizing-h iframe, body.resizing-v video, body.resi
 .tlzoom .tlfit { font-size: 12px; padding: 5px 9px; border-radius: 6px; margin-right: 4px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-2, rgba(20,20,15,.14)); }
 .tlzoom .tlfit:disabled { opacity: .4; }
 .tlzoom-line { width: 140px; margin: 0 2px; }
+/* Script, granular: words, (sounds) and ⏸ pauses are all pieces; on-screen text hangs under its line as a reply */
+.script-line { margin: 0 0 12px; }
+.script-line p { margin: 0; }
+.script .w { margin-right: 0; }
+.script .w.sound { font-size: .8em; color: #9a6b00; background: rgba(245,195,106,.18); padding: 1px 5px; border-radius: 5px; }
+.script .w.pause { font: 500 .72em/1 ui-monospace, Menlo, monospace; color: var(--ink-60); background: var(--ink-5); padding: 2px 5px; border-radius: 5px; vertical-align: 1px; }
+.script .w.pause.cut, .script .w.sound.cut { text-decoration: line-through; text-decoration-color: #E5484D; color: #C23B3B; opacity: .7; }
+.script-reply { display: flex; align-items: center; gap: 6px; margin: 4px 0 0 52px; padding: 4px 6px 4px 10px; border-left: 2px solid var(--indigo); background: rgba(110,113,232,.07); border-radius: 0 8px 8px 0; color: var(--indigo); }
+.script-reply input { flex: 1; min-width: 0; border: 0; background: transparent; font: inherit; font-size: 13px; color: var(--text, #14140F); padding: 2px 0; box-shadow: none !important; }
+.script-reply input:focus { outline: none; }
+.drawer .script-reply button.x { padding: 3px; background: transparent; box-shadow: none; color: var(--ink-60); }
+.script-compose { margin: 6px 0 0 52px; padding: 8px; border-radius: 10px; background: #fff; box-shadow: 0 8px 24px rgba(20,20,15,.14), 0 0 0 1px var(--line, rgba(20,20,15,.1)); display: flex; flex-direction: column; gap: 6px; }
+.script-compose .q { font-size: 11.5px; color: var(--ink-60); }
+.script-compose .row { display: flex; justify-content: flex-end; gap: 6px; }
+.drawer .script-compose .row button { padding: 5px 10px; font-size: 12px; }
+.script .w { white-space: nowrap; }

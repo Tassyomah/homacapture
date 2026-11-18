@@ -25,7 +25,12 @@ def main():
     pcm = np.fromfile(audio, dtype=np.float32)
     emit(event="progress", stage="loading", done=0)
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
-    segments, info = model.transcribe(pcm, word_timestamps=True, vad_filter=True, vad_parameters={"min_silence_duration_ms": 500})
+    # Word for word: a prompt written the way people really talk (fillers, repeats, false starts) steers Whisper to keep
+    # them instead of tidying them away, and the speech filter keeps a wide margin so short sounds are not dropped.
+    segments, info = model.transcribe(pcm, word_timestamps=True, vad_filter=True,
+                                      vad_parameters={"min_silence_duration_ms": 300, "speech_pad_ms": 400},
+                                      initial_prompt="Umm, so, uh, I- I was, like, you know, thinking... Hmm. Okay, so, um, yeah.",
+                                      condition_on_previous_text=True)
     result = {"language": info.language, "duration": float(info.duration or len(pcm) / 16000), "model": model_name, "segments": []}
     for s in segments:
         result["segments"].append({"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip(),

@@ -418,6 +418,36 @@ def speech_env():
     with open(marker, "w") as fh: fh.write("faster-whisper\n")
     return py
 
+def hidden_sounds(pcm_path, raw_path):
+    """Voice in the gaps between transcribed words (0.18 s or longer, louder than a fifth of normal speech): the sounds
+    Whisper drops. Same rule as Tassy's script editor (find_hidden_sounds.py). Times in the audio's own seconds."""
+    import numpy as np
+    with open(raw_path, encoding="utf-8") as fh: tr = json.load(fh)
+    a = np.fromfile(pcm_path, dtype=np.float32); sr = 16000; hop = sr // 50
+    n = len(a) // hop
+    if n < 10: return []
+    rms = np.sqrt((a[:n * hop].reshape(n, hop) ** 2).mean(1) + 1e-12)
+    words = sorted([w for s in tr["segments"] for w in s["words"]], key=lambda w: w["start"])
+    if len(words) < 2: return []
+    inw = np.zeros(n, bool)
+    for w in words: inw[int(w["start"] * 50):int(w["end"] * 50) + 1] = True
+    thr = 0.22 * float(np.median(rms[inw[:n]])) if inw[:n].any() else 0.02
+    out = []
+    for k in range(len(words) - 1):
+        g0, g1 = words[k]["end"] + 0.06, words[k + 1]["start"] - 0.06
+        if g1 - g0 < 0.2: continue
+        f0, f1 = int(g0 * 50), min(n, int(g1 * 50)); v = rms[f0:f1] > thr
+        i = 0
+        while i < len(v):
+            if v[i]:
+                j = i
+                while j < len(v) and v[j]: j += 1
+                if j - i >= 9: out.append({"start": round((f0 + i) / 50, 3), "end": round((f0 + j) / 50, 3), "word": "(sound)", "p": 0, "hidden": True})
+                i = j
+            else: i += 1
+    return out
+
+
 def transcribe(args):
     outdir = args.out
     ev_path = os.path.join(outdir, "events.json")
@@ -448,6 +478,10 @@ def transcribe(args):
         except ValueError: continue
         if m.get("event") == "progress": emit(event="transcribing", stage=m.get("stage", "transcribing"), done=m.get("done"), total=m.get("total"))
     p.wait()
+    hidden = []
+    if p.returncode == 0 and os.path.exists(raw):
+        try: hidden = hidden_sounds(pcm, raw)
+        except Exception as e: log(f"hidden sounds skipped: {e}")
     try: os.remove(pcm)
     except OSError: pass
     if p.returncode != 0 or not os.path.exists(raw):
@@ -455,6 +489,12 @@ def transcribe(args):
     # shift from mic time to source (screen) time so the editor and renderer can use it directly
     with open(raw, encoding="utf-8") as fh: t = json.load(fh)
     off = ev.get("micOffset") or 0
+    # voice the recogniser left out (an "um", a breath-laugh, a cut-off word) goes back in as a "(sound)" word, so the
+    # script shows every bit of speech and each one can be removed
+    for h in hidden:
+        seg = next((x for x in t["segments"] if x["start"] - 0.5 <= h["start"] <= x["end"] + 1.5), None) or (t["segments"][-1] if t["segments"] else None)
+        if seg is None: continue
+        seg["words"].append(h); seg["words"].sort(key=lambda w: w["start"])
     for s in t["segments"]:
         s["start"] = round(s["start"] + off, 3); s["end"] = round(s["end"] + off, 3)
         for w in s["words"]: w["start"] = round(w["start"] + off, 3); w["end"] = round(w["end"] + off, 3)

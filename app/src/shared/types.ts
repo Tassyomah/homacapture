@@ -176,7 +176,9 @@ export interface ProjectFile {
 }
 
 /** transcript.json — written by `narrate_win.py transcribe` (spec §43). Times are source seconds (already shifted by micOffset). */
-export interface TranscriptWord { start: number; end: number; word: string; p: number }
+export interface TranscriptWord { start: number; end: number; word: string; p: number
+  /** Voice the recogniser left out, found in the gap between words: shown in the script as "(sound)" so it can be removed. */
+  hidden?: boolean }
 export interface TranscriptSegment { start: number; end: number; text: string; words: TranscriptWord[] }
 export interface Transcript { version: number; language: string; model: string; createdAt: string; duration: number; segments: TranscriptSegment[] }
 
