@@ -98,10 +98,15 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
   }, [playhead, scale, total])
   // Zoom around the pointer: remember which moment was under it, and put that moment back under it after the zoom.
   const anchor = useRef<{ frac: number; px: number } | null>(null)
+  // Zooming from the slider or buttons (no pointer anchor) keeps the playhead where it was on screen, or centres it.
+  const lastScale = useRef(scale)
   useLayoutEffect(() => {
-    const v = scroller.current, a = area.current, k = anchor.current; if (!v || !a || !k) return
-    anchor.current = null
-    v.scrollLeft = Math.max(0, k.frac * a.clientWidth - k.px)
+    const v = scroller.current, a = area.current; if (!v || !a) return
+    const k = anchor.current, prev = lastScale.current; lastScale.current = scale
+    if (k) { anchor.current = null; v.scrollLeft = Math.max(0, k.frac * a.clientWidth - k.px); return }
+    const frac = out(playhead) / total, oldX = frac * a.clientWidth * (prev / scale), onScreen = oldX - v.scrollLeft
+    const px = onScreen >= 0 && onScreen <= v.clientWidth ? onScreen : v.clientWidth / 2
+    v.scrollLeft = Math.max(0, frac * a.clientWidth - px)
   }, [scale])
   useEffect(() => {
     const v = scroller.current; if (!v) return

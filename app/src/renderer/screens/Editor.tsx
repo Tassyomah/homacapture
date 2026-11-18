@@ -1354,8 +1354,14 @@ export function Editor({ project }: { project: Project }) {
         <span className="hint">{autoState ?? hint}</span>
         {pendingCount > 0 && <button className="suggest" onClick={() => go('smart')} data-tip="Pauses, filler words and slow stretches worth tidying">
           <IconSparkles size={15} />{pendingCount} suggestion{pendingCount === 1 ? '' : 's'}</button>}
-        <div className="tlzoom"><button className="icon" aria-label="Zoom timeline out" onClick={() => setTlScale((z) => Math.max(1, z / 1.5))}><IconZoomOut size={16} /></button>
-          <button className="icon" aria-label="Zoom timeline in" onClick={() => setTlScale((z) => Math.min(80, z * 1.5))}><IconZoomIn size={16} /></button></div>
+        {/* CapCut-style zoom line: drag to zoom the timeline in and out (it keeps the playhead in view); Fit shows the whole video */}
+        <div className="tlzoom">
+          <button className="tlfit" disabled={tlScale <= 1.001} data-tip="Show the whole video · Shift+Z" onClick={() => setTlScale(1)}>Fit</button>
+          <button className="icon" aria-label="Zoom timeline out" data-tip="Zoom out · Cmd −" onClick={() => setTlScale((z) => Math.max(1, z / 1.5))}><IconZoomOut size={16} /></button>
+          <input type="range" className="tlzoom-line" aria-label="Timeline zoom" min={0} max={1000} step={1} value={Math.round(Math.log(tlScale) / Math.log(80) * 1000)}
+            onChange={(e) => setTlScale(Math.max(1, Math.min(80, Math.exp((Number(e.target.value) / 1000) * Math.log(80)))))}
+            style={{ '--p': `${(Math.log(tlScale) / Math.log(80)) * 100}%` } as React.CSSProperties} />
+          <button className="icon" aria-label="Zoom timeline in" data-tip="Zoom in · Cmd +" onClick={() => setTlScale((z) => Math.min(80, z * 1.5))}><IconZoomIn size={16} /></button></div>
       </div>
       <Timeline ev={project.events} cuts={cuts} ranges={kept} splits={splits} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks} texts={texts}
         overlays={overlays} stickers={stickers} music={music} voiceovers={voiceovers} inserts={shownInserts} transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset} scale={tlScale}

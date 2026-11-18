@@ -888,3 +888,8 @@ body.resizing-v iframe, body.resizing-h iframe, body.resizing-v video, body.resi
 .lane-body .track-h { position: absolute; left: 0; right: 0; bottom: 0; height: 7px; z-index: 6; cursor: row-resize; }
 .lane-body .track-h::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: var(--coral); opacity: 0; transition: opacity .12s; }
 .lane-body .track-h:hover::after { opacity: 1; }
+/* CapCut-style zoom line in the transport */
+.tlzoom { align-items: center; gap: 2px; }
+.tlzoom .tlfit { font-size: 12px; padding: 5px 9px; border-radius: 6px; margin-right: 4px; background: transparent; box-shadow: inset 0 0 0 1px var(--line-2, rgba(20,20,15,.14)); }
+.tlzoom .tlfit:disabled { opacity: .4; }
+.tlzoom-line { width: 140px; margin: 0 2px; }
