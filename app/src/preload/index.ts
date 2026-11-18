@@ -50,6 +50,7 @@ const api: NarrateApi = {
   importVideo: (path) => ipcRenderer.invoke('project:import', path),
   pathForFile: (file) => webUtils.getPathForFile(file),
   addMedia: (dir, kind) => ipcRenderer.invoke('project:media', dir, kind),
+  browseMusic: (dir) => ipcRenderer.invoke('project:browseMusic', dir),
   matteProject: (dir) => ipcRenderer.invoke('project:matte', dir),
   listVoices: () => ipcRenderer.invoke('voices:list'),
   speak: (dir, text, voice) => ipcRenderer.invoke('project:speak', dir, text, voice),

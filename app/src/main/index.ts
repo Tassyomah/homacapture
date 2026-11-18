@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell, screen, globalShortcut, clipboard } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, shell, screen, globalShortcut, clipboard, session } from 'electron'
 import { join, resolve, basename, extname } from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
@@ -353,6 +353,50 @@ app.whenReady().then(async () => {
       try { duration = Number(execFileSync(probe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', dest], { encoding: 'utf8' }).trim()) || undefined } catch { /* unknown length */ }
     }
     return { file: `media/${name}`, url: server.url(dest), kind: isVideo ? 'video' : isAudio ? 'audio' : 'image', name: basename(src), duration }
+  })
+  // Free music from Pixabay: their music page opens in a HomaCapture window (its own remembered session, so a Pixabay
+  // sign-in sticks); the first audio file downloaded there is saved into the project's media/ and the window closes.
+  // Pixabay has no public music API, so this is the honest route. Closing the window without downloading = nothing added.
+  let musicWin: BrowserWindow | null = null
+  ipcMain.handle('project:browseMusic', async (_e, dir: string): Promise<MediaFile | null> => {
+    inProject(dir)
+    if (musicWin && !musicWin.isDestroyed()) { musicWin.focus(); return null }
+    const test = !!process.env.NARRATE_TEST_MUSIC
+    const ses = session.fromPartition('persist:pixabay')
+    const w = new BrowserWindow({ width: 1200, height: 820, parent: win ?? undefined, show: !test, title: 'Free music · Pixabay',
+      webPreferences: { session: ses, contextIsolation: true, nodeIntegration: false, sandbox: true } })
+    musicWin = w
+    w.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\/([a-z0-9-]+\.)*pixabay\.com\//.test(url)) void w.loadURL(url); return { action: 'deny' } })
+    return new Promise<MediaFile | null>((resolve) => {
+      let done = false
+      const finish = (m: MediaFile | null) => { if (done) return; done = true; ses.removeListener('will-download', onDl); if (!w.isDestroyed()) w.close(); musicWin = null; resolve(m) }
+      const onDl = (_ev: Electron.Event, item: Electron.DownloadItem) => {
+        const fname = item.getFilename() || 'pixabay-music.mp3', ext = (extname(fname) || '.mp3').toLowerCase()
+        if (!/^audio\//.test(item.getMimeType()) && !['.mp3', '.wav', '.m4a', '.aac', '.ogg'].includes(ext)) { item.cancel(); return }
+        mkdirSync(join(dir, 'media'), { recursive: true })
+        const slug = basename(fname, extname(fname)).replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'music'
+        let name = `${slug}${ext}`
+        for (let i = 2; existsSync(join(dir, 'media', name)); i++) name = `${slug}-${i}${ext}`
+        const dest = join(dir, 'media', name)
+        item.setSavePath(dest)
+        item.once('done', (_e2, state) => {
+          if (state !== 'completed') return
+          finish({ file: `media/${name}`, url: server.url(dest), kind: 'audio', name: basename(fname, extname(fname)).replace(/[-_]+/g, ' ').replace(/\s+\d{4,}$/, '').replace(/\s+/g, ' ').trim() || 'Pixabay music', duration: lengthOf(dest) })
+        })
+      }
+      ses.on('will-download', onDl)
+      w.on('closed', () => finish(null))
+      void w.loadURL('https://pixabay.com/music/')
+      if (test) w.webContents.once('did-finish-load', () => setTimeout(async () => {
+        // tests only: download the first track's audio file the page links to
+        const src = await w.webContents.executeJavaScript(`(() => { const b = [...document.querySelectorAll('button, a')].find(e => /download/i.test((e.getAttribute('aria-label') || '') + ' ' + (e.getAttribute('title') || '') + ' ' + e.className)); if (b) { b.click(); return 'clicked: ' + (b.getAttribute('aria-label') || b.className) } const a = [...document.querySelectorAll('audio, source, a')].map(e => e.src || e.href || '').find(u => /\\.mp3(\\?|$)/.test(u)); return a || null })()`).catch(() => null)
+        console.log('[dev] music test', src)
+        const local = process.env.NARRATE_TEST_MUSIC_FILE ? server.url(process.env.NARRATE_TEST_MUSIC_FILE) : null
+        if (local) w.webContents.downloadURL(local)
+        else if (src && !String(src).startsWith('clicked')) w.webContents.downloadURL(src); else if (!src) finish(null)
+        else setTimeout(() => finish(null), 20000)
+      }, 4000))
+    })
   })
   // Editing tools that make a new file in the project's media/ with ffmpeg. All local and free; the source is never changed.
   const inProject = (dir: string) => { if (!dir.startsWith(RECORDINGS) || !existsSync(join(dir, 'events.json'))) throw new Error('not a recording folder') }

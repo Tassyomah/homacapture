@@ -397,6 +397,14 @@ export function Editor({ project }: { project: Project }) {
     const m = await pickMedia('music'); if (!m) return
     apply((e) => ({ ...e, music: { file: m.file, name: m.name, volume: e.music?.volume ?? 0.3, duck: e.music?.duck ?? true } }))
   }
+  const [browsing, setBrowsing] = useState(false)
+  const browseMusic = async () => {
+    setBrowsing(true)
+    try {
+      const m = await window.narrate.browseMusic(project.dir)
+      if (m) { setMedia((x) => ({ ...x, [m.file]: m.url })); apply((e) => ({ ...e, music: { file: m.file, name: m.name, volume: e.music?.volume ?? 0.3, duck: e.music?.duck ?? true } })) }
+    } finally { setBrowsing(false) }
+  }
   // Voiceover from typed text with one of the Mac's own voices, placed at the playhead.
   const [voiceList, setVoiceList] = useState<{ name: string; lang: string }[]>([])
   const [vo, setVo] = useState<{ text: string; voice: string; busy: boolean }>({ text: '', voice: 'Samantha', busy: false })
@@ -1172,11 +1180,12 @@ export function Editor({ project }: { project: Project }) {
     if (shownPanel === 'audio') return <>
       <h3 className="drawer-title">Audio</h3>
       <div className="control"><div className="lbl"><span>Music</span>{music && <span>{music.name}</span>}</div>
-        {!music ? <button onClick={addMusic}><IconMusic size={15} />Add music</button> : <>
+        <button className="wide" disabled={browsing} onClick={() => void browseMusic()}><IconMusic size={15} />{browsing ? 'Pick a track, then press Download…' : 'Browse free music (Pixabay)'}</button>
+        {!music ? <button onClick={addMusic}><IconUpload size={15} />Add music from this Mac</button> : <>
           {slider('Music volume', `${Math.round(music.volume * 100)}%`, 0.05, 1, 0.05, music.volume, (v) => setMusic({ volume: v }))}
           {seg(music.duck, [[true, 'Dips when you talk'], [false, 'Same level']], (v) => setMusic({ duck: v }))}
-          <div className="row-btns"><button onClick={addMusic}>Change</button><button className="danger" onClick={() => apply((e) => ({ ...e, music: null }))}><IconTrash size={15} />Remove</button></div></>}
-        <span className="note">Use music you have the rights to; the YouTube Audio Library is safe.</span></div>
+          <div className="row-btns"><button onClick={addMusic}>Change from this Mac</button><button className="danger" onClick={() => apply((e) => ({ ...e, music: null }))}><IconTrash size={15} />Remove</button></div></>}
+        <span className="note">Pixabay music is free to use with no credit needed. Some tracks can still get a YouTube copyright claim (it happened on HomaPod EP1); the YouTube Audio Library is the safest for YouTube.</span></div>
       <div className="control"><div className="lbl"><span>Your voice over the video</span></div>
         <button className="wide rec" disabled={!!asset} onClick={() => openRecorder(playheadSrc)}><IconMicrophone size={16} />Record voiceover at {fmt(srcToOut(kept, playheadSrc))}</button>
         <span className="note">The video plays while you talk. Your take lands on the timeline here and the video's sound dips under it.</span></div>

@@ -416,6 +416,8 @@ export interface NarrateApi {
   pathForFile(file: File): string
   /** Add a music track or a B-roll picture/clip: file picker, copied into <project>/media. null = cancelled. */
   addMedia(dir: string, kind: 'music' | 'broll' | 'image'): Promise<MediaFile | null>
+  /** Pixabay's free music page in a window; the track downloaded there comes back saved in the project. null = closed. */
+  browseMusic(dir: string): Promise<MediaFile | null>
   /** Cut the speaker out (screen.cutout.webm) for Remove / blur background. Progress via onRecorderEvent 'matting'. */
   matteProject(dir: string): Promise<Project>
   /** The computer's own voices for voiceovers (macOS), and a spoken file made from text into the project's media/. */
