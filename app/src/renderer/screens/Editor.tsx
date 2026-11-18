@@ -90,8 +90,50 @@ export function Editor({ project }: { project: Project }) {
   const [hoverInfo, setHoverInfo] = useState<string | null>(null)
   const [strip, setStrip] = useState<{ strip: string; frames: number; aspect: number; wave: string | null } | null>(null)
   useEffect(() => { void window.narrate.timelineStrip(project.dir).then(setStrip).catch(() => {}) }, [project.dir])
+  // 4K / HEVC / HDR videos play from a light 1080p copy in the editor (made once, in the background); exports use the original.
+  const [proxy, setProxy] = useState<string | null>(null)
+  useEffect(() => { void window.narrate.previewProxy(project.dir).then(setProxy).catch(() => {}) }, [project.dir])
   const [exporting, setExporting] = useState(false)
   const [tlScale, setTlScale] = useState(1)
+  // ---- Resizable layout (CapCut-style): drag the edge of the left panel, the right panel or the timeline. Remembered on
+  // this Mac; double-click an edge to put it back. Everything inside reflows: the preview fits the space left.
+  const LAYOUT_DEFAULT = { drawer: 268, inspector: 292, timeline: 0 }   // timeline 0 = automatic height
+  const [lay, setLay] = useState<{ drawer: number; inspector: number; timeline: number }>(() => {
+    try { return { ...LAYOUT_DEFAULT, ...JSON.parse(localStorage.getItem('hc.layout') ?? '{}') } } catch { return LAYOUT_DEFAULT }
+  })
+  useEffect(() => { try { localStorage.setItem('hc.layout', JSON.stringify(lay)) } catch { /* private storage */ } }, [lay])
+  const topRef = useRef<HTMLDivElement>(null)
+  const resetLayout = (k: keyof typeof LAYOUT_DEFAULT) => setLay((l) => ({ ...l, [k]: LAYOUT_DEFAULT[k] }))
+  const startResize = (e: React.PointerEvent, k: keyof typeof LAYOUT_DEFAULT) => {
+    e.preventDefault()
+    const el = e.currentTarget as HTMLElement
+    try { el.setPointerCapture(e.pointerId) } catch { /* synthetic */ }
+    const x0 = e.clientX, y0 = e.clientY, start = { ...lay }
+    const top = topRef.current?.getBoundingClientRect()
+    const tlNow = (document.querySelector('.tl') as HTMLElement | null)?.getBoundingClientRect().height ?? 220
+    document.body.classList.add(k === 'timeline' ? 'resizing-h' : 'resizing-v')
+    const move = (ev: PointerEvent) => {
+      const W = top?.width ?? window.innerWidth, minStage = 360
+      if (k === 'drawer') setLay((l) => ({ ...l, drawer: Math.round(Math.max(200, Math.min(W - 62 - l.inspector - minStage, start.drawer + ev.clientX - x0, 640))) }))
+      if (k === 'inspector') setLay((l) => ({ ...l, inspector: Math.round(Math.max(240, Math.min(W - 62 - l.drawer - minStage, start.inspector - (ev.clientX - x0), 640))) }))
+      if (k === 'timeline') setLay((l) => ({ ...l, timeline: Math.round(Math.max(110, Math.min(window.innerHeight * 0.7, (start.timeline || tlNow) - (ev.clientY - y0)))) }))
+    }
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.classList.remove('resizing-h', 'resizing-v') }
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+  }
+  // a smaller window never leaves the preview squeezed out: the side panels give way first
+  useEffect(() => {
+    const fit = () => {
+      const W = topRef.current?.getBoundingClientRect().width ?? window.innerWidth
+      setLay((l) => {
+        const room = W - 62 - 360, over = l.drawer + l.inspector - room
+        if (over <= 0) return l
+        const d = Math.max(200, l.drawer - Math.ceil(over / 2)), i = Math.max(240, l.inspector - (over - (l.drawer - d)))
+        return { ...l, drawer: d, inspector: i }
+      })
+    }
+    fit(); window.addEventListener('resize', fit); return () => window.removeEventListener('resize', fit)
+  }, [])
   const [working, setWorking] = useState<string | null>(null)
   const [menu, setMenu] = useState<{ it: Item; x: number; y: number } | null>(null)
   const [brand, setBrandState] = useState<BrandKit>({ colors: ['#FB8B73', '#6E71E8', '#14140F', '#EFEEE8'], font: 'Aeonik', handle: '', logo: null })
@@ -166,7 +208,9 @@ export function Editor({ project }: { project: Project }) {
     setTstatus({ kind: 'running', message: 'Starting the speech engine…' })
     window.narrate.transcribeProject(project.dir).then((t) => { setTranscript(t); setTstatus({ kind: 'idle' }) })
       .catch((e: Error) => setTstatus({ kind: 'error', message: e.message }))
-  }
+  }  // The script writes itself: a video with a voice and no script yet gets one in the background as soon as it opens.
+  useEffect(() => { if (project.assets.mic && !project.transcript) transcribe() }, [])
+
   // Smart edit (uploads): a first edit made on request, never on its own: cuts, punch-ins, text pops, captions. Running it
   // again replaces only what it made itself (ids "auto-…") and keeps the user's own additions. Undo takes it all back.
   const runAutoEdit = (tr: Transcript) => {
@@ -221,13 +265,14 @@ export function Editor({ project }: { project: Project }) {
   // Voice clean-up (spec §16): produces mic.clean.wav beside the raw track and switches the project to it.
   const [micClean, setMicClean] = useState<string | null>(project.assets.micClean)
   const [enhancing, setEnhancing] = useState<string>('idle')
-  const enhance = () => {
+  // auto = the clean-up that runs by itself when a video first opens: if it fails it says nothing (the voice as recorded stays).
+  const enhance = (auto = false) => {
     setEnhancing('Measuring…')
-    window.narrate.enhanceAudio(project.dir).then((p) => { setMicClean(p.assets.micClean); project.assets.micClean = p.assets.micClean; setEnhancing('idle'); set('voice', 'clean') })
-      .catch((e: Error) => { setEnhancing('idle'); alert(e.message) })
+    window.narrate.enhanceAudio(project.dir).then((p) => { setMicClean(p.assets.micClean); project.assets.micClean = p.assets.micClean; setEnhancing('idle'); if (p.assets.micClean) set('voice', 'clean') })
+      .catch((e: Error) => { setEnhancing('idle'); if (!auto) alert(e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')) })
   }
   // Clean the voice automatically the first time a recording with a mic opens; the raw track stays one click away.
-  useEffect(() => { if (project.assets.mic && !project.assets.micClean) enhance() }, [])
+  useEffect(() => { if (project.assets.mic && !project.assets.micClean) enhance(true) }, [])
   useEffect(() => window.narrate.onRecorderEvent((e) => { if (e.event === 'enhancing' && e.step !== 'done') setEnhancing(e.step === 'measure' ? 'Measuring…' : 'Cleaning…') }), [])
   // Content (add-on §13): copy from the transcript + chapters; thumbnails rendered from the polished master on request.
   const [thumbs, setThumbs] = useState<{ path: string; url: string }[]>([])
@@ -255,8 +300,8 @@ export function Editor({ project }: { project: Project }) {
   const onReject = (p: Proposal) => apply((e) => ({ ...e, director: { ...e.director, rejected: [...e.director.rejected, p.id], accepted: e.director.accepted.filter((id) => id !== p.id) } }))
   const onDismiss = () => apply((e) => ({ ...e, director: { ...e.director, dismissedAt: new Date().toISOString() } }))
 
-  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, micClean, media, cutout }, events: project.events, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, inserts: shownInserts, transcript }),
-    [project, micClean, media, cutout, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, shownInserts, transcript])
+  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, screen: proxy ?? project.assets.screen, micClean, media, cutout }, events: project.events, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, inserts: shownInserts, transcript }),
+    [project, proxy, micClean, media, cutout, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, shownInserts, transcript])
   const size = compositionSize(props)
   const kept = useMemo(() => keptRanges(project.events, cuts, speeds, shownInserts), [project.events, cuts, speeds, shownInserts])
   const pieces = useMemo(() => piecesOf(kept, splits), [kept, splits])
@@ -285,6 +330,13 @@ export function Editor({ project }: { project: Project }) {
     setCuts(() => next); return true
   }
   const restore = (i: number) => setCuts((c) => c.filter((_, k) => k !== i))
+  const trimAtPlayhead = (side: 'left' | 'right') => {
+    const p = piecesOf(keptRanges(project.events, cuts, speeds, shownInserts), splits).find((r) => !r.ins && playheadSrc >= r.start - 0.01 && playheadSrc < r.end)
+    if (!p) return
+    const [a, b] = side === 'left' ? [p.start, playheadSrc] : [playheadSrc, p.end]
+    if (b - a < 0.05) return
+    if (addCut(a, b) && side === 'right') seekSrc(Math.max(0, a - 0.01))
+  }
 
   // Manual zoom (spec §26), speed (§40), privacy blur (§49): over a selected stretch, or a default length at the playhead.
   // Whatever is created becomes the selection, so its settings open in the inspector straight away.
@@ -498,6 +550,8 @@ export function Editor({ project }: { project: Project }) {
         if (k === 'b' && !asset) { e.preventDefault(); splitHere() }
         if (k === 'd' && selItem && !asset) { e.preventDefault(); void duplicate(selItem) }
         if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo() }
+        if (k === '=' || k === '+') { e.preventDefault(); setTlScale((z) => Math.min(80, z * 1.5)) }
+        if (k === '-') { e.preventDefault(); setTlScale((z) => Math.max(1, z / 1.5)) }
         if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo() }
         return
       }
@@ -512,7 +566,10 @@ export function Editor({ project }: { project: Project }) {
       else if (range && !asset && k === 't') rangeAction('text')
       else if (range && !asset && k === 'r') rangeAction('broll')
       else if (range && !asset && k === 'k') rangeAction('sticker')
+      else if (!range && !asset && k === 'z' && e.shiftKey) setTlScale(1)          // fit the whole video
       else if (!range && !asset && k === 'z') zoomHere()
+      // CapCut-style quick trims: Q removes the piece before the playhead, W the piece after it (up to the nearest split or cut)
+      else if (!range && (k === 'q' || k === 'w')) { e.preventDefault(); trimAtPlayhead(k === 'q' ? 'left' : 'right') }
       else if (!range && !asset && k === 'b') maskHere()
     }
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h)
@@ -1130,7 +1187,7 @@ export function Editor({ project }: { project: Project }) {
         <button disabled={!vo.text.trim() || vo.busy} onClick={addVoice}><IconMicrophone size={15} />{vo.busy ? 'Making the voice…' : `Add at ${fmt(srcToOut(kept, playheadSrc))}`}</button></div>}
       {project.assets.mic && <div className="control"><div className="lbl"><span>Your voice</span></div>
         {micClean ? seg(config.voice, [['clean', 'Cleaned'], ['raw', 'As recorded']], (v) => { set('voice', v); if (config.voiceFx !== 'none') void chooseVoice(config.voiceFx, v === 'clean') })
-          : <button disabled={enhancing !== 'idle'} onClick={enhance}>{enhancing === 'idle' ? 'Clean up voice' : enhancing}</button>}
+          : <button disabled={enhancing !== 'idle'} onClick={() => enhance()}>{enhancing === 'idle' ? 'Clean up voice' : enhancing}</button>}
         {slider('Voice volume', config.micVolume === 0 ? 'Muted' : `${Math.round(config.micVolume * 100)}%`, 0, 1.5, 0.05, config.micVolume, (v) => set('micVolume', v))}</div>}
       {project.assets.mic && <div className="control"><div className="lbl"><span>Voice changer</span></div>
         <div className="toggles">{VOICE_FX.map(([fx, l]) => <button key={fx} disabled={!!working} className={config.voiceFx === fx ? 'on' : ''} aria-pressed={config.voiceFx === fx} onClick={() => void chooseVoice(fx)}>{l}</button>)}</div>
@@ -1232,7 +1289,7 @@ export function Editor({ project }: { project: Project }) {
   const onClipNow = rangeAt(playheadSrc)
 
   return (
-    <div className="ed" onPointerDown={() => { if (menu) setMenu(null) }}>
+    <div className="ed" data-tlh={lay.timeline ? '' : undefined} style={lay.timeline ? { '--tl-h': `${lay.timeline}px` } as React.CSSProperties : undefined} onPointerDown={() => { if (menu) setMenu(null) }}>
       <header className="ed-head">
         <div className="versions">
           <button className={'ver' + (selected === 'master' ? ' on' : '')} onClick={() => { setSelected('master'); setSel(null) }} title="Your full edit. Versions start from it.">
@@ -1253,11 +1310,13 @@ export function Editor({ project }: { project: Project }) {
         <button className="primary" onClick={() => { setSel(null); setExporting(true) }}><IconDownload size={16} />Export</button>
       </header>
       {asset && <p className="ed-note">Editing <b>{asset.name}</b> · {ASSET_LABEL[asset.kind]}. {asset.note} Changes here leave the master untouched.</p>}
-      <div className="ed-top">
+      <div className="ed-top" ref={topRef} style={{ gridTemplateColumns: `62px ${lay.drawer}px minmax(0, 1fr) ${lay.inspector}px` }}>
         <nav className="rail">{panels.filter((t) => t.show).map((t) => (
           <button key={t.id} className={shownPanel === t.id ? 'on' : ''} onClick={() => go(t.id)}>
             <t.Icon size={20} stroke={1.6} /><span>{t.label}</span>{!!t.badge && <i className="badge">{t.badge}</i>}</button>))}</nav>
         <aside className="drawer">{addPanel()}</aside>
+        <i className="split-v" style={{ left: 62 + lay.drawer }} onPointerDown={(e) => startResize(e, 'drawer')} onDoubleClick={() => resetLayout('drawer')} data-tip="Drag to resize · double-click to reset" />
+        <i className="split-v" style={{ right: lay.inspector }} onPointerDown={(e) => startResize(e, 'inspector')} onDoubleClick={() => resetLayout('inspector')} />
         <div className="stage">
           {recFor && <VoiceRecorder startLabel={fmt(srcToOut(kept, recFor.t))} replacing={!!recFor.replace} onPlay={recPlay} onStop={recStop} onSave={recSave} onClose={() => setRecFor(null)} />}
           <Player ref={playerRef} component={Screencast} inputProps={props} durationInFrames={frames} fps={FPS} acknowledgeRemotionLicense
@@ -1270,6 +1329,7 @@ export function Editor({ project }: { project: Project }) {
         </div>
         <aside className="inspector"><div className="pane">{selItem ? itemPane(selItem) : exporting ? exportPane() : videoPane()}</div></aside>
       </div>
+      <i className="split-h" onPointerDown={(e) => startResize(e, 'timeline')} onDoubleClick={() => resetLayout('timeline')} />
       <div className="transport">
         <button className="play" aria-label={playing ? 'Pause' : 'Play'} data-tip={`${playing ? 'Pause' : 'Play'} · Space`} onClick={() => playerRef.current?.toggle()}>
           {playing ? <IconPlayerPause size={18} /> : <IconPlayerPlay size={18} />}</button>
@@ -1286,11 +1346,11 @@ export function Editor({ project }: { project: Project }) {
         {pendingCount > 0 && <button className="suggest" onClick={() => go('smart')} data-tip="Pauses, filler words and slow stretches worth tidying">
           <IconSparkles size={15} />{pendingCount} suggestion{pendingCount === 1 ? '' : 's'}</button>}
         <div className="tlzoom"><button className="icon" aria-label="Zoom timeline out" onClick={() => setTlScale((z) => Math.max(1, z / 1.5))}><IconZoomOut size={16} /></button>
-          <button className="icon" aria-label="Zoom timeline in" onClick={() => setTlScale((z) => Math.min(30, z * 1.5))}><IconZoomIn size={16} /></button></div>
+          <button className="icon" aria-label="Zoom timeline in" onClick={() => setTlScale((z) => Math.min(80, z * 1.5))}><IconZoomIn size={16} /></button></div>
       </div>
       <Timeline ev={project.events} cuts={cuts} ranges={kept} splits={splits} chapters={asset ? [] : chapters} highlights={asset ? [] : highlights} zooms={zooms} speeds={speeds} masks={masks} texts={texts}
         overlays={overlays} stickers={stickers} music={music} voiceovers={voiceovers} inserts={shownInserts} transcript={transcript} playhead={playheadSrc} range={range} selected={selItem} editable={!asset} scale={tlScale}
-        onSeek={seekSrc} onRange={setRange} onSelect={pick} onAction={rangeAction} onDragStart={dragStart} onDragItem={dragItem} onDragEnd={dragEnd} onMenu={(it, x, y) => setMenu({ it, x, y })} onHover={setHoverInfo} strip={strip} />
+        onSeek={seekSrc} onRange={setRange} onSelect={pick} onAction={rangeAction} onDragStart={dragStart} onDragItem={dragItem} onDragEnd={dragEnd} onMenu={(it, x, y) => setMenu({ it, x, y })} onZoom={setTlScale} onHover={setHoverInfo} strip={strip} />
       {menu && <div className="ctx" style={{ left: menu.x, top: menu.y }} onPointerDown={(e) => e.stopPropagation()}>
         <button onClick={() => { setMenu(null); splitHere() }}>Split at playhead<kbd>⌘B</kbd></button>
         {menu.it.kind !== 'cut' && menu.it.kind !== 'speed' && menu.it.kind !== 'mask' && <button onClick={() => { const it = menu.it; setMenu(null); void duplicate(it) }}>Duplicate<kbd>⌘D</kbd></button>}

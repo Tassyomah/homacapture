@@ -432,6 +432,8 @@ export interface NarrateApi {
   voiceChange(dir: string, fx: Exclude<VoiceFx, 'none'>, clean: boolean): Promise<MediaFile>
   /** Frames and sound shape for the timeline. */
   timelineStrip(dir: string): Promise<{ strip: string; frames: number; aspect: number; wave: string | null }>
+  /** A light 1080p preview copy for 4K / HEVC / HDR videos (made once); null when the original plays fine. Preview only. */
+  previewProxy(dir: string): Promise<string | null>
   getBrand(): Promise<BrandKit>
   setBrand(b: BrandKit): Promise<BrandKit>
   pickBrandLogo(): Promise<string | null>

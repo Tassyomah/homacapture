@@ -374,7 +374,10 @@ def enhance(args):
     with open(ev_path) as fh: ev = json.load(fh)
     if not ev["files"].get("mic"):
         emit(event="error", code="no_mic", message="This recording has no microphone track."); sys.exit(3)
-    src = os.path.join(outdir, ev["files"]["mic"]); dst = os.path.join(outdir, "mic.clean.wav"); tmp = dst + ".tmp.wav"
+    src = os.path.join(outdir, ev["files"]["mic"]); dst = os.path.join(outdir, "mic.clean.wav"); tmp = dst + f".{os.getpid()}.tmp.wav"
+    # already cleaned (another run finished first): nothing to do
+    if os.path.exists(dst) and os.path.getmtime(dst) >= os.path.getmtime(src) and os.path.getsize(dst) > 0:
+        emit(event="ready", out=outdir, file="mic.clean.wav", measured=None); return
     emit(event="enhancing", step="measure")
     chain = ("highpass=f=80:poles=2,"
              "bandreject=f=50:width_type=q:w=30,bandreject=f=60:width_type=q:w=30,"

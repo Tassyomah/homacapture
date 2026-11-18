@@ -844,3 +844,22 @@ button.wide.rec { background: var(--coral); color: var(--ink); }
 .ask-res .spin { animation: spin 0.9s linear infinite; }
 .ask-lines { margin: 0; padding-left: 16px; font-size: 12px; color: var(--muted); line-height: 1.5; }
 .ask-undo { align-self: flex-start; font-size: 12px; padding: 5px 10px; display: inline-flex; align-items: center; gap: 5px; }
+
+/* Resizable layout: drag the edges of the side panels and the top of the timeline (CapCut-style). */
+.ed-top { position: relative; }
+.split-v { position: absolute; top: 0; bottom: 0; width: 10px; margin: 0 -5px; z-index: 8; cursor: col-resize; }
+.split-v::after, .split-h::after { content: ""; position: absolute; background: var(--coral); opacity: 0; transition: opacity .12s; }
+.split-v::after { top: 0; bottom: 0; left: 4px; width: 2px; }
+.split-v:hover::after, .resizing-v .split-v:active::after { opacity: 1; }
+.split-h { position: relative; display: block; height: 10px; margin: -5px 0; z-index: 8; cursor: row-resize; flex: none; }
+.split-h::after { left: 0; right: 0; top: 4px; height: 2px; }
+.split-h:hover::after, .resizing-h .split-h:active::after { opacity: 1; }
+body.resizing-v, body.resizing-v * { cursor: col-resize !important; user-select: none !important; }
+body.resizing-h, body.resizing-h * { cursor: row-resize !important; user-select: none !important; }
+body.resizing-v iframe, body.resizing-h iframe, body.resizing-v video, body.resizing-h video { pointer-events: none; }
+.ed[data-tlh] .tl { height: var(--tl-h); max-height: none; }
+/* contents reflow with the panel width */
+.tpl-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+.drawer .looks { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
+.drawer .gallery { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.capstyles { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { IconEyeOff, IconLetterT, IconMoodSmile, IconPhoto, IconPlayerTrackNext, IconScissors, IconX, IconZoomIn } from '@tabler/icons-react'
 import type { Chapter, Cut, InsertClip, ManualZoom, Mask, MusicTrack, Overlay, Sticker, RecordingEvents, SpeedRange, TextPop, Transcript, Voiceover } from '../../shared/types'
 import { outToSrc, playLen, srcToOut, type Range } from '../../video/ranges'
@@ -32,7 +32,7 @@ export function piecesOf(ranges: Range[], splits: number[]): Range[] {
  * stays in place when the cut changes.
  */
 export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlights = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, voiceovers = [], inserts = [], transcript, playhead, range, selected, editable, scale = 1,
-  onSeek, onRange, onSelect, onAction, onDragStart, onDragItem, onDragEnd, onMenu, onHover, strip }: {
+  onSeek, onRange, onSelect, onAction, onDragStart, onDragItem, onDragEnd, onMenu, onZoom, onHover, strip }: {
   ev: RecordingEvents; cuts: Cut[]; ranges: Range[]; splits?: number[]; chapters?: Chapter[]; highlights?: [number, number][]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[]
   transcript?: Transcript | null; playhead: number; range: [number, number] | null; selected: Item | null
   /** False while editing a derived version: only cuts belong to it, so the other tracks are read-only. */
@@ -42,6 +42,8 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
   onSeek: (tSrc: number) => void; onRange: (r: [number, number] | null) => void; onSelect: (it: Item | null) => void; onAction: (a: RangeAction) => void
   onDragStart: (it: Item) => void; onDragItem: (it: Item, mode: DragMode, tOut: number) => void; onDragEnd: (it: Item, mode: DragMode, tOut: number) => void
   onMenu: (it: Item, x: number, y: number) => void
+  /** Cmd/Ctrl + scroll or a trackpad pinch zooms the timeline around the pointer (CapCut-style). */
+  onZoom?: (next: number) => void
   /** What the pointer is over, for the status line. */
   onHover: (text: string | null) => void
   strip?: { strip: string; frames: number; aspect: number; wave: string | null } | null
@@ -63,12 +65,39 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
     const ro = new ResizeObserver(() => setAreaW(a.clientWidth)); ro.observe(a); setAreaW(a.clientWidth)
     return () => ro.disconnect()
   }, [])
-  // Zoomed in: the view follows the playhead.
+  // Zoomed in: the view follows the playhead as it moves (but a zoom keeps the spot under the pointer still).
+  const lastHead = useRef(playhead)
   useEffect(() => {
+    if (lastHead.current === playhead) return
+    lastHead.current = playhead
     const v = scroller.current, a = area.current; if (!v || !a || scale <= 1) return
     const x = (out(playhead) / total) * a.clientWidth
     if (x < v.scrollLeft + 20 || x > v.scrollLeft + v.clientWidth - 20) v.scrollLeft = Math.max(0, x - v.clientWidth / 3)
   }, [playhead, scale, total])
+  // Zoom around the pointer: remember which moment was under it, and put that moment back under it after the zoom.
+  const anchor = useRef<{ frac: number; px: number } | null>(null)
+  useLayoutEffect(() => {
+    const v = scroller.current, a = area.current, k = anchor.current; if (!v || !a || !k) return
+    anchor.current = null
+    v.scrollLeft = Math.max(0, k.frac * a.clientWidth - k.px)
+  }, [scale])
+  useEffect(() => {
+    const v = scroller.current; if (!v) return
+    const wheel = (e: WheelEvent) => {
+      const a = area.current; if (!a) return
+      if (e.ctrlKey || e.metaKey) {          // pinch on a trackpad arrives as ctrl + wheel
+        e.preventDefault()
+        if (!onZoom) return
+        const box = a.getBoundingClientRect(), vb = v.getBoundingClientRect()
+        anchor.current = { frac: Math.max(0, Math.min(1, (e.clientX - box.left) / box.width)), px: e.clientX - vb.left }
+        onZoom(Math.max(1, Math.min(80, scale * Math.exp(Math.max(-0.2, Math.min(0.2, -e.deltaY * (e.ctrlKey && !e.metaKey ? 0.012 : 0.004)))))))   // at most ×1.22 per notch
+      } else if (scale > 1 && Math.abs(e.deltaY) > Math.abs(e.deltaX)) {   // a plain scroll moves along the timeline
+        e.preventDefault(); v.scrollLeft += e.deltaY
+      }
+    }
+    v.addEventListener('wheel', wheel, { passive: false })
+    return () => v.removeEventListener('wheel', wheel)
+  }, [scale, onZoom])
 
   const outAt = (clientX: number) => {
     const box = area.current!.getBoundingClientRect()
@@ -193,7 +222,7 @@ export function Timeline({ ev, cuts, ranges, splits = [], chapters = [], highlig
             const from = pieces.slice(0, i).reduce((s, q) => s + playLen(q), 0)
             return <div key={'k' + i} className={'blk kept' + (p.ins ? ' ins' : '') + on(x)} style={{ left: `${(from / total) * 100}%`, width: `${(playLen(p) / total) * 100}%` }} data-item={it(x)}
               data-info={`${p.ins ? p.ins.name : 'Clip'} · ${fmt(playLen(p))}${p.rate !== 1 ? ` · ${p.rate}× speed` : ''} · click to edit`}>
-              {!p.ins && film(p)}
+              {!p.ins && film(p)}{!p.ins && !strip && i === 0 && <span className="blk-name">Loading pictures…</span>}
               {p.ins && <span className="blk-name">{p.ins.name}</span>}{p.rate !== 1 && <span className="blk-name">{p.rate}×</span>}{ends(true)}</div>
           })}
           {cuts.map((c, i) => <div key={'c' + i} className={'blk joint' + on({ kind: 'cut', i })} style={{ left: pct(Math.min(...c)) }}

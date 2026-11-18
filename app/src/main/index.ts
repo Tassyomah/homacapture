@@ -1,7 +1,7 @@
 import { app, BrowserWindow, dialog, ipcMain, shell, screen, globalShortcut, clipboard } from 'electron'
 import { join, resolve, basename, extname } from 'node:path'
 import { execFileSync, spawn } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import type { Analysis, BrandKit, CaptureArea, ClipOp, Cut, Devices, ExportFormat, ExportProgress, MasterExtras, MediaFile, Project, ProjectFile, RecorderEvent, RecordingEvents, RenderConfig, StartOptions, Transcript, UnfinishedRecording, VoiceFx } from '../shared/types'
@@ -281,7 +281,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('project:enhance', async (_e, dir: string): Promise<Project> => {
     if (!dir.startsWith(RECORDINGS) || !existsSync(join(dir, 'events.json'))) throw new Error('not a recording folder')
-    await recorder.enhance(dir)
+    await once(`enhance:${dir}`, () => recorder.enhance(dir))
     const p = loadProject(dir); if (!p) throw new Error('project not found')
     return p
   })
@@ -362,6 +362,21 @@ app.whenReady().then(async () => {
     for (let i = 2; existsSync(join(dir, 'media', name)); i++) name = `${stem}-${i}${ext}`
     return name
   }
+  // One run of each background job per project: opening the editor twice (or pressing a button while the automatic run is
+  // going) joins the run already under way instead of starting a second copy that fights it for the same files.
+  const jobs = new Map<string, Promise<unknown>>()
+  const once = <T,>(key: string, fn: () => Promise<T>): Promise<T> => {
+    const running = jobs.get(key) as Promise<T> | undefined
+    if (running) return running
+    const p = fn().finally(() => jobs.delete(key)); jobs.set(key, p); return p
+  }
+  const probeJson = (file: string): { codec?: string; w?: number; h?: number; trc?: string; prim?: string; space?: string } => {
+    const probe = findFfmpeg()?.replace(/ffmpeg(\.exe)?$/, (m) => m.replace('ffmpeg', 'ffprobe'))
+    try {
+      const st = JSON.parse(execFileSync(probe!, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=codec_name,width,height,color_transfer,color_primaries,color_space', '-of', 'json', file], { encoding: 'utf8' })).streams[0]
+      return { codec: st.codec_name, w: st.width, h: st.height, trc: st.color_transfer, prim: st.color_primaries, space: st.color_space }
+    } catch { return {} }
+  }
   const ffmpegRun = (args: string[], failure: string) => new Promise<void>((res, rej) => {
     const ff = findFfmpeg(); if (!ff) return rej(new Error('ffmpeg is needed for this.'))
     const p = spawn(ff, ['-v', 'error', '-y', ...args]); let err = ''
@@ -392,11 +407,50 @@ app.whenReady().then(async () => {
     const ev = eventsOf(dir), frames = Math.max(8, Math.min(90, Math.ceil(ev.videoDuration / 2)))
     mkdirSync(join(dir, 'media'), { recursive: true })
     const stripFile = join(dir, 'media', '.strip.jpg'), waveFile = join(dir, 'media', '.wave.png')
-    // Short videos read every frame; long ones only keyframes, so the strip stays quick.
-    if (!existsSync(stripFile)) await ffmpegRun([...(ev.videoDuration > 600 ? ['-skip_frame', 'nokey'] : []), '-i', join(dir, ev.files.screen), '-vf', `fps=${(frames / Math.max(0.1, ev.videoDuration)).toFixed(4)},scale=-2:80,tile=${frames}x1`, '-frames:v', '1', '-q:v', '5', stripFile], 'The timeline pictures could not be made.')
-    if (ev.files.mic && !existsSync(waveFile)) await ffmpegRun(['-i', join(dir, ev.files.mic), '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=2400x48:colors=0xFFFFFF:scale=sqrt', '-frames:v', '1', waveFile], 'wave').catch(() => {})
+    await once(`strip:${dir}`, async () => {
+      if (!existsSync(stripFile)) {
+        // One frame per thumbnail, each found by a fast seek (never decoding the whole video: a 10-minute 4K file used to
+        // take minutes). The light preview copy is used when it exists. Written to a temp name, then moved into place.
+        await ensureProxy(dir).catch(() => null)       // big videos: thumbnails come from the light copy (seconds, not minutes)
+        const proxy = join(dir, 'media', '.proxy.mp4'), src = existsSync(proxy) ? proxy : join(dir, ev.files.screen)
+        const tmp = join(dir, 'media', `.strip-${process.pid}`); rmSync(tmp, { recursive: true, force: true }); mkdirSync(tmp)
+        const step = ev.videoDuration / frames
+        const one = (k: number) => ffmpegRun(['-ss', Math.min(Math.max(0, ev.videoDuration - 0.2), (k + 0.5) * step).toFixed(3), '-i', src, '-frames:v', '1', '-vf', 'scale=-2:80', '-q:v', '5', join(tmp, `${String(k).padStart(3, '0')}.jpg`)], 'thumb').catch(() => {})
+        for (let k = 0; k < frames; k += 4) await Promise.all([k, k + 1, k + 2, k + 3].filter((x) => x < frames).map(one))
+        // a thumbnail that could not be read repeats the one before, so the strip never shows a black hole
+        for (let k = 0; k < frames; k++) {
+          const f = join(tmp, `${String(k).padStart(3, '0')}.jpg`)
+          if (!existsSync(f)) { const prev = join(tmp, `${String(Math.max(0, k - 1)).padStart(3, '0')}.jpg`); if (existsSync(prev)) copyFileSync(prev, f) }
+        }
+        const out = join(dir, 'media', `.strip-${process.pid}.jpg`)
+        await ffmpegRun(['-framerate', '1', '-i', join(tmp, '%03d.jpg'), '-vf', `tile=${frames}x1`, '-frames:v', '1', '-q:v', '5', out], 'The timeline pictures could not be made.')
+        renameSync(out, stripFile); rmSync(tmp, { recursive: true, force: true })
+      }
+      if (ev.files.mic && !existsSync(waveFile)) await ffmpegRun(['-i', join(dir, ev.files.mic), '-filter_complex', 'aformat=channel_layouts=mono,showwavespic=s=2400x48:colors=0xFFFFFF:scale=sqrt', '-frames:v', '1', waveFile], 'wave').catch(() => {})
+    })
     return { strip: server.url(stripFile), frames, aspect: ev.display.width / Math.max(1, ev.display.height), wave: existsSync(waveFile) ? server.url(waveFile) : null }
   })
+  // A light preview copy (1080p H.264, a keyframe every second) for videos the editor can't play smoothly: 4K, HEVC/ProRes,
+  // HDR. Preview only — exports always read the original. Same colour description as the original, so it looks the same.
+  const ensureProxy = async (dir: string): Promise<string | null> => {
+    const ev = eventsOf(dir), src = join(dir, ev.files.screen), dest = join(dir, 'media', '.proxy.mp4')
+    if (existsSync(dest)) return server.url(dest)
+    const pr = probeJson(src)
+    const big = (pr.w ?? ev.display.width) * (pr.h ?? ev.display.height) > 1920 * 1088
+    if (!big && !/hevc|prores/i.test(pr.codec ?? '') && !/arib-std-b67|smpte2084/.test(pr.trc ?? '')) return null
+    return once(`proxy:${dir}`, async () => {
+      mkdirSync(join(dir, 'media'), { recursive: true })
+      const tmp = join(dir, 'media', `.proxy-${process.pid}.mp4`)
+      const fit = (pr.w ?? 16) >= (pr.h ?? 9) ? 'scale=-2:1080' : 'scale=1080:-2'
+      const tags = [...(pr.prim ? ['-color_primaries', pr.prim] : []), ...(pr.trc ? ['-color_trc', pr.trc] : []), ...(pr.space ? ['-colorspace', pr.space] : [])]
+      const fps = Math.round(ev.fps || 30) || 30
+      try { await ffmpegRun(['-hwaccel', 'videotoolbox', '-i', src, '-vf', fit, '-c:v', 'h264_videotoolbox', '-b:v', '8M', '-g', String(fps), ...tags, '-an', '-movflags', '+faststart', tmp], 'proxy') }
+      catch { await ffmpegRun(['-i', src, '-vf', fit, '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '21', '-g', String(fps), ...tags, '-an', '-movflags', '+faststart', tmp], 'The preview copy could not be made.') }
+      renameSync(tmp, dest)
+      return server.url(dest)
+    }).catch(() => null)
+  }
+  ipcMain.handle('project:proxy', async (_e, dir: string): Promise<string | null> => { inProject(dir); return ensureProxy(dir) })
   ipcMain.handle('project:process', async (_e, dir: string, op: ClipOp, start: number, end: number, source?: string): Promise<MediaFile> => {
     inProject(dir)
     const len = end - start
@@ -513,7 +567,7 @@ app.whenReady().then(async () => {
   })
   ipcMain.handle('project:matte', async (_e, dir: string): Promise<Project> => {
     if (process.platform !== 'darwin') throw new Error('Removing the background works on macOS for now.')
-    await recorder.matte(dir)
+    await once(`matte:${dir}`, () => recorder.matte(dir))
     const p = loadProject(dir); if (!p) throw new Error('project not found')
     return p
   })

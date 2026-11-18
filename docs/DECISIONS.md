@@ -103,3 +103,12 @@ Tassy: "can I integrate my Claude into HomaCapture so that as I'm editing the vi
 - **Hidden unless usable.** The "Ask Claude" rail tab only appears when the CLI is installed; signed out, it shows "Sign in to Claude" (runs `claude auth login --claudeai`, her browser confirms). Master only (hidden while a version is open).
 - Caption colour is one setting for the whole video (capColor colours highlighted key words); Claude says so when asked for a colour "from 0:20".
 - Tests: `npx tsx app/scripts/test-askclaude.ts <project>` (29 checks, no Claude call); hidden end-to-end with a stand-in CLI via `NARRATE_CLAUDE_BIN` + `NARRATE_SCREENSHOT_JS`: three prompts applied, each undone in one step, bad / unreadable / stopped / signed-out answers changed nothing, tab hidden without the CLI.
+
+## 2026-11-17 — Real-footage fixes + CapCut-style editing speed + resizable layout
+Tassy, on a 9:31 4K import: "videos freeze", the timeline was a black bar, "Could not clean the voice track", "it's impossible to edit by cutting", "I need to be able to drag the sides to shrink and expand any section", "the script should automatically pick the voice", "I need to export in 4k".
+- Preview copy: 4K / HEVC / ProRes / HDR videos get media/.proxy.mp4 (1080p H.264, keyframe every second, VideoToolbox, same colour tags), made once in the background; the editor plays it, exports read the original (4K export = Export → Quality 4K or Original).
+- Thumbnails: one fast seek per frame (from the preview copy when there is one), written to a temp name then moved; a failed frame repeats the previous one. Before: the whole video was decoded, three times at once.
+- One run per background job per project (strip, proxy, voice clean-up, cut-out); the clean-up uses a per-process temp file and skips if already done; the automatic clean-up never shows an error pop-up.
+- The script (transcript) starts by itself when a video with a voice opens.
+- Timeline: Cmd/Ctrl+scroll or pinch zooms around the pointer (≤ ×1.22 a notch, up to ×80), plain scroll moves along when zoomed, Cmd+= / Cmd+- zoom, Shift+Z fits; Q removes from the piece start to the playhead, W from the playhead to the piece end (CapCut's delete left/right); thumbnails show "Loading pictures…" until ready.
+- Layout: drag the edge of the left panel, the right panel and the top of the timeline (coral line on hover); remembered in localStorage (hc.layout); double-click resets; panels give way first when the window shrinks; galleries reflow with the panel width.
