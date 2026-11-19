@@ -82,21 +82,37 @@ export function ScriptPanel({ transcript, status, hasMic, cuts, playhead, playin
   const select = (i: number, j: number) => { setSel({ i: Math.min(i, j), j: Math.max(i, j) }); setMenu(null) }
   const clear = () => { setSel(null); setMenu(null); anchor.current = null }
   const lineOf = (i: number) => { const ln = toks[i].line, all = toks.filter((t) => t.line === ln); return [all[0].i, all[all.length - 1].i] as const }
+  // the sentence around a piece: back to just after the last . ? ! and on to the next one
+  const sentenceOf = (i: number) => {
+    const end = (t: Tok) => t.kind === 'word' && /[.?!]["')]*$/.test(t.text)
+    let a = i; while (a > 0 && !end(toks[a - 1])) a--
+    let b = i; while (b < toks.length - 1 && !end(toks[b])) b++
+    while (a < b && toks[a].kind === 'pause') a++
+    return [a, b] as const
+  }
+  const [dragOn, setDragOn] = useState(false)
   // press on a piece: select it (Shift extends); drag across pieces to select a run; a plain click also jumps there
   const down = (e: React.PointerEvent, i: number) => {
     if (e.button !== 0) return
     e.preventDefault()
     if (e.shiftKey && sel) { select(Math.min(sel.i, i), Math.max(sel.j, i)); return }
-    anchor.current = i; dragging.current = true; moved.current = false; select(i, i)
+    anchor.current = i; dragging.current = true; moved.current = false; setDragOn(true); select(i, i)
   }
   const enter = (i: number) => { if (dragging.current && anchor.current != null) { moved.current = moved.current || i !== anchor.current; select(anchor.current, i) } }
   useEffect(() => {
+    // while dragging, follow the pointer wherever it is (over gaps between words, across lines), not only word by word
+    const move = (e: PointerEvent) => {
+      if (!dragging.current) return
+      const el = document.elementFromPoint(e.clientX, e.clientY)?.closest?.('.script .w[data-i]') as HTMLElement | null
+      if (el) enter(Number(el.dataset.i))
+    }
     const up = () => {
       if (!dragging.current) return
-      dragging.current = false
+      dragging.current = false; setDragOn(false)
       if (!moved.current && anchor.current != null) onSeek(toks[anchor.current].start + 0.01)
     }
-    window.addEventListener('pointerup', up); return () => window.removeEventListener('pointerup', up)
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up)
+    return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
   }, [toks, onSeek])
   // the action bar sits under the last selected piece and scrolls with the text; it stays until you close it
   useLayoutEffect(() => {
@@ -131,6 +147,7 @@ export function ScriptPanel({ transcript, status, hasMic, cuts, playhead, playin
     <button onClick={act.play} data-tip="Play from here"><IconPlayerPlay size={14} />{inMenu && 'Play from here'}</button>
     {!selGone && <button onClick={act.broll} data-tip="B-roll over these words"><IconPhoto size={14} />{inMenu && 'B-roll over this'}</button>}
     <button onClick={act.voice} data-tip="Record a voiceover from here"><IconMicrophone size={14} />{inMenu && 'Voiceover here'}</button>
+    {inMenu && sel && <button onClick={() => { const [a, b] = sentenceOf(sel.i); select(a, b) }}>Select the sentence</button>}
     {inMenu && sel && <button onClick={() => { const [a, b] = lineOf(sel.i); select(a, b) }}>Select the whole line</button>}
     {!inMenu && <button className="x" aria-label="Close" onClick={clear}><IconX size={14} /></button>}
   </>
@@ -167,7 +184,7 @@ export function ScriptPanel({ transcript, status, hasMic, cuts, playhead, playin
         <button className="rec" onClick={() => onVoice(playhead)} data-tip="Record your voice over the video from the playhead"><IconMicrophone size={15} />Voiceover</button>
         <button onClick={onRedo} data-tip="Write the script again, word for word (keeps ums, repeats and every sound). Your cuts stay."><IconRefresh size={15} />More detail</button>
       </div>
-      <p className="hint">Click or drag to select words, <b>(sounds)</b> and <b>⏸ pauses</b> · double-click a line · right-click for more · Delete removes.{cutCount ? ` ${cutCount} removed.` : ''}</p>
+      <p className="hint"><b>Drag across words</b> to select a phrase · <b>double-click</b> selects the sentence · Shift+click extends · right-click for more · <b>Delete</b> removes. (sounds) and ⏸ pauses can be removed too.{cutCount ? ` ${cutCount} removed.` : ''}</p>
       <div className="script-body" ref={box} onPointerDown={(e) => { if (!(e.target as HTMLElement).closest('.w, .script-bar, .script-menu, .script-reply, .script-compose')) clear() }}>
         {lines.map((ln, k) => {
           const shown = hide ? ln.filter((t) => !gone(t)) : ln
@@ -180,7 +197,7 @@ export function ScriptPanel({ transcript, status, hasMic, cuts, playhead, playin
               {shown.map((t) => <span key={t.i} data-i={t.i}
                 className={'w ' + t.kind + (gone(t) ? ' cut' : '') + (live?.i === t.i ? ' now' : '') + (t.kind === 'word' && isFiller(t.text) ? ' um' : '') + (sel && t.i >= sel.i && t.i <= sel.j ? ' sel' : '')}
                 onPointerDown={(e) => down(e, t.i)} onPointerOver={() => enter(t.i)}
-                onDoubleClick={() => { const [a, b] = lineOf(t.i); select(a, b) }}
+                onDoubleClick={() => { const [a, b] = sentenceOf(t.i); select(a, b) }}
                 onContextMenu={(e) => { e.preventDefault(); if (!sel || t.i < sel.i || t.i > sel.j) select(t.i, t.i); const c = box.current!.getBoundingClientRect(); setMenu({ x: Math.min(e.clientX - c.left, c.width - 230), y: e.clientY - c.top + box.current!.scrollTop }) }}>{t.text}</span>).flatMap((el) => [el, ' '])}
             </p>
             {replies.map((x) => <div key={x.id} className="script-reply" data-tip={`On screen at ${fmt(x.t)} for ${x.duration.toFixed(1)} s`}>
@@ -194,7 +211,7 @@ export function ScriptPanel({ transcript, status, hasMic, cuts, playhead, playin
             </div>}
           </div>
         })}
-        {sel && barPos && !menu && <div className="script-bar" style={{ left: barPos.x, top: barPos.y }}>{actions(false)}</div>}
+        {sel && barPos && !menu && !dragOn && <div className="script-bar" style={{ left: barPos.x, top: barPos.y }}>{actions(false)}</div>}
         {sel && menu && <div className="script-menu" style={{ left: menu.x, top: menu.y }}>{actions(true)}</div>}
       </div>
     </div>)

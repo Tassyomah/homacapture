@@ -15,7 +15,7 @@ export function TranscriptPanel({ transcript, status, cuts, hasMic, playhead, on
   if (status.kind === 'running') return <div className="director"><div className="spinner small" /><span><b>Transcript</b> — {status.message}</span></div>
   if (!transcript) return (
     <div className="director muted">
-      <b>Transcript</b> — turn speech into text for captions, chapters and edit-by-transcript. Runs on this computer; the first time downloads the speech model (about 300 MB).
+      <b>Transcript</b> — turn speech into text for captions, chapters and edit-by-transcript. Runs on this computer; the first time downloads the speech model (about 1.5 GB).
       <button className="primary" onClick={onCreate}>Create transcript</button>
       {status.kind === 'error' && <span className="err">{status.message}</span>}
     </div>

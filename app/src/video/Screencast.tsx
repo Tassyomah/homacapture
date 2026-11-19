@@ -172,7 +172,7 @@ const Segment: React.FC<{ outStart: number; duck: [number, number][]; ev: Record
       {stickers.filter((s) => t >= s.t && t < s.t + s.duration).map((s) => <StickerView key={s.id} s={s} t={t} F={S} />)}
       {!ins && cfg.keycaps && ev.keys && ev.keys.length > 0 && <Keycaps keys={ev.keys} t={t} t0={ev.t0Video} F={F} />}
       {shownTexts(texts, t).map((x) => x.style === 'name' ? <NameTag key={x.id} x={x} t={t} F={S} portrait={S.h > S.w} L={L} />
-        : x.style === 'point' ? <PointCard key={x.id} x={x} t={t} F={S} /> : x.style === 'band' ? <Band key={x.id} x={x} t={t} F={S} /> : <TextView key={x.id} tp={x} t={t} F={S} portrait={S.h > S.w} />)}
+        : x.style === 'point' ? <PointCard key={x.id} x={x} t={t} F={S} /> : x.style === 'note' ? <SideNote key={x.id} x={x} t={t} F={S} /> : x.style === 'band' ? <Band key={x.id} x={x} t={t} F={S} /> : <TextView key={x.id} tp={x} t={t} F={S} portrait={S.h > S.w} />)}
       {!ins && transcript && cfg.captions !== 'off' && (cfg.captions === 'line' && (cfg.layout === 'stack' || cfg.layout === 'card') && L.space !== L.frame
         // Stack layout: the calm caption line sits in the space under the framed screen.
         ? <div style={{ position: 'absolute', left: F.x, top: F.y + F.h + Math.round(L.height * 0.035), width: F.w, height: L.height - (F.y + F.h), pointerEvents: 'none' }}>
@@ -360,6 +360,23 @@ const PointCard: React.FC<{ x: TextPop; t: number; F: Rect }> = ({ x, t, F }) =>
     </div>)
 }
 
+/** Side note (text added from the script): small, sentence case, a soft dark pill in the top-left corner (or where it was
+ *  dragged), sliding in. It reads like an aside, not a headline. */
+const SideNote: React.FC<{ x: TextPop; t: number; F: Rect }> = ({ x, t, F }) => {
+  const { p, alpha, age } = inOut(x, t, 0.3, 0.25)
+  const placed = x.x != null || !!x.kf?.length
+  const at = placedAt({ x: x.x ?? 0.04, y: x.y ?? 0.06, scale: x.scale ?? 1, rotate: x.rotate ?? 0, opacity: x.opacity ?? 1 }, x.kf, age)
+  const fs = Math.round(F.w * (F.h > F.w ? 0.036 : 0.019) * at.scale), e = 1 - (1 - p) ** 3
+  const box: React.CSSProperties = placed ? { left: F.x + F.w * at.x, top: F.y + F.h * at.y, transform: `translate(-50%, -50%) rotate(${at.rotate}deg)` }
+    : { left: F.x + F.w * 0.04, top: F.y + F.h * 0.06 }
+  return (
+    <div style={{ position: 'absolute', ...box, pointerEvents: 'none', maxWidth: F.w * 0.42, opacity: alpha * at.opacity }}>
+      <div data-hc-item={`text:${x.id}`} style={{ transform: `translateX(${((1 - e) * -14).toFixed(1)}%)`, background: x.bg ?? 'rgba(20,20,15,0.72)', color: x.color ?? '#F7F6F1',
+        fontFamily: fontOf(x.font, SANS), fontWeight: 500, fontSize: fs, lineHeight: 1.3, padding: `${Math.round(fs * 0.35)}px ${Math.round(fs * 0.7)}px`, borderRadius: Math.round(fs * 0.6),
+        boxShadow: '0 6px 20px rgba(20,20,15,0.18)', backdropFilter: 'blur(6px)', textWrap: 'balance' as never }}>{x.text}</div>
+    </div>)
+}
+
 /** Colour band (Brand pop template): a full-width flat band in a brand colour with the words in white, sliding in. */
 const Band: React.FC<{ x: TextPop; t: number; F: Rect }> = ({ x, t, F }) => {
   const { p, alpha, age } = inOut(x, t, 0.28, 0.2)
@@ -442,7 +459,7 @@ function leaving(out: string | undefined, left: number): { lift: number; shrink:
 /** Texts showing at t: hand-placed ones and name tags always; auto-placed ones share one spot, so only the latest. */
 function shownTexts(texts: TextPop[], t: number): TextPop[] {
   const on = texts.filter((x) => t >= x.t && t < x.t + x.duration && x.style !== 'step' && x.style !== 'check' && x.style !== 'object')
-  const shared = on.filter((x) => x.style !== 'name' && x.style !== 'band' && x.x == null && !x.kf?.length)
+  const shared = on.filter((x) => x.style !== 'name' && x.style !== 'band' && x.style !== 'note' && x.x == null && !x.kf?.length)
   return on.filter((x) => !shared.includes(x) || x === shared[shared.length - 1])
 }
 

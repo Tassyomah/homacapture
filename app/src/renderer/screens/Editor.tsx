@@ -5,7 +5,7 @@ import { SLOT_GAP, insertsWithin, keptDuration, keptRanges, nextSlot, outToSrc, 
 import { ASPECTS, ASSET_LABEL, CAPTION_STYLES, EXPORT_PRESETS, LOOKS, STICKER_EMOJI, STICKER_SHAPES, TEXT_FONTS, defaultConfig, type AnimOut, type Blend, type BrandKit, type ClipAnim, type ClipOp, type InsertClip, type Keyframe, type OverlayShape, type VoiceFx, type Look, type Sticker, type TextAnim, type Transition, type Analysis, type BackdropFill, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type MusicTrack, type Overlay, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Voiceover, type Transcript, type TranscriptSegment } from '../../shared/types'
 import { smoothCursor } from '../../video/motion'
 import { revealLabel } from '../platform'
-import { IconArrowBackUp, IconArrowForwardUp, IconBadgeCc, IconBrush, IconColorFilter, IconCopy, IconDownload, IconLetterT, IconLink, IconMicrophone, IconMoodSmile, IconMusic, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconScissors, IconSnowflake, IconFileText, IconMessageChatbot, IconSparkles, IconTemplate, IconTrash, IconUpload, IconWand, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
+import { IconArrowBackUp, IconArrowBarToLeft, IconArrowBarToRight, IconArrowForwardUp, IconBadgeCc, IconBrush, IconColorFilter, IconCopy, IconDownload, IconLetterT, IconLink, IconMicrophone, IconMoodSmile, IconMusic, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconScissors, IconSnowflake, IconFileText, IconMessageChatbot, IconSparkles, IconTemplate, IconTrash, IconUpload, IconWand, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
 import { Timeline, fmt, fmtShort, piecesOf, sameItem, type DragMode, type Item, type RangeAction } from './Timeline'
 import { Direct } from './Direct'
 import { Director, type DirectorState, type DirectorStatus } from './Director'
@@ -714,6 +714,9 @@ export function Editor({ project }: { project: Project }) {
     }
     if (t - r.start < 0.05 || r.end - t < 0.05) return
     apply((e) => ({ ...e, splits: [...e.splits.filter((x) => Math.abs(x - t) > 0.02), t] }))
+    // like CapCut: the piece after the playhead is selected, so Delete removes it straight away
+    const nextSplit = [...splits, r.end].filter((x) => x > t + 0.02).sort((a, b) => a - b)[0] ?? r.end
+    setExporting(false); setSel({ kind: 'piece', a: t, b: Math.min(nextSplit, r.end) })
   }
   const duplicate = async (it: Item) => {
     const copy = <X extends { id: string; t: number; duration: number }>(xs: X[], id: string, pre: string): X[] => { const x = xs.find((y) => y.id === id); return x ? [...xs, { ...x, id: newId(pre), t: x.t + x.duration }] : xs }
@@ -1211,7 +1214,7 @@ export function Editor({ project }: { project: Project }) {
       <h3 className="drawer-title">Script</h3>
       <ScriptPanel transcript={transcript} status={tstatus} hasMic={!!project.assets.mic} cuts={cuts} playhead={playheadSrc} playing={playing}
         texts={texts} onRedo={transcribe}
-        onAddText={(a, b, text) => { const id = newId('t'); apply((e) => ({ ...e, texts: [...e.texts, { id, t: a, duration: Math.max(2, Math.min(8, b - a + 0.6)), text, style: 'pop' as TextStyle, x: 0.5, y: 0.22 }].sort((p, q) => p.t - q.t) })) }}
+        onAddText={(a, b, text) => { const id = newId('t'); apply((e) => ({ ...e, texts: [...e.texts, { id, t: a, duration: Math.max(2, Math.min(8, b - a + 0.6)), text, style: 'note' as TextStyle }].sort((p, q) => p.t - q.t) })) }}
         onEditText={(id, text) => editText(id, { text })} onRemoveText={(id) => removeText(id)}
         onCreate={transcribe} onSeek={seekSrc} onCut={(a, b) => { addCut(a, b) }} onKeep={keepRange}
         onCutMany={(rs) => { if (rs.length) setCuts((c) => [...c, ...rs]) }}
@@ -1297,7 +1300,9 @@ export function Editor({ project }: { project: Project }) {
     </>
   }
 
-  const hint = working ?? hoverInfo ?? (range ? `${fmt(srcToOut(kept, range[1]) - srcToOut(kept, range[0]))} selected. Choose what to do with it above.` : `Final length ${fmtShort(outLen)}`)
+  const hint = working ?? hoverInfo ?? (range ? `${fmt(srcToOut(kept, range[1]) - srcToOut(kept, range[0]))} selected. Choose what to do with it above.`
+    : !cuts.length && !splits.length && !asset ? 'To cut: put the playhead where you want → Split (⌘B) → the piece after it is selected → Delete (⌫). Or Q / W to remove before / after the playhead.'
+    : `Final length ${fmtShort(outLen)}`)
   const onClipNow = rangeAt(playheadSrc)
 
   return (
@@ -1347,9 +1352,12 @@ export function Editor({ project }: { project: Project }) {
           {playing ? <IconPlayerPause size={18} /> : <IconPlayerPlay size={18} />}</button>
         <span className="time"><b>{fmt(srcToOut(kept, playheadSrc))}</b> / {fmt(outLen)}</span>
         {!asset && <div className="verbs">
-          <button aria-label="Split" data-tip="Split at the playhead · Cmd+B" onClick={splitHere}><IconScissors size={16} />Split</button>
-          <button aria-label="Duplicate" data-tip="Duplicate · Cmd+D" disabled={!selItem || selItem.kind === 'cut' || selItem.kind === 'speed' || selItem.kind === 'mask'} onClick={() => { if (selItem) void duplicate(selItem) }}><IconCopy size={16} />Duplicate</button>
-          <button aria-label="Delete" data-tip="Delete · Backspace" disabled={!selItem} onClick={() => { if (selItem) removeItem(selItem) }}><IconTrash size={16} />Delete</button>
+          {/* CapCut-style cutting: Split at the playhead, delete the part before or after it, delete the selected piece */}
+          <button aria-label="Split" data-tip="Cut the video in two at the playhead" onClick={splitHere}><IconScissors size={16} />Split<kbd>⌘B</kbd></button>
+          <button aria-label="Delete left" data-tip="Remove everything before the playhead (back to the last split)" onClick={() => trimAtPlayhead('left')}><IconArrowBarToLeft size={16} />Delete left<kbd>Q</kbd></button>
+          <button aria-label="Delete right" data-tip="Remove everything after the playhead (up to the next split)" onClick={() => trimAtPlayhead('right')}><IconArrowBarToRight size={16} />Delete right<kbd>W</kbd></button>
+          <button aria-label="Delete" data-tip="Remove the selected piece or item" disabled={!selItem} onClick={() => { if (selItem) removeItem(selItem) }}><IconTrash size={16} />Delete<kbd>⌫</kbd></button>
+          <button aria-label="Duplicate" data-tip="Duplicate · Cmd+D" disabled={!selItem || selItem.kind === 'cut' || selItem.kind === 'speed' || selItem.kind === 'mask'} onClick={() => { if (selItem) void duplicate(selItem) }}><IconCopy size={16} /></button>
           <button aria-label="Voiceover" data-tip="Record your voice over the video from here" onClick={() => openRecorder(playheadSrc)}><IconMicrophone size={16} />Voiceover</button>
           <button aria-label="Freeze" data-tip="Hold this frame for 3 seconds" disabled={!!working || !onClipNow || !!onClipNow.ins} onClick={() => void freezeHere()}><IconSnowflake size={16} />Freeze</button>
         </div>}

@@ -68,7 +68,8 @@ export interface ManualZoom { id: string; t: number; duration: number; x: number
 /** Kinetic text (auto-edit): a key phrase that pops in big over the video from `t` for `duration` (source seconds). */
 /** pop / title / name, plus the short-template cards: step (top panel of the split layout, `sub` = its label),
  *  point (numbered card, `sub` = the number), band (full-width colour band), check (one line of a checklist panel). */
-export type TextStyle = 'pop' | 'title' | 'name' | 'step' | 'point' | 'band' | 'check' | 'object'
+/** note = a small side note in a corner (text added from the script: on screen, not said). */
+export type TextStyle = 'pop' | 'title' | 'name' | 'step' | 'point' | 'band' | 'check' | 'object' | 'note'
 /** Visual objects made from what was said (short templates; `style: 'object'`). Everything is drawn, nothing generated:
  *  sticker = an icon on a die-cut sticker with a handwritten label; stat = a number counting up in a ring; search = a search
  *  bar typing the words; notify = a notification card (app or brand named); note = a taped paper note in handwriting;

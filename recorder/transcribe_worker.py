@@ -13,7 +13,7 @@ def emit(**kw): print(json.dumps(kw), flush=True)
 
 def main():
     audio, out = sys.argv[1], sys.argv[2]
-    model_name = sys.argv[3] if len(sys.argv) > 3 else "base.en"
+    model_name = sys.argv[3] if len(sys.argv) > 3 else "medium.en"
     # The VC++ runtime DLLs come from the `msvc-runtime` package in this environment (no admin install needed);
     # make them visible to ctranslate2.dll before it loads.
     import os
@@ -25,12 +25,12 @@ def main():
     pcm = np.fromfile(audio, dtype=np.float32)
     emit(event="progress", stage="loading", done=0)
     model = WhisperModel(model_name, device="cpu", compute_type="int8")
-    # Word for word: a prompt written the way people really talk (fillers, repeats, false starts) steers Whisper to keep
-    # them instead of tidying them away, and the speech filter keeps a wide margin so short sounds are not dropped.
+    # Accuracy first (Tassy, 2026-11-18: "the words in the script are very different from what is being said"). A prompt
+    # asking for verbatim text made Whisper skip the opening sentence, so there is none; fillers come back through the
+    # hidden-sound pass instead. Hotwords teach it her names (Claude, not "cloth"; Codex, not "codecs").
     segments, info = model.transcribe(pcm, word_timestamps=True, vad_filter=True,
                                       vad_parameters={"min_silence_duration_ms": 300, "speech_pad_ms": 400},
-                                      initial_prompt="Umm, so, uh, I- I was, like, you know, thinking... Hmm. Okay, so, um, yeah.",
-                                      condition_on_previous_text=True)
+                                      hotwords="Uiland, UI Land, Claude, Codex, Cursor, MCP, Figma, HomaCapture, HomaPod, Homalabs, Tassy")
     result = {"language": info.language, "duration": float(info.duration or len(pcm) / 16000), "model": model_name, "segments": []}
     for s in segments:
         result["segments"].append({"start": round(s.start, 3), "end": round(s.end, 3), "text": s.text.strip(),

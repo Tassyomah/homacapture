@@ -359,7 +359,7 @@ def main():
     ap.add_argument("cmd", nargs="?", default="record")
     ap.add_argument("--out"); ap.add_argument("--src"); ap.add_argument("--crop"); ap.add_argument("--fps", type=int, default=60)
     ap.add_argument("--screen", type=int, default=0); ap.add_argument("--mic", type=int); ap.add_argument("--no-mic", action="store_true")
-    ap.add_argument("--camera", type=int); ap.add_argument("--system-audio", action="store_true"); ap.add_argument("--model", default="base.en")
+    ap.add_argument("--camera", type=int); ap.add_argument("--system-audio", action="store_true"); ap.add_argument("--model", default="medium.en")
     ap.add_argument("--list", action="store_true"); ap.add_argument("--check", action="store_true"); ap.add_argument("--request", action="store_true")
     args = ap.parse_args()
     if args.list: print(json.dumps(devices_json())); return
