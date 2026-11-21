@@ -55,10 +55,16 @@ export function registerHomapod(deps: {
   let poll: NodeJS.Timeout | null = null
   let stopped: (() => void) | null = null
   let saved: string | null = null
+  // Auto record (Tassy, 2026-11-21: "when i hit start/record for the vdo, the homapod recording should start as well"):
+  // her own camera joining the room (VDO.Ninja's START, in Chrome or the call window) starts recording; leaving the call
+  // for more than 10 s stops and saves. The record options come from the HomaPod screen.
+  type RecOpts = { micLabel: string | null; camLabel: string | null; headphones: boolean }
+  let recOpts: RecOpts = { micLabel: 'default', camLabel: 'default', headphones: true }   // the Mac's default mic and camera until the screen says otherwise
+  let autoRecord = true, autoStarted = false, hostInCall = false, hostGoneAt = 0
   let bar: BrowserWindow | null = null
   const test = !!process.env.NARRATE_TEST_HOMAPOD
 
-  const status = (): HomapodStatus => ({ phase, room, mode, guests, since: startedAt || null, dir, message, saved,
+  const status = (): HomapodStatus => ({ phase, room, mode, guests, since: startedAt || null, dir, message, saved, auto: autoRecord, hostInCall,
     guestLink: room ? guestLink(room, guestName) : '', hostLink: room ? hostLink(room, hostName) : '',
     tracks: [...tracks.values()].map((t) => ({ key: t.key, kind: t.kind, label: t.sid ? labels[t.sid] ?? t.sid : t.kind === 'host-mic' ? 'Your mic' : 'Your camera', bytes: t.bytes })) })
   const send = () => { const st = status(); deps.main()?.webContents.send('homapod:status', st); if (bar && !bar.isDestroyed()) bar.webContents.send('homapod:status', st) }
@@ -113,6 +119,14 @@ export function registerHomapod(deps: {
         const { v, l } = JSON.parse(r) as { v: { sid: string; w: number; h: number; a: boolean }[]; l: [string, string][] }
         for (const [sid, label] of l) if (sid && label) labels[sid] = label
         guests = v.filter((g) => g.sid !== HOST_SID).map((g) => ({ sid: g.sid, label: labels[g.sid] || 'Guest', width: g.w, height: g.h, audio: g.a }))
+        const wasIn = hostInCall
+        hostInCall = v.some((g) => g.sid === HOST_SID)
+        if (autoRecord && hostInCall && !wasIn && phase === 'ready') { autoStarted = true; void startRecording(recOpts) }
+        if (phase === 'recording' && autoStarted) {
+          if (hostInCall) hostGoneAt = 0
+          else if (!hostGoneAt) hostGoneAt = Date.now()
+          else if (Date.now() - hostGoneAt > 10000) { hostGoneAt = 0; void stopRecording().catch(() => {}) }
+        }
         send()
       } catch { /* page reloading */ }
     }, 1500)
@@ -154,8 +168,10 @@ export function registerHomapod(deps: {
   ipcMain.handle('homapod:status', () => status())
 
 
-  ipcMain.handle('homapod:record', async (_e, o: { micLabel: string | null; camLabel: string | null; headphones: boolean }) => {
-    if (phase === 'recording') return status()
+  ipcMain.handle('homapod:options', (_e, o: RecOpts & { auto: boolean }) => { recOpts = { micLabel: o.micLabel, camLabel: o.camLabel, headphones: o.headphones }; autoRecord = o.auto; send(); return status() })
+  ipcMain.handle('homapod:record', async (_e, o: RecOpts) => { autoStarted = false; return startRecording(o) })
+  async function startRecording(o: RecOpts) {
+    if (phase === 'recording' || phase === 'saving') return status()
     if (!recWin) await connect()
     const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16)
     dir = join(deps.recordings, `homapod-${room}-${stamp}`)
@@ -164,7 +180,7 @@ export function registerHomapod(deps: {
     writeFileSync(join(dir, 'homapod', 'session.json'), JSON.stringify({ room, mode, guestName, startedAt }, null, 1))
     recWin!.webContents.send('homapod:start', { hostSid: HOST_SID, ...o })
     send(); return status()
-  })
+  }
 
   const fromRec = (e: IpcMainEvent) => !!recWin && e.sender === recWin.webContents
   ipcMain.on('homapod:track', (e, m: Omit<Track, 'raw' | 'out' | 'bytes' | 't1'>) => {
@@ -183,7 +199,9 @@ export function registerHomapod(deps: {
   ipcMain.on('homapod:error', (e, msg: string) => { if (fromRec(e)) { message = msg; send() } })
   ipcMain.on('homapod:stopped', (e) => { if (fromRec(e)) stopped?.() })
 
-  ipcMain.handle('homapod:stop', async (): Promise<Project | null> => {
+  ipcMain.handle('homapod:stop', () => stopRecording())
+  async function stopRecording(): Promise<Project | null> {
+    autoStarted = false
     if (phase !== 'recording' || !dir || !recWin) return null
     phase = 'saving'; message = 'Saving the tracks…'; send()
     await new Promise<void>((res) => { stopped = res; recWin!.webContents.send('homapod:stop'); setTimeout(res, 20000) })
@@ -197,7 +215,7 @@ export function registerHomapod(deps: {
       phase = 'ready'; message = `The recording is saved as raw files in ${dir}, but making the project failed: ${(err as Error).message}`; startedAt = 0; send()
       throw err
     }
-  })
+  }
 
   ipcMain.handle('homapod:leave', () => { if (phase !== 'recording' && phase !== 'saving') { disconnect(); phase = 'off'; room = ''; send() } return status() })
 
@@ -324,6 +342,9 @@ export function registerHomapod(deps: {
     return file
   })
   return {
+    /** tests only: hang up the call window (as if she closed the call) */
+    hangUp: () => { callWin?.destroy(); callWin = null },
+    status: () => status(),
     /** tests only: swap a guest's tracks the way VDO.Ninja does on a quality change, to prove the recorder follows it */
     testSwap: (): Promise<boolean> => recWin ? recWin.webContents.executeJavaScript(
       `(() => { const v = document.querySelector('video[data-sid]'); if (!v || !v.srcObject) return false; v.srcObject = new MediaStream(v.srcObject.getTracks().map(t => t.clone())); return true })()`) : Promise.resolve(false),

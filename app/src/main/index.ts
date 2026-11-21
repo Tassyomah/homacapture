@@ -11,7 +11,7 @@ import { exportProject, findFfmpeg, renderThumbnails } from './exporter'
 import { getShareSettings, saveShareSettings, shareFile } from './share'
 import { askClaude, cancelAsk, claudeSignIn, claudeStatus } from './claude'
 import { registerHomapod } from './homapod'
-import { homapodScenes, homapodSelfTest, homapodShots } from './homapodTest'
+import { homapodAuto, homapodScenes, homapodSelfTest, homapodShots } from './homapodTest'
 
 const IS_WIN = process.platform === 'win32'
 const APP_ROOT = resolve(app.getAppPath())
@@ -622,7 +622,7 @@ app.whenReady().then(async () => {
   const hp = registerHomapod({ main: () => win, recordings: RECORDINGS, preload: join(__dirname, '../preload/vdo.mjs'), recorder, ffmpeg: findFfmpeg, loadProject,
     load, mainPreload: join(__dirname, '../preload/index.mjs') })
   createWindow()
-  if (process.env.NARRATE_TEST_HOMAPOD && win) { app.dock?.hide(); void (process.env.NARRATE_TEST_HOMAPOD === 'shot' ? homapodShots(win) : process.env.NARRATE_TEST_HOMAPOD === 'scenes' ? homapodScenes(win) : homapodSelfTest(win, findFfmpeg() ?? 'ffmpeg', hp.testSwap)) }
+  if (process.env.NARRATE_TEST_HOMAPOD && win) { app.dock?.hide(); void (process.env.NARRATE_TEST_HOMAPOD === 'shot' ? homapodShots(win) : process.env.NARRATE_TEST_HOMAPOD === 'scenes' ? homapodScenes(win) : process.env.NARRATE_TEST_HOMAPOD === 'auto' ? homapodAuto(win, hp) : homapodSelfTest(win, findFfmpeg() ?? 'ffmpeg', hp.testSwap)) }
   app.on('activate', () => { if (!win) createWindow(); else win.show() })
 })
 app.on('window-all-closed', () => { /* keep running while the control bar is up */ if (recorder.state === 'idle') app.quit() })

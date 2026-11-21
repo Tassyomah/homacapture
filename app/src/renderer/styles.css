@@ -1010,3 +1010,4 @@ html:has(.hpcard), body:has(.hpcard) { background: transparent; }
 .hpcard-top .dot { display: inline-block; border-radius: 50%; background: #FF4A3D; animation: hpPulse 1.4s ease-in-out infinite; }
 .hpcard-top .dot.off { background: rgba(239,238,232,.45); animation: none; }
 @media (prefers-reduced-motion: reduce) { .hpcard-top .dot { animation: none; } }
+.hpcard-sub { display: block; font-style: normal; font-size: 11.5px; color: rgba(239,238,232,.6); margin-top: 4px; }

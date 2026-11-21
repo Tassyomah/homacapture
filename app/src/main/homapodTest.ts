@@ -123,3 +123,29 @@ export async function homapodScenes(win: BrowserWindow) {
   } catch (e) { say({ step: 'error', message: (e as Error).message }) }
   app.exit(0)
 }
+
+/** NARRATE_TEST_HOMAPOD=auto: joining the call starts recording by itself; hanging up saves it. */
+export async function homapodAuto(win: BrowserWindow, hp: { hangUp: () => void; status: () => { phase: string; saved: string | null; hostInCall: boolean } }) {
+  const say = (o: unknown) => console.log('HPTEST ' + JSON.stringify(o))
+  const js = <T,>(code: string) => win.webContents.executeJavaScript(code) as Promise<T>
+  const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
+  try {
+    if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once('did-finish-load', () => r()))
+    const room = 'hptest' + Math.random().toString(36).slice(2, 8)
+    const gs = session.fromPartition('hptest-guest'); gs.setPermissionRequestHandler((_w, _p, cb) => cb(true))
+    const guest = new BrowserWindow({ show: false, webPreferences: { partition: 'hptest-guest', backgroundThrottling: false } })
+    guest.webContents.setAudioMuted(true)
+    await guest.loadURL(guestLink(room, 'Test Guest') + '&autostart')
+    await js(`window.narrate.homapodPrepare({ room: '${room}', guest: 'Test Guest', host: 'Tassy', mode: 'here' })`)   // the call window joins with START (autostart in tests)
+    let s = hp.status()
+    for (let i = 0; i < 40 && s.phase !== 'recording'; i++) { await wait(1000); s = hp.status() }
+    say({ step: 'joined', hostInCall: s.hostInCall, phase: s.phase })
+    await wait(8000)
+    hp.hangUp(); say({ step: 'hung-up' })
+    for (let i = 0; i < 60 && !hp.status().saved; i++) await wait(1000)
+    s = hp.status(); say({ step: 'after-hang-up', phase: s.phase, saved: s.saved })
+    if (s.saved) say({ step: 'homapod.json', json: JSON.parse(readFileSync(join(s.saved, 'homapod.json'), 'utf8')).tracks.map((t: { label: string; kind: string; end: number }) => [t.label, t.kind, t.end]) })
+    guest.destroy()
+  } catch (e) { say({ step: 'error', message: (e as Error).message }) }
+  app.exit(0)
+}

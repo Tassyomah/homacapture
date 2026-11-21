@@ -19,6 +19,7 @@ export function HomaPod({ projects, onOpen, onChanged }: { projects: Project[]; 
   const [mic, setMic] = useState<string>(() => localStorage.getItem('hp.mic') ?? '')
   const [cam, setCam] = useState<string>(() => localStorage.getItem('hp.cam') ?? '')
   const [headphones, setHeadphones] = useState(() => localStorage.getItem('hp.hp') !== '0')
+  const [auto, setAuto] = useState(() => localStorage.getItem('hp.auto') !== '0')
   const [copied, setCopied] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -52,7 +53,9 @@ export function HomaPod({ projects, onOpen, onChanged }: { projects: Project[]; 
   const pods = projects.filter((p) => p.name.startsWith('homapod-'))
   useEffect(() => { for (const p of pods) if (!(p.dir in files)) void window.narrate.homapodRead(p.dir).then((f) => setFiles((o) => ({ ...o, [p.dir]: f }))) }, [projects])
   useEffect(() => { localStorage.setItem('hp.guest', guest); localStorage.setItem('hp.room', room); localStorage.setItem('hp.mode', mode)
-    localStorage.setItem('hp.mic', mic); localStorage.setItem('hp.cam', cam); localStorage.setItem('hp.hp', headphones ? '1' : '0') }, [guest, room, mode, mic, cam, headphones])
+    localStorage.setItem('hp.mic', mic); localStorage.setItem('hp.cam', cam); localStorage.setItem('hp.hp', headphones ? '1' : '0'); localStorage.setItem('hp.auto', auto ? '1' : '0') }, [guest, room, mode, mic, cam, headphones, auto])
+  // the main process starts recording by itself when she joins the call, so it needs her picks too
+  useEffect(() => { void window.narrate.homapodOptions({ micLabel: mic || null, camLabel: cam === 'none' ? null : cam || null, headphones, auto }) }, [mic, cam, headphones, auto, st?.room])
 
   const phase = st?.phase ?? 'off'
   const live = phase === 'recording' || phase === 'saving'
@@ -121,6 +124,7 @@ export function HomaPod({ projects, onOpen, onChanged }: { projects: Project[]; 
           <label><span><IconVideo size={14} />Your camera</span><select value={cam} disabled={live} onChange={(e) => setCam(e.target.value)}>
             {cams.map((c) => <option key={c}>{c}</option>)}<option value="none">Don’t record my camera</option></select></label>
         </div>
+        <label className="vrec-opt"><input type="checkbox" checked={auto} disabled={live} onChange={(e) => setAuto(e.target.checked)} />Start recording when I press START in the call, and save when I hang up</label>
         <label className="vrec-opt"><input type="checkbox" checked={headphones} disabled={live} onChange={(e) => setHeadphones(e.target.checked)} />I’m wearing headphones (your voice is recorded clean, with no echo removal)</label>
         <div className="hp-guests">
           {!joined ? <span className="hint">Pick where you’ll talk first. Then your guest shows up here when they join.</span>

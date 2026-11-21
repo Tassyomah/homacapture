@@ -76,6 +76,7 @@ const api: NarrateApi = {
   homapodAddPhone: (dir, paths) => ipcRenderer.invoke('homapod:addPhone', dir, paths),
   onHomapodStatus: listen<HomapodStatus>('homapod:status'),
   homapodFocusMain: () => ipcRenderer.invoke('homapod:focusMain'),
+  homapodOptions: (o) => ipcRenderer.invoke('homapod:options', o),
   podTalk: (dir) => ipcRenderer.invoke('homapod:talk', dir),
 }
 contextBridge.exposeInMainWorld('narrate', api)

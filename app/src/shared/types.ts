@@ -392,6 +392,10 @@ export interface HomapodStatus {
   guests: HomapodGuest[]; since: number | null; dir: string | null; message: string | null
   /** the project folder of the last HomaPod saved in this room (shown as 'Saved' until the next Record) */
   saved: string | null
+  /** start recording when the host joins the call (VDO.Ninja START), save when they leave */
+  auto: boolean
+  /** the host's own camera is in the call right now */
+  hostInCall: boolean
   tracks: { key: string; kind: HomapodTrack['kind']; label: string; bytes: number }[]
 }
 export interface HomapodTrack {
@@ -498,6 +502,7 @@ export interface NarrateApi {
   homapodAddPhone(dir: string, paths?: string[]): Promise<HomapodFile>
   onHomapodStatus(cb: (s: HomapodStatus) => void): () => void
   homapodFocusMain(): Promise<void>
+  homapodOptions(o: { micLabel: string | null; camLabel: string | null; headphones: boolean; auto: boolean }): Promise<HomapodStatus>
   /** talk.json for a podcast project (measured on first ask); null for a normal recording */
   podTalk(dir: string): Promise<PodTalk | null>
   /** Developer screenshots only (NARRATE_OPEN): open a recording folder in the editor on launch. */
