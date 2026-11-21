@@ -502,6 +502,7 @@ export interface NarrateApi {
   homapodAddPhone(dir: string, paths?: string[]): Promise<HomapodFile>
   onHomapodStatus(cb: (s: HomapodStatus) => void): () => void
   homapodFocusMain(): Promise<void>
+  homapodCloseCard(): Promise<void>
   homapodOptions(o: { micLabel: string | null; camLabel: string | null; headphones: boolean; auto: boolean }): Promise<HomapodStatus>
   /** talk.json for a podcast project (measured on first ask); null for a normal recording */
   podTalk(dir: string): Promise<PodTalk | null>

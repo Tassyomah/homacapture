@@ -30,12 +30,13 @@ export function HomaPodBar() {
         <div className="hpcard-top"><span className="dot off" /><span className="time">Saving</span></div>
         <span className="hpcard-who">{st.message ?? 'Saving…'}</span>
       </> : <>
-        <div className="hpcard-top"><span className={st.guests.length ? 'hpbar-live' : 'hpbar-wait'} /><b>HomaPod</b></div>
+        <div className="hpcard-top"><span className={st.guests.length ? 'hpbar-live' : 'hpbar-wait'} /><b>HomaPod</b>
+          <button className="no-drag hpcard-x" aria-label="Close" onClick={() => void window.narrate.homapodCloseCard()}>×</button></div>
         <span className={'hpcard-who' + (!st.saved && !st.guests.length ? ' warn' : '')}>{st.saved ? 'Saved ✓' : st.guests.length ? who : 'No guest in the call yet'}
           {!st.saved && st.auto && !st.hostInCall && <em className="hpcard-sub">Recording starts when you press START in the call</em>}</span>
         <div className="hpcard-btns">
-          {st.saved ? <button className="no-drag" onClick={() => void window.narrate.homapodFocusMain()}>Show</button>
-            : <button className="no-drag rec" onClick={record}>● Record</button>}
+          {st.saved && <button className="no-drag" onClick={() => void window.narrate.homapodFocusMain()}>Show</button>}
+          <button className="no-drag rec" onClick={record}>● Record</button>
         </div>
       </>}
     </div>

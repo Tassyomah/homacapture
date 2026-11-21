@@ -31,7 +31,8 @@ export function HomaPod({ projects, onOpen, onChanged }: { projects: Project[]; 
 
   useEffect(() => {
     void window.narrate.homapodStatus().then((s) => { setSt(s); if (s.room) { setRoom(s.room); setMode(s.mode) } })
-    return window.narrate.onHomapodStatus(setSt)
+    const off = window.narrate.onHomapodStatus(setSt)
+    return () => { off(); void window.narrate.homapodCloseCard() }   // leaving the HomaPod screen closes the card (not while recording)
   }, [])
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t) }, [])
   // saved from the floating bar: show the same "Saved" card here

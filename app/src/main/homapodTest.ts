@@ -16,7 +16,7 @@ export async function homapodShots(win: BrowserWindow) {
   try {
     if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once('did-finish-load', () => r()))
     const room = 'hptest' + Math.random().toString(36).slice(2, 8)
-    await js(`localStorage.setItem('hp.room', '${room}'); localStorage.setItem('hp.guest', 'Mrs Adeyemi'); true`)
+    await js(`localStorage.setItem('hp.room', '${room}'); localStorage.setItem('hp.guest', 'Mrs Adeyemi'); localStorage.setItem('hp.auto', '${process.env.NARRATE_TEST_NOAUTO ? 0 : 1}'); true`)
     await wait(800); await shot('hp-0-home.png')
     await click('Start a HomaPod'); await wait(1500); await shot('hp-1-start.png')
     await click('Open the call here'); await wait(4000)

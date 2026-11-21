@@ -60,7 +60,7 @@ export function registerHomapod(deps: {
   // for more than 10 s stops and saves. The record options come from the HomaPod screen.
   type RecOpts = { micLabel: string | null; camLabel: string | null; headphones: boolean }
   let recOpts: RecOpts = { micLabel: 'default', camLabel: 'default', headphones: true }   // the Mac's default mic and camera until the screen says otherwise
-  let autoRecord = true, autoStarted = false, hostInCall = false, hostGoneAt = 0
+  let autoRecord = !process.env.NARRATE_TEST_NOAUTO, autoStarted = false, hostInCall = false, hostGoneAt = 0
   let bar: BrowserWindow | null = null
   const test = !!process.env.NARRATE_TEST_HOMAPOD
 
@@ -92,6 +92,8 @@ export function registerHomapod(deps: {
     deps.load(bar, '#hpbar')
   }
   const hideBar = () => { bar?.destroy(); bar = null }
+  // closing the card (its ×, or leaving the HomaPod screen) never stops a recording
+  ipcMain.handle('homapod:closeCard', () => { if (phase !== 'recording' && phase !== 'saving') hideBar() })
   ipcMain.handle('homapod:focusMain', () => { const w = deps.main(); if (w) { w.show(); w.focus() } })
 
   const ses = () => {
@@ -148,6 +150,7 @@ export function registerHomapod(deps: {
     room = nextRoom; guestName = o.guest; hostName = o.host || 'Tassy'; mode = o.mode
     phase = 'ready'; message = null; saved = null
     await connect()
+    showBar()
     if (mode === 'here') openCall()
     else { callWin?.destroy(); callWin = null }
     send(); return status()
@@ -178,7 +181,7 @@ export function registerHomapod(deps: {
     tracks = new Map(); startedAt = Date.now(); phase = 'recording'; message = null; saved = null
     writeFileSync(join(dir, 'homapod', 'session.json'), JSON.stringify({ room, mode, guestName, startedAt }, null, 1))
     recWin!.webContents.send('homapod:start', { hostSid: HOST_SID, ...o })
-    showBar()   // the card is only up while a HomaPod is recording (Tassy, 2026-11-21)
+    showBar()   // back up if she had closed it
     send(); return status()
   }
 
@@ -210,7 +213,6 @@ export function registerHomapod(deps: {
     try {
       const p = await finalize(dir)
       phase = 'ready'; message = null; startedAt = 0; saved = p.dir; send()
-      setTimeout(() => { if (phase === 'ready') hideBar() }, 4000)
       return p
     } catch (err) {
       phase = 'ready'; message = `The recording is saved as raw files in ${dir}, but making the project failed: ${(err as Error).message}`; startedAt = 0; send()
