@@ -789,7 +789,9 @@ export function outputSize(design: { width: number; height: number }, outputHeig
     const t = outputHeight || short
     return ratio >= 1 ? { width: even(t * ratio), height: even(t) } : { width: even(t), height: even(t / ratio) }
   }
-  const target = !outputHeight || outputHeight >= short ? short : outputHeight
+  // The quality she picks is the size she gets (Tassy, 2026-11-21: 4K must give a 4K file, even from a 1080p recording).
+  // "Original" (0) keeps the recording's own size.
+  const target = outputHeight || short
   const s = target / short
   return { width: even(design.width * s), height: even(design.height * s) }
 }

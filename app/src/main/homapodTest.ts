@@ -176,11 +176,13 @@ export async function homapodExport(win: BrowserWindow) {
       const btns = await js(`[...document.querySelectorAll('.inspector button')].map(b => b.textContent.trim()).filter(Boolean).slice(0, 30)`)
       say({ step: 'inspector-buttons', btns })
       say({ step: 'pane-export', clicked: await js(`(() => { const b = [...document.querySelectorAll('.inspector button')].find(b => /^Export/.test(b.textContent.trim())); b?.click(); return b ? b.textContent.trim() : null })()`) })
-      for (let i = 0; i < 120; i++) {
+      const t0 = Date.now(), limit = Number(process.env.NARRATE_TEST_WAIT_MIN ?? 4) * 60000
+      for (let i = 0; Date.now() - t0 < limit; i++) {
         await new Promise((r) => setTimeout(r, 2000))
         const t = await js(`document.querySelector('.inspector')?.innerText ?? ''`)
-        if (/Saved|Done|Show in Finder|Exported|Reveal|Error|couldn|failed/i.test(t) && i > 2) { say({ step: 'after', text: t.slice(0, 500) }); break }
-        if (i % 10 === 0) say({ step: 'progress', text: t.slice(0, 160) })
+        const top = await js(`[...document.querySelectorAll('button')].map(b => b.textContent.trim()).find(x => /^Exporting|^Preparing/.test(x)) ?? ''`)
+        if (/Show in Finder|Error|couldn|failed/i.test(t) && i > 2) { say({ step: 'after', secs: Math.round((Date.now() - t0) / 1000), text: t.slice(t.indexOf('Export master'), t.indexOf('Export master') + 200) }); break }
+        if (i % 15 === 0) say({ step: 'progress', secs: Math.round((Date.now() - t0) / 1000), top })
       }
       app.exit(0); return
     }
