@@ -25,7 +25,9 @@ export async function homapodShots(win: BrowserWindow) {
     guest.webContents.setAudioMuted(true)
     await guest.loadURL(guestLink(room, 'Mrs Adeyemi') + '&autostart')
     await wait(9000); await shot('hp-2-guest-joined.png')
-    await click('Record'); await wait(8000); await shot('hp-3-recording.png')
+    const barShot = async (name: string) => { const b = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes('#hpbar')); if (b) { const im = await b.webContents.capturePage(); writeFileSync(join(out, name), im.toPNG()); console.log('HPTEST ' + JSON.stringify({ bar: name, bounds: b.getBounds() })) } }
+    await barShot('bar-ready.png')
+    await click('Record'); await wait(8000); await shot('hp-3-recording.png'); await barShot('bar-recording.png')
     await click('Stop'); for (let i = 0; i < 60; i++) { await wait(1000); if (await js<boolean>(`!!document.querySelector('.hp-done')`)) break }
     await wait(800); await shot('hp-4-saved.png')
     guest.destroy()

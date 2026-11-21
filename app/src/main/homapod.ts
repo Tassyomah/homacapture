@@ -10,7 +10,7 @@
  * camera in media/) plus homapod.json, the map the HomaPod edit pipeline reads. Phone 4K files are lined up later by
  * sound (`narrate.py align`); they are linked, never copied.
  */
-import { BrowserWindow, dialog, ipcMain, screen, session, shell, type IpcMainEvent } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, screen, session, shell, type IpcMainEvent } from 'electron'
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, type WriteStream } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { spawn } from 'node:child_process'
@@ -67,12 +67,21 @@ export function registerHomapod(deps: {
   function showBar() {
     if (test && process.env.NARRATE_TEST_HOMAPOD !== 'shot') return
     if (bar && !bar.isDestroyed()) { if (!test) bar.showInactive(); return }
+    // On the right edge, halfway down: clear of the call's own buttons (bottom) and the browser's toolbar (top).
+    // Dragged somewhere else, it remembers (Tassy, 2026-11-21: "blocks the vdo record button on chrome").
+    const BW = 176, BH = 150, posFile = join(app.getPath('userData'), 'homapod-bar.json')
     const area = screen.getPrimaryDisplay().workArea
-    bar = new BrowserWindow({ width: 380, height: 56, x: area.x + Math.round((area.width - 380) / 2), y: area.y + area.height - 84,
+    let x = area.x + area.width - BW - 12, y = area.y + Math.round((area.height - BH) / 2)
+    try {
+      const p = JSON.parse(readFileSync(posFile, 'utf8')) as { x: number; y: number }
+      if (screen.getAllDisplays().some((d) => p.x >= d.workArea.x && p.y >= d.workArea.y && p.x + BW <= d.workArea.x + d.workArea.width && p.y + BH <= d.workArea.y + d.workArea.height)) { x = p.x; y = p.y }
+    } catch { /* first time: the default spot */ }
+    bar = new BrowserWindow({ width: BW, height: BH, x, y,
       frame: false, transparent: true, alwaysOnTop: true, resizable: false, movable: true, hasShadow: true, skipTaskbar: true,
       focusable: true, fullscreenable: false, show: false, webPreferences: { preload: deps.mainPreload, sandbox: false } })
     bar.setAlwaysOnTop(true, 'screen-saver'); bar.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
     bar.on('closed', () => { bar = null })
+    bar.on('moved', () => { if (bar) { const b = bar.getBounds(); try { writeFileSync(posFile, JSON.stringify({ x: b.x, y: b.y })) } catch { /* not saved */ } } })
     bar.once('ready-to-show', () => { if (!test) bar?.showInactive() })
     deps.load(bar, '#hpbar')
   }

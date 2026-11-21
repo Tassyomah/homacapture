@@ -990,3 +990,23 @@ body.resizing-v iframe, body.resizing-h iframe, body.resizing-v video, body.resi
 .pod-ov span { flex: 1; }
 .pod-ov-t { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; padding: 2px 6px; border-radius: 6px; background: var(--ink-5); }
 .pod-reset { align-self: flex-start; font-size: 12px; padding: 4px 8px; background: none; color: var(--ink-60); text-decoration: underline; }
+.hpbar .hpbar-who.warn { color: #F5C36A; }
+.pod-alone { background: var(--ink-5); border-radius: 12px; padding: 12px 14px; font-size: 13px; line-height: 1.5; }
+.pod-alone b:first-child { display: block; font-size: 14px; margin-bottom: 4px; }
+.pod-alone p { margin: 6px 0 0; color: var(--ink-60); }
+/* HomaPod floating card (right edge) */
+html:has(.hpcard), body:has(.hpcard) { background: transparent; }
+.hpcard { box-sizing: border-box; width: 176px; height: 150px; padding: 12px; border-radius: 18px; background: rgba(20,20,15,.93); color: var(--paper);
+  box-shadow: 0 10px 30px rgba(0,0,0,.35); display: flex; flex-direction: column; gap: 8px; }
+.hpcard-top { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.hpcard-top .dot { width: 10px; height: 10px; margin: 0; }
+.hpcard-top .time { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 16px; }
+.hpcard-who { flex: 1; font-size: 12.5px; line-height: 1.35; color: rgba(239,238,232,.8); overflow: hidden; }
+.hpcard-who.warn { color: #F5C36A; }
+.hpcard-btns { display: flex; gap: 6px; }
+.hpcard button { flex: 1; padding: 8px 10px; border-radius: 99px; font-size: 13px; background: rgba(239,238,232,.14); color: var(--paper); white-space: nowrap; }
+.hpcard button.rec, .hpcard button.stop { background: var(--coral); color: var(--ink); font-weight: 600; }
+.hpcard > button { flex: none; }
+.hpcard-top .dot { display: inline-block; border-radius: 50%; background: #FF4A3D; animation: hpPulse 1.4s ease-in-out infinite; }
+.hpcard-top .dot.off { background: rgba(239,238,232,.45); animation: none; }
+@media (prefers-reduced-motion: reduce) { .hpcard-top .dot { animation: none; } }

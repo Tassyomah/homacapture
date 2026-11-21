@@ -46,6 +46,14 @@ export function PodScenesPanel({ talk, pc, shots, now, playhead, portrait, poste
   }
   const pair: PodShotKind = portrait ? 'stack' : 'side'
   const cuts = shots.length - 1
+  if (talk.people.length < 2) return <>
+    <h3 className="drawer-title">Scenes</h3>
+    <div className="pod-alone">
+      <b>Only you were recorded</b>
+      <p>No guest was in the call while you recorded, so there is no one to put side by side.</p>
+      <p>Next time, wait until the floating bar says <i>“[name] is here”</i> before you press Record. Your guest must open the <b>guest link</b>; anyone who opens <b>your link</b> counts as you and is not recorded as a guest.</p>
+    </div>
+  </>
   return <>
     <h3 className="drawer-title">Scenes</h3>
     <label className="pod-on"><input type="checkbox" checked={pc.on} onChange={(e) => onChange({ ...pc, on: e.target.checked })} />Show everyone’s cameras (off = your camera only)</label>
