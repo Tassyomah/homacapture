@@ -71,7 +71,7 @@ export function registerHomapod(deps: {
 
   /** The floating Record / Stop bar: stays on top of Chrome or the call window, never takes focus when it appears. */
   function showBar() {
-    if (test && process.env.NARRATE_TEST_HOMAPOD !== 'shot') return
+    if (test && process.env.NARRATE_TEST_HOMAPOD !== 'shot' && process.env.NARRATE_TEST_HOMAPOD !== 'auto') return
     if (bar && !bar.isDestroyed()) { if (!test) bar.showInactive(); return }
     // On the right edge, halfway down: clear of the call's own buttons (bottom) and the browser's toolbar (top).
     // Dragged somewhere else, it remembers (Tassy, 2026-11-21: "blocks the vdo record button on chrome").
@@ -148,7 +148,6 @@ export function registerHomapod(deps: {
     room = nextRoom; guestName = o.guest; hostName = o.host || 'Tassy'; mode = o.mode
     phase = 'ready'; message = null; saved = null
     await connect()
-    showBar()
     if (mode === 'here') openCall()
     else { callWin?.destroy(); callWin = null }
     send(); return status()
@@ -179,6 +178,7 @@ export function registerHomapod(deps: {
     tracks = new Map(); startedAt = Date.now(); phase = 'recording'; message = null; saved = null
     writeFileSync(join(dir, 'homapod', 'session.json'), JSON.stringify({ room, mode, guestName, startedAt }, null, 1))
     recWin!.webContents.send('homapod:start', { hostSid: HOST_SID, ...o })
+    showBar()   // the card is only up while a HomaPod is recording (Tassy, 2026-11-21)
     send(); return status()
   }
 
@@ -210,6 +210,7 @@ export function registerHomapod(deps: {
     try {
       const p = await finalize(dir)
       phase = 'ready'; message = null; startedAt = 0; saved = p.dir; send()
+      setTimeout(() => { if (phase === 'ready') hideBar() }, 4000)
       return p
     } catch (err) {
       phase = 'ready'; message = `The recording is saved as raw files in ${dir}, but making the project failed: ${(err as Error).message}`; startedAt = 0; send()

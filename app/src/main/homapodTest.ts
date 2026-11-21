@@ -139,11 +139,13 @@ export async function homapodAuto(win: BrowserWindow, hp: { hangUp: () => void; 
     await js(`window.narrate.homapodPrepare({ room: '${room}', guest: 'Test Guest', host: 'Tassy', mode: 'here' })`)   // the call window joins with START (autostart in tests)
     let s = hp.status()
     for (let i = 0; i < 40 && s.phase !== 'recording'; i++) { await wait(1000); s = hp.status() }
-    say({ step: 'joined', hostInCall: s.hostInCall, phase: s.phase })
+    const cardUp = () => BrowserWindow.getAllWindows().some((w) => !w.isDestroyed() && w.webContents.getURL().includes('#hpbar'))
+    say({ step: 'joined', hostInCall: s.hostInCall, phase: s.phase, cardWhileRecording: cardUp() })
     await wait(8000)
     hp.hangUp(); say({ step: 'hung-up' })
     for (let i = 0; i < 60 && !hp.status().saved; i++) await wait(1000)
     s = hp.status(); say({ step: 'after-hang-up', phase: s.phase, saved: s.saved })
+    await wait(5000); say({ step: 'card-after-save', up: cardUp() })
     if (s.saved) say({ step: 'homapod.json', json: JSON.parse(readFileSync(join(s.saved, 'homapod.json'), 'utf8')).tracks.map((t: { label: string; kind: string; end: number }) => [t.label, t.kind, t.end]) })
     guest.destroy()
   } catch (e) { say({ step: 'error', message: (e as Error).message }) }

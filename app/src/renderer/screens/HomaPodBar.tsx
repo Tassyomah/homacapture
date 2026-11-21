@@ -34,8 +34,8 @@ export function HomaPodBar() {
         <span className={'hpcard-who' + (!st.saved && !st.guests.length ? ' warn' : '')}>{st.saved ? 'Saved ✓' : st.guests.length ? who : 'No guest in the call yet'}
           {!st.saved && st.auto && !st.hostInCall && <em className="hpcard-sub">Recording starts when you press START in the call</em>}</span>
         <div className="hpcard-btns">
-          {st.saved && <button className="no-drag" onClick={() => void window.narrate.homapodFocusMain()}>Show</button>}
-          <button className="no-drag rec" onClick={record}>● Record</button>
+          {st.saved ? <button className="no-drag" onClick={() => void window.narrate.homapodFocusMain()}>Show</button>
+            : <button className="no-drag rec" onClick={record}>● Record</button>}
         </div>
       </>}
     </div>
