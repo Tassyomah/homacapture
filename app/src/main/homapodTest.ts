@@ -193,3 +193,13 @@ export async function homapodExport(win: BrowserWindow) {
   } catch (e) { say({ step: 'error', message: (e as Error).message }) }
   app.exit(0)
 }
+
+/** NARRATE_TEST_HOMAPOD=quit: with a call open (recorder + call window), app.quit() must actually quit. */
+export async function homapodQuit(win: BrowserWindow) {
+  if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once('did-finish-load', () => r()))
+  await win.webContents.executeJavaScript(`window.narrate.homapodPrepare({ room: 'hptestquit${Date.now() % 100000}', guest: '', host: 'Tassy', mode: 'here' })`)
+  await new Promise((r) => setTimeout(r, 8000))
+  console.log('HPTEST ' + JSON.stringify({ step: 'quitting', windows: BrowserWindow.getAllWindows().length }))
+  app.quit()
+  setTimeout(() => { console.log('HPTEST ' + JSON.stringify({ step: 'quit-blocked' })); app.exit(3) }, 8000)
+}

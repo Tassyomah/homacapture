@@ -111,7 +111,8 @@ export function registerHomapod(deps: {
     if (recWin && !recWin.isDestroyed()) return
     ses()
     recWin = new BrowserWindow({ show: false, width: 1280, height: 720, webPreferences: { partition: PARTITION, preload: deps.preload, sandbox: false, backgroundThrottling: false } })
-    recWin.webContents.setAudioMuted(true)   // records the guests' sound, never plays it out of the speakers
+    recWin.webContents.setAudioMuted(true)
+    recWin.webContents.on('will-prevent-unload', (e) => e.preventDefault())   // VDO.Ninja's "leave this page?" guard must never block quitting   // records the guests' sound, never plays it out of the speakers
     recWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     recWin.on('closed', () => { recWin = null })
     await recWin.loadURL(sceneLink(room))
@@ -164,6 +165,7 @@ export function registerHomapod(deps: {
     callWin = new BrowserWindow({ width: 1280, height: 800, show: !test, title: 'HomaPod call', backgroundColor: '#14140F',
       webPreferences: { partition: PARTITION, sandbox: true, backgroundThrottling: false } })
     callWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' } })
+    callWin.webContents.on('will-prevent-unload', (e) => e.preventDefault())
     callWin.on('closed', () => { callWin = null })
     void callWin.loadURL(hostLink(room, hostName) + (test ? '&autostart' : ''))
   }
@@ -172,6 +174,8 @@ export function registerHomapod(deps: {
   ipcMain.handle('homapod:status', () => status())
 
 
+  // Quitting HomaCapture closes the call windows first (a hidden VDO.Ninja page used to block Quit, 2026-11-21).
+  app.on('before-quit', () => { if (poll) clearInterval(poll); recWin?.destroy(); callWin?.destroy(); bar?.destroy() })
   ipcMain.handle('homapod:options', (_e, o: RecOpts & { auto: boolean }) => { recOpts = { micLabel: o.micLabel, camLabel: o.camLabel, headphones: o.headphones }; autoRecord = o.auto; send(); return status() })
   ipcMain.handle('homapod:record', async (_e, o: RecOpts) => { autoStarted = false; return startRecording(o) })
   async function startRecording(o: RecOpts) {
