@@ -146,8 +146,48 @@ export async function homapodAuto(win: BrowserWindow, hp: { hangUp: () => void; 
     for (let i = 0; i < 60 && !hp.status().saved; i++) await wait(1000)
     s = hp.status(); say({ step: 'after-hang-up', phase: s.phase, saved: s.saved })
     await wait(5000); say({ step: 'card-after-save', up: cardUp() })
+    // the card's Show button: opens the saved HomaPod in the editor
+    const card = BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.getURL().includes('#hpbar'))
+    await card?.webContents.executeJavaScript(`[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Show')?.click(); true`)
+    await wait(4000)
+    say({ step: 'show-opens', crumb: await js<string>(`document.querySelector('.crumb')?.textContent ?? ''`) })
     if (s.saved) say({ step: 'homapod.json', json: JSON.parse(readFileSync(join(s.saved, 'homapod.json'), 'utf8')).tracks.map((t: { label: string; kind: string; end: number }) => [t.label, t.kind, t.end]) })
     guest.destroy()
+  } catch (e) { say({ step: 'error', message: (e as Error).message }) }
+  app.exit(0)
+}
+
+/** NARRATE_TEST_HOMAPOD=export NARRATE_OPEN=<podcast project>: export it the way the Export button does, report the file. */
+export async function homapodExport(win: BrowserWindow) {
+  const say = (o: unknown) => console.log('HPTEST ' + JSON.stringify(o))
+  try {
+    if (win.webContents.isLoading()) await new Promise<void>((r) => win.webContents.once('did-finish-load', () => r()))
+    const dir = process.env.NARRATE_OPEN!
+    if (process.env.NARRATE_TEST_UI) {
+      // through the buttons, like Tassy: open the project, press Export (top), then the export button in the panel
+      await new Promise((r) => setTimeout(r, 1500))
+      win.webContents.send('dev:open', dir)
+      await new Promise((r) => setTimeout(r, 7000))
+      const js = (c: string) => win.webContents.executeJavaScript(c)
+      say({ step: 'opened', crumb: await js(`document.querySelector('.crumb')?.textContent`) })
+      say({ step: 'top-export', clicked: await js(`(() => { const b = [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Export'); b?.click(); return !!b })()`) })
+      await new Promise((r) => setTimeout(r, 1500))
+      say({ step: 'inspector', text: (await js(`document.querySelector('.inspector')?.innerText ?? ''`)).slice(0, 400) })
+      const btns = await js(`[...document.querySelectorAll('.inspector button')].map(b => b.textContent.trim()).filter(Boolean).slice(0, 30)`)
+      say({ step: 'inspector-buttons', btns })
+      say({ step: 'pane-export', clicked: await js(`(() => { const b = [...document.querySelectorAll('.inspector button')].find(b => /^Export/.test(b.textContent.trim())); b?.click(); return b ? b.textContent.trim() : null })()`) })
+      for (let i = 0; i < 120; i++) {
+        await new Promise((r) => setTimeout(r, 2000))
+        const t = await js(`document.querySelector('.inspector')?.innerText ?? ''`)
+        if (/Saved|Done|Show in Finder|Exported|Reveal|Error|couldn|failed/i.test(t) && i > 2) { say({ step: 'after', text: t.slice(0, 500) }); break }
+        if (i % 10 === 0) say({ step: 'progress', text: t.slice(0, 160) })
+      }
+      app.exit(0); return
+    }
+    const { defaultConfig, defaultPodcast } = await import('../shared/types')
+    const cfg = { ...defaultConfig, padding: 0, radius: 0, background: 'ink', outputHeight: 1080, outputFps: 30, podcast: defaultPodcast }
+    const out = await win.webContents.executeJavaScript(`window.narrate.exportProject(${JSON.stringify(dir)}, ${JSON.stringify(cfg)}, [], 'test', 'mp4', { zooms: [], speeds: [], masks: [] }).then((f) => 'OK ' + f, (e) => 'ERR ' + e.message)`)
+    say({ step: 'export', out })
   } catch (e) { say({ step: 'error', message: (e as Error).message }) }
   app.exit(0)
 }

@@ -44,6 +44,8 @@ export function registerHomapod(deps: {
   loadProject: (dir: string) => Project | null
   /** load a renderer route (#hpbar) into a window */
   load: (w: BrowserWindow, hash: string) => void
+  /** show the main window, opening it again if it was closed */
+  openMain: (projectDir?: string | null) => void
   mainPreload: string
 }) {
   let recWin: BrowserWindow | null = null, callWin: BrowserWindow | null = null
@@ -84,7 +86,7 @@ export function registerHomapod(deps: {
     } catch { /* first time: the default spot */ }
     bar = new BrowserWindow({ width: BW, height: BH, x, y,
       frame: false, transparent: true, alwaysOnTop: true, resizable: false, movable: true, hasShadow: true, skipTaskbar: true,
-      focusable: true, fullscreenable: false, show: false, webPreferences: { preload: deps.mainPreload, sandbox: false } })
+      focusable: true, fullscreenable: false, show: false, acceptFirstMouse: true, webPreferences: { preload: deps.mainPreload, sandbox: false } })
     bar.setAlwaysOnTop(true, 'screen-saver'); bar.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
     bar.on('closed', () => { bar = null })
     bar.on('moved', () => { if (bar) { const b = bar.getBounds(); try { writeFileSync(posFile, JSON.stringify({ x: b.x, y: b.y })) } catch { /* not saved */ } } })
@@ -94,7 +96,7 @@ export function registerHomapod(deps: {
   const hideBar = () => { bar?.destroy(); bar = null }
   // closing the card (its ×, or leaving the HomaPod screen) never stops a recording
   ipcMain.handle('homapod:closeCard', () => { if (phase !== 'recording' && phase !== 'saving') hideBar() })
-  ipcMain.handle('homapod:focusMain', () => { const w = deps.main(); if (w) { w.show(); w.focus() } })
+  ipcMain.handle('homapod:focusMain', () => deps.openMain(saved))   // Show = the saved HomaPod, open in the editor
 
   const ses = () => {
     const s = session.fromPartition(PARTITION)

@@ -11,7 +11,7 @@ import { exportProject, findFfmpeg, renderThumbnails } from './exporter'
 import { getShareSettings, saveShareSettings, shareFile } from './share'
 import { askClaude, cancelAsk, claudeSignIn, claudeStatus } from './claude'
 import { registerHomapod } from './homapod'
-import { homapodAuto, homapodScenes, homapodSelfTest, homapodShots } from './homapodTest'
+import { homapodAuto, homapodExport, homapodScenes, homapodSelfTest, homapodShots } from './homapodTest'
 
 const IS_WIN = process.platform === 'win32'
 const APP_ROOT = resolve(app.getAppPath())
@@ -620,9 +620,15 @@ app.whenReady().then(async () => {
   })
 
   const hp = registerHomapod({ main: () => win, recordings: RECORDINGS, preload: join(__dirname, '../preload/vdo.mjs'), recorder, ffmpeg: findFfmpeg, loadProject,
-    load, mainPreload: join(__dirname, '../preload/index.mjs') })
+    load, mainPreload: join(__dirname, '../preload/index.mjs'),
+    openMain: (dir) => {
+      const fresh = !win, quiet = !!process.env.NARRATE_TEST_HOMAPOD   // tests never show a window
+      if (win) { if (!quiet) { win.show(); win.focus() } } else createWindow()
+      if (!quiet) app.focus({ steal: true })
+      if (dir && win) { const w = win; if (fresh || w.webContents.isLoading()) w.webContents.once('did-finish-load', () => setTimeout(() => w.webContents.send('dev:open', dir), 400)); else w.webContents.send('dev:open', dir) }
+    } })
   createWindow()
-  if (process.env.NARRATE_TEST_HOMAPOD && win) { app.dock?.hide(); void (process.env.NARRATE_TEST_HOMAPOD === 'shot' ? homapodShots(win) : process.env.NARRATE_TEST_HOMAPOD === 'scenes' ? homapodScenes(win) : process.env.NARRATE_TEST_HOMAPOD === 'auto' ? homapodAuto(win, hp) : homapodSelfTest(win, findFfmpeg() ?? 'ffmpeg', hp.testSwap)) }
+  if (process.env.NARRATE_TEST_HOMAPOD && win) { app.dock?.hide(); void (process.env.NARRATE_TEST_HOMAPOD === 'shot' ? homapodShots(win) : process.env.NARRATE_TEST_HOMAPOD === 'scenes' ? homapodScenes(win) : process.env.NARRATE_TEST_HOMAPOD === 'auto' ? homapodAuto(win, hp) : process.env.NARRATE_TEST_HOMAPOD === 'export' ? homapodExport(win) : homapodSelfTest(win, findFfmpeg() ?? 'ffmpeg', hp.testSwap)) }
   app.on('activate', () => { if (!win) createWindow(); else win.show() })
 })
 app.on('window-all-closed', () => { /* keep running while the control bar is up */ if (recorder.state === 'idle') app.quit() })
