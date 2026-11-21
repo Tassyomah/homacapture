@@ -965,3 +965,28 @@ body.resizing-v iframe, body.resizing-h iframe, body.resizing-v video, body.resi
 .hp-card { gap: 10px; padding: 14px 18px; }
 .hp-mode { padding: 12px 14px; }
 .hp-head h1 { font-size: 26px; margin-top: 0; }
+/* HomaPod floating bar */
+.hpbar { height: 56px; border-radius: 28px; }
+.hpbar .hpbar-who { font-size: 13px; color: rgba(239,238,232,.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.hpbar .time { min-width: 44px; }
+.hpbar button { white-space: nowrap; }
+.hpbar button.rec { background: var(--coral); color: var(--ink); font-weight: 600; }
+.hpbar-live, .hpbar-wait { width: 10px; height: 10px; border-radius: 50%; flex: none; background: #2FB36B; }
+.hpbar-wait { background: rgba(239,238,232,.45); animation: hpPulse 1.4s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .hpbar-wait { animation: none; } }
+/* Podcast scenes panel */
+.pod-on { display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 6px 0; }
+.pod-grid .tpl b { font-size: 12.5px; } .pod-grid .tpl i { font-style: normal; font-size: 11.5px; color: var(--ink-60); }
+.pod-mini { position: relative; display: block; aspect-ratio: 16/9; border-radius: 8px; background: #14140F; overflow: hidden; }
+.pod-mini.tall { aspect-ratio: auto; height: 0; padding-bottom: 56.25%; }
+.pod-mini.tall > i { left: 36% !important; right: 36% !important; }
+.pod-strip { position: absolute; left: 6%; right: 6%; bottom: 7%; height: 9%; display: flex; gap: 2px; }
+.pod-strip b { border-radius: 2px; }
+.pod-shots { display: flex; flex-wrap: wrap; gap: 6px; }
+.pod-shots button { font-size: 12.5px; padding: 6px 10px; border-radius: 99px; background: var(--ink-5); }
+.pod-shots button:hover { background: var(--ink-10); }
+.pod-overrides { display: flex; flex-direction: column; gap: 4px; margin: 6px 0 10px; }
+.pod-ov { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+.pod-ov span { flex: 1; }
+.pod-ov-t { font-family: var(--mono, ui-monospace, monospace); font-size: 11.5px; padding: 2px 6px; border-radius: 6px; background: var(--ink-5); }
+.pod-reset { align-self: flex-start; font-size: 12px; padding: 4px 8px; background: none; color: var(--ink-60); text-decoration: underline; }

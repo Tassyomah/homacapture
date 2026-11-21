@@ -7,6 +7,8 @@ import { POP, WHOOSH } from './sfx'
 import { Captions } from './Captions'
 import { Doodle, EdgeWords, KitDefs, KitObject, Paper, Stripes, Tape } from './kit'
 import { Icon } from './icons'
+import { podShots, shotAt, tilesFor, videoAt } from '../shared/podcast'
+import type { PodcastConfig, PodShot, PodTalk } from '../shared/types'
 
 const BACKGROUNDS: Record<string, string> = {
   indigo: 'linear-gradient(135deg, #6E71E8 0%, #8B78D6 100%)',
@@ -26,10 +28,17 @@ export interface Layout { width: number; height: number; frame: Rect; vp: Viewpo
  * - portrait / square presets (9:16, 4:5, 1:1): the frame fills the canvas and crops the screen; the viewport
  *   follows the cursor and zooms (content-aware reframing, add-on spec §17).
  */
-export function layout(ev: RecordingEvents, cfg: RenderConfig): Layout {
+export function layout(ev: RecordingEvents, cfg: RenderConfig, podcast = false): Layout {
   const W = ev.display.width, H = ev.display.height, pad = Math.round(W * cfg.padding)
   const even = (n: number) => { const r = Math.round(n); return r % 2 ? r + 1 : r }
   const ratio = ASPECTS.find((a) => a.id === cfg.aspect)?.ratio ?? null
+  if (podcast) {
+    // Podcast scenes fill the whole canvas: 16:9 unless a portrait / square size is picked (the long side = the camera's)
+    const long = Math.max(W, H), r = ratio ?? 16 / 9
+    const width = r >= 1 ? even(long) : even(long * r), height = r >= 1 ? even(long / r) : even(long)
+    const frame = { x: 0, y: 0, w: width, h: height }
+    return { width, height, frame, vp: { FW: width, FH: height, base: 1, crop: true }, space: frame }
+  }
   const withSpace = (l: Omit<Layout, 'space'>): Layout => ({ ...l, space: l.frame })
   if (ratio === null) return withSpace({ width: even(W + 2 * pad), height: even(H + 2 * pad), frame: { x: pad, y: pad, w: W, h: H }, vp: { FW: W, FH: H, base: 1, crop: false } })
   if (ratio <= 1 && cfg.layout && cfg.layout !== 'full') {
@@ -61,8 +70,8 @@ export function layout(ev: RecordingEvents, cfg: RenderConfig): Layout {
 }
 
 /** One kept range of the recording, rendered at source time = srcStart + local frame. */
-const Segment: React.FC<{ outStart: number; duck: [number, number][]; ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; transIn: boolean; punches: number[]; ins?: InsertClip; segLen: number }> =
-  ({ outStart, duck, ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts, overlays, stickers, transIn, punches, ins, segLen }) => {
+const Segment: React.FC<{ outStart: number; duck: [number, number][]; ev: RecordingEvents; cfg: RenderConfig; assets: ProjectAssets; keys: CamKey[]; srcStart: number; rate: number; L: Layout; transcript: Transcript | null; masks: Mask[]; texts: TextPop[]; overlays: Overlay[]; stickers: Sticker[]; transIn: boolean; punches: number[]; ins?: InsertClip; segLen: number; pod?: { talk: PodTalk; shots: PodShot[] } | null }> =
+  ({ outStart, duck, ev, cfg, assets, keys, srcStart, rate, L, transcript, masks, texts, overlays, stickers, transIn, punches, ins, segLen, pod }) => {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const t = srcStart + (frame / fps) * rate
@@ -113,10 +122,10 @@ const Segment: React.FC<{ outStart: number; duck: [number, number][]; ev: Record
       {L.space !== F && cfg.surface === 'stripes' && !L.panel && <Stripes r={{ x: 0, y: 0, w: L.width, h: L.height }} />}
       {L.panel && cfg.surface === 'paper' && <Paper r={L.panel} />}
       {L.panel && cfg.surface === 'stripes' && <Stripes r={L.panel} />}
-      <div data-hc-frame="" style={{ position: 'absolute', left: F.x, top: F.y, width: F.w, height: F.h, borderRadius: cfg.radius,
+      <div data-hc-frame="" style={{ position: "absolute", left: F.x, top: F.y, width: F.w, height: F.h, borderRadius: pod ? 0 : cfg.radius,
                     overflow: 'hidden', boxShadow: cfg.layout === 'card' ? `0 0 0 ${Math.round(F.w * 0.025)}px #FDFCF8, 0 ${Math.round(F.w * 0.05)}px ${Math.round(F.w * 0.14)}px rgba(20,20,15,0.35)` : '0 40px 120px rgba(20,20,15,0.35)',
                     background: '#14140F', ...frameFx, ...(cfg.layout === 'card' ? { transform: `${frameFx.transform ?? ''} rotate(-1.5deg)` } : {}) }}>
-        {ins ? <InlineClip ins={ins} src={assets.media?.[ins.file] ?? null} age={age} len={segLen} fps={fps} filter={lookCss} /> : <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${cam.scale})`, filter: lookCss }}>
+        {ins ? <InlineClip ins={ins} src={assets.media?.[ins.file] ?? null} age={age} len={segLen} fps={fps} filter={lookCss} /> : pod && cfg.podcast ? <PodScene talk={pod.talk} pc={cfg.podcast} shots={pod.shots} assets={assets} t={t} srcStart={srcStart} fps={fps} rate={rate} W={F.w} H={F.h} filter={lookCss} /> : <div style={{ position: 'absolute', left: 0, top: 0, width: W, height: H, transformOrigin: '0 0', transform: `translate(${tx}px, ${ty}px) scale(${cam.scale})`, filter: lookCss }}>
           {cutout ? <>
             {/* Remove / blur background: what sits behind the speaker, then the speaker cut out (transparent video) on top. */}
             {cfg.backdrop === 'blur' && <OffthreadVideo src={assets.screen} muted startFrom={Math.round(srcStart * fps)} playbackRate={rate}
@@ -655,6 +664,36 @@ const TimedAudio: React.FC<{ src: string; start: number; fps: number; volume: nu
     : <Sequence from={lead} layout="none"><Audio src={src} volume={vol} playbackRate={rate} /></Sequence>
 }
 
+/**
+ * Podcast scene: everyone's camera arranged for the shot at source time t (side by side, speaker big, solo, stacked).
+ * Every video stays mounted and only moves, so a layout change is a clean cut with no reload; sound comes from mic.wav.
+ */
+const PodScene: React.FC<{ talk: PodTalk; pc: PodcastConfig; shots: PodShot[]; assets: ProjectAssets; t: number; srcStart: number; fps: number; rate: number; W: number; H: number; filter?: string }> =
+  ({ talk, pc, shots, assets, t, srcStart, fps, rate, W, H, filter }) => {
+  const shot = shotAt(shots, t)
+  const srcOf = (file: string) => file === 'screen.mp4' ? assets.screen : assets.media?.[file] ?? null
+  const tiles = shot ? tilesFor(shot, talk.people, W, H, pc, (id) => { const p = talk.people.find((x) => x.id === id); return !!p && !!videoAt(p, t) && !!srcOf(videoAt(p, t)!.file) }) : []
+  const fs = Math.round(Math.min(W, H) * 0.028)
+  return (
+    <div style={{ position: 'absolute', inset: 0, background: '#14140F' }}>
+      {talk.people.flatMap((p) => p.videos.map((v) => {
+        const src = srcOf(v.file); if (!src) return null
+        const live = videoAt(p, t) === v
+        const tile = live ? tiles.find((x) => x.id === p.id) : undefined
+        return (
+          <div key={p.id + v.file} style={{ position: 'absolute', overflow: 'hidden', visibility: tile ? 'visible' : 'hidden',
+            left: tile?.x ?? 0, top: tile?.y ?? 0, width: tile?.w ?? W, height: tile?.h ?? H, borderRadius: tile?.radius ?? 0, zIndex: tile?.z ?? 0,
+            boxShadow: tile && tile.z > 1 ? `0 ${Math.round(fs * 0.4)}px ${fs * 2}px rgba(0,0,0,.45), 0 0 0 ${Math.max(2, Math.round(fs * 0.12))}px rgba(255,255,255,.9)` : undefined }}>
+            <TimedVideo src={src} start={srcStart - v.start} fps={fps} rate={rate} style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: '50% 30%', display: 'block', filter }} />
+            {tile?.label && <span style={{ position: 'absolute', left: Math.round(fs * 0.6), bottom: Math.round(fs * 0.6), padding: `${Math.round(fs * 0.25)}px ${Math.round(fs * 0.55)}px`,
+              borderRadius: Math.round(fs * 0.4), background: 'rgba(20,20,15,.62)', color: '#fff', font: `600 ${tile.z > 1 ? Math.round(fs * 0.75) : fs}px ${SANS}`, letterSpacing: '-0.01em' }}>{p.label}</span>}
+          </div>
+        )
+      }))}
+    </div>
+  )
+}
+
 /** Camera box in frame pixels, relative to the frame's top-left. Size is a fraction of the frame width. */
 export function cameraRect(cfg: RenderConfig, camera: { width: number; height: number }, FW: number, FH: number) {
   const w = Math.round(FW * cfg.cameraSize)
@@ -674,7 +713,9 @@ export function cameraRect(cfg: RenderConfig, camera: { width: number; height: n
 export const Screencast: React.FC<ScreencastProps> = (props) => {
   const { assets, events: ev, config: cfg, cuts = [], zooms = [], speeds = [], masks = [], texts = [], overlays = [], stickers = [], music = null, voiceovers = [], inserts = [], transcript = null } = props
   const { fps, width: VW } = useVideoConfig()
-  const L = useMemo(() => layout(ev, cfg), [ev, cfg])
+  const podTalk = (props.pod as PodTalk | null | undefined) ?? null
+  const L = useMemo(() => layout(ev, cfg, !!(podTalk && cfg.podcast?.on)), [ev, cfg, podTalk])
+  const pod = useMemo(() => podTalk && cfg.podcast?.on ? { talk: podTalk, shots: podShots(podTalk, cfg.podcast, L.width < L.height, ev.videoDuration) } : null, [podTalk, cfg.podcast, L.width, L.height, ev.videoDuration])
   const keys = useMemo(() => buildCamera(ev, cfg, L.vp, zooms), [ev, cfg, L, zooms])
   const ranges = useMemo(() => keptRanges(ev, cuts, speeds, inserts), [ev, cuts, speeds, inserts])
   const total = ranges.reduce((s, r) => s + Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps)), 0) / fps
@@ -706,7 +747,7 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
           const len = Math.max(1, Math.round(((r.end - r.start) / r.rate) * fps))
           const seq = (
             <Sequence key={i} from={from} durationInFrames={len}>
-              <Segment outStart={from / fps} duck={duckSpans} ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} overlays={overlays} stickers={stickers} transIn={transIn[i]} punches={punches} ins={r.ins} segLen={len / fps} />
+              <Segment outStart={from / fps} duck={duckSpans} ev={ev} cfg={cfg} assets={assets} keys={keys} srcStart={r.start} rate={r.rate} L={L} transcript={transcript} masks={masks} texts={texts} overlays={overlays} stickers={stickers} transIn={transIn[i]} punches={punches} ins={r.ins} segLen={len / fps} pod={pod} />
             </Sequence>
           )
           from += len
@@ -730,7 +771,7 @@ export const Screencast: React.FC<ScreencastProps> = (props) => {
 
 /** Design size of the composition (even numbers for 4:2:0 encoders). */
 export function compositionSize(p: ScreencastProps) {
-  const L = layout(p.events, p.config)
+  const L = layout(p.events, p.config, !!(p.pod && p.config.podcast?.on))
   return { width: L.width, height: L.height }
 }
 

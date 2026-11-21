@@ -33,6 +33,12 @@ export function HomaPod({ projects, onOpen, onChanged }: { projects: Project[]; 
     return window.narrate.onHomapodStatus(setSt)
   }, [])
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t) }, [])
+  // saved from the floating bar: show the same "Saved" card here
+  useEffect(() => {
+    if (!st?.saved || done?.dir === st.saved) return
+    const dir = st.saved
+    void window.narrate.listProjects().then((ps) => { const p = ps.find((x) => x.dir === dir); if (p) { setDone(p); onChanged() } })
+  }, [st?.saved])
   useEffect(() => {
     void (async () => {
       try { (await navigator.mediaDevices.getUserMedia({ audio: true })).getTracks().forEach((t) => t.stop()) } catch { /* labels stay hidden */ }

@@ -658,3 +658,85 @@ def align(args):
         if best is None or z > best[2]: best = (i, off, z)
     if best is None: emit(event="error", code="align_none", message="Nothing to match the video against."); sys.exit(3)
     emit(event="aligned", ref=best[0], offset=round(best[1], 4), score=round(best[2], 2), confident=best[2] > 8)
+
+
+def talk(args):
+    """narrate.py talk --out <homapod project>
+    Who is talking when, for the podcast scenes (auto mix and match). Reads homapod.json, measures each person's own
+    voice track every 0.1 s on the main picture's clock and writes talk.json:
+      {"hop": 0.1, "duration": s, "people": [{"id", "label", "kind": "host"|"guest", "videos": [{"file", "start", "end"}]}],
+       "active": {"<id>": "0011100…"}}   one character per hop, "1" = talking.
+    A voice heard faintly on someone else's mic (no headphones) is not counted as them talking."""
+    import numpy as np
+    need_ffmpeg()
+    out = args.out
+    hp = json.load(open(os.path.join(out, "homapod.json")))
+    people, voices = {}, {}
+    for t in hp["tracks"]:
+        pid = "host" if t["kind"] != "guest" else "guest:" + (t.get("sid") or t["key"])
+        p = people.setdefault(pid, {"id": pid, "label": t["label"].replace(" camera", ""), "kind": "host" if pid == "host" else "guest", "videos": []})
+        if t.get("video"): p["videos"].append({"file": t["video"], "start": t["start"], "end": (t["start"] + t["end"]) if t.get("end") else None})
+        if t.get("wav"): voices.setdefault(pid, []).append((t["start"], os.path.join(out, t["wav"])))
+    hop, sr = 0.1, 16000
+    n_hop = int(sr * hop)
+    total = 0.0
+    env = {}
+    for pid, parts in voices.items():
+        segs = []
+        for start, wav in parts:
+            pcm = np.frombuffer(subprocess.run([FFMPEG, "-v", "error", "-i", wav, "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"], capture_output=True).stdout, np.float32)
+            k = len(pcm) // n_hop
+            db = 20 * np.log10(np.sqrt((pcm[:k * n_hop].reshape(k, n_hop) ** 2).mean(1)) + 1e-6)
+            segs.append((start, db)); total = max(total, start + k * hop)
+        env[pid] = segs
+    n = int(math.ceil(total / hop)) + 1
+    level = {}
+    for pid, segs in env.items():
+        a = np.full(n, -120.0)
+        for start, db in segs:
+            i0 = int(round(start / hop))
+            lo, hi = max(0, i0), min(n, i0 + len(db))
+            if hi > lo: a[lo:hi] = db[lo - i0:hi - i0]
+        level[pid] = a
+    act = {}
+    rel = {}
+    for pid, a in level.items():
+        live = a[a > -110]
+        floor = np.percentile(live, 20) if len(live) else -90
+        peak = np.percentile(live, 97) if len(live) else -20
+        thr = floor + 0.45 * (peak - floor)
+        on = a > thr
+        rel[pid] = a - peak
+        act[pid] = on
+    ids = list(act)
+    if len(ids) > 1:   # someone else's voice leaking into a mic: the much louder (for its own mic) one is the talker
+        R = np.stack([rel[i] for i in ids]); A = np.stack([act[i] for i in ids])
+        best = R.max(0)
+        for j in range(len(ids)):
+            A[j] &= ~((best - R[j] > 10) & (A.sum(0) > 1))
+        act = {ids[j]: A[j] for j in range(len(ids))}
+    def smooth(on):
+        on = on.copy()
+        # bridge short pauses (< 0.6 s) inside a turn, then drop blips (< 0.3 s)
+        i = 0
+        while i < len(on):
+            if not on[i]:
+                j = i
+                while j < len(on) and not on[j]: j += 1
+                if 0 < i and j < len(on) and (j - i) * hop < 0.6: on[i:j] = True
+                i = j
+            else: i += 1
+        i = 0
+        while i < len(on):
+            if on[i]:
+                j = i
+                while j < len(on) and on[j]: j += 1
+                if (j - i) * hop < 0.3: on[i:j] = False
+                i = j
+            else: i += 1
+        return on
+    result = {"hop": hop, "duration": round(total, 2), "people": list(people.values()),
+              "active": {pid: "".join("1" if x else "0" for x in smooth(on)) for pid, on in act.items()}}
+    with open(os.path.join(out, "talk.json.tmp"), "w") as fh: json.dump(result, fh)
+    os.replace(os.path.join(out, "talk.json.tmp"), os.path.join(out, "talk.json"))
+    emit(event="ready", out=out, people=len(people))

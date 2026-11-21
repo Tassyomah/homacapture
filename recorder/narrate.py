@@ -372,6 +372,7 @@ def main():
     if args.cmd == "import": import_video(args); return
     if args.cmd == "matte": matte(args); return
     if args.cmd == "align": align(args); return
+    if args.cmd == "talk": talk(args); return
     record(args)
 
 if __name__ == "__main__": main()

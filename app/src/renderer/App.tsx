@@ -4,6 +4,7 @@ import { Home, niceName } from './screens/Home'
 import { Recording } from './screens/Recording'
 import { Editor } from './screens/Editor'
 import { HomaPod } from './screens/HomaPod'
+import { HomaPodBar } from './screens/HomaPodBar'
 import { ControlBar } from './screens/ControlBar'
 import { AreaFrame, AreaPicker } from './screens/AreaPicker'
 import { IconChevronLeft } from '@tabler/icons-react'
@@ -16,6 +17,7 @@ document.body.classList.add(isWin ? 'win' : 'mac')
 
 export function App() {
   if (window.location.hash === '#bar') return <ControlBar />
+  if (window.location.hash === '#hpbar') return <HomaPodBar />
   if (window.location.hash === '#area') return <AreaPicker />
   if (window.location.hash.startsWith('#frame=')) return <AreaFrame spec={window.location.hash.slice(7)} />
   return <MainWindow />

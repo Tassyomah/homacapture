@@ -5,7 +5,7 @@ import { SLOT_GAP, insertsWithin, keptDuration, keptRanges, nextSlot, outToSrc, 
 import { ASPECTS, ASSET_LABEL, CAPTION_STYLES, EXPORT_PRESETS, LOOKS, STICKER_EMOJI, STICKER_SHAPES, TEXT_FONTS, defaultConfig, type AnimOut, type Blend, type BrandKit, type ClipAnim, type ClipOp, type InsertClip, type Keyframe, type OverlayShape, type VoiceFx, type Look, type Sticker, type TextAnim, type Transition, type Analysis, type BackdropFill, type Background, type CameraCorner, type CameraShape, type CaptionStyle, type Chapter, type Cut, type DerivedAsset, type ExportProgress, type ManualZoom, type Mask, type MusicTrack, type Overlay, type Project, type Proposal, type RenderConfig, type ScreencastProps, type SpeedRange, type TextPop, type TextStyle, type Voiceover, type Transcript, type TranscriptSegment } from '../../shared/types'
 import { smoothCursor } from '../../video/motion'
 import { revealLabel } from '../platform'
-import { IconArrowBackUp, IconArrowBarToLeft, IconArrowBarToRight, IconArrowForwardUp, IconBadgeCc, IconBrush, IconColorFilter, IconCopy, IconDownload, IconLetterT, IconLink, IconMicrophone, IconMoodSmile, IconMusic, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconScissors, IconSnowflake, IconFileText, IconMessageChatbot, IconSparkles, IconTemplate, IconTrash, IconUpload, IconWand, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
+import { IconArrowBackUp, IconArrowBarToLeft, IconArrowBarToRight, IconArrowForwardUp, IconBadgeCc, IconBrush, IconColorFilter, IconCopy, IconDownload, IconLetterT, IconLink, IconMicrophone, IconMoodSmile, IconMusic, IconPhoto, IconPlayerPause, IconPlayerPlay, IconPlus, IconRestore, IconScissors, IconSnowflake, IconFileText, IconLayoutColumns, IconMessageChatbot, IconSparkles, IconTemplate, IconTrash, IconUpload, IconWand, IconX, IconZoomIn, IconZoomOut } from '@tabler/icons-react'
 import { Timeline, fmt, fmtShort, piecesOf, sameItem, type DragMode, type Item, type RangeAction } from './Timeline'
 import { Direct } from './Direct'
 import { Director, type DirectorState, type DirectorStatus } from './Director'
@@ -24,11 +24,14 @@ import { VoiceRecorder, type Take } from './VoiceRecorder'
 import { AskClaudePanel, type AskEntry } from './AskClaudePanel'
 import { applyOps, buildBrief, type AskCtx, type AskPick } from '../askclaude'
 import type { ClaudeStatus } from '../../shared/askclaude'
-import type { TemplateRun } from '../../shared/types'
+import type { TemplateRun, PodShotKind, PodTalk, PodcastConfig } from '../../shared/types'
+import { defaultPodcast } from '../../shared/types'
+import { podShots, shotAt } from '../../shared/podcast'
+import { PodScenesPanel } from './PodScenes'
 
 const FPS = 60
 const RATES = [0.5, 0.75, 1.25, 1.5, 2, 3]
-type Panel = 'claude' | 'shorts' | 'script' | 'media' | 'text' | 'stickers' | 'audio' | 'captions' | 'effects' | 'brand' | 'smart'
+type Panel = 'scenes' | 'claude' | 'shorts' | 'script' | 'media' | 'text' | 'stickers' | 'audio' | 'captions' | 'effects' | 'brand' | 'smart'
 const TEXT_LOOKS: { id: string; label: string; patch: Partial<TextPop>; css: React.CSSProperties }[] = [
   { id: 'pop', label: 'Pop', patch: { style: 'pop', color: undefined, bg: undefined }, css: { color: '#FB8B73', background: '#14140F' } },
   { id: 'title', label: 'Title card', patch: { style: 'title', color: undefined, bg: undefined }, css: { color: '#14140F', background: '#EFEEE8' } },
@@ -87,6 +90,9 @@ export function Editor({ project }: { project: Project }) {
   const [format, setFormat] = useState<'mp4' | 'gif'>('mp4')
   const [playheadSrc, setPlayheadSrc] = useState(0)
   const [panel, setPanel] = useState<Panel>('media')
+  // Podcast scenes (HomaPod / imported tracks): who talks when, measured once per project
+  const [podTalk, setPodTalk] = useState<PodTalk | null>(null)
+  useEffect(() => { let on = true; void window.narrate.podTalk(project.dir).then((t) => { if (on && t) { setPodTalk(t); setPanel('scenes') } }).catch(() => {}); return () => { on = false } }, [project.dir])
   const [hoverInfo, setHoverInfo] = useState<string | null>(null)
   const [strip, setStrip] = useState<{ strip: string; frames: number; aspect: number; wave: string | null } | null>(null)
   useEffect(() => { void window.narrate.timelineStrip(project.dir).then(setStrip).catch(() => {}) }, [project.dir])
@@ -172,6 +178,8 @@ export function Editor({ project }: { project: Project }) {
   const set = <K extends keyof RenderConfig>(k: K, v: RenderConfig[K]) => apply((e) => asset
     ? { ...e, assets: e.assets.map((a) => a.id === asset.id ? { ...a, config: { ...a.config, [k]: v } } : a) }
     : { ...e, config: { ...e.config, [k]: v } })
+  // a podcast project starts with scenes on (auto mix and match), saved with the edit so the export has them too
+  useEffect(() => { if (podTalk && !edits.config.podcast) quiet((e) => ({ ...e, config: { ...e.config, podcast: defaultPodcast } })) }, [podTalk])
   /** Edit the selected asset's cut list or the master's. */
   const setCuts = (f: (c: Cut[]) => Cut[]) => apply((e) => asset
     ? { ...e, assets: e.assets.map((a) => a.id === asset.id ? { ...a, cuts: f(a.cuts) } : a) }
@@ -300,8 +308,8 @@ export function Editor({ project }: { project: Project }) {
   const onReject = (p: Proposal) => apply((e) => ({ ...e, director: { ...e.director, rejected: [...e.director.rejected, p.id], accepted: e.director.accepted.filter((id) => id !== p.id) } }))
   const onDismiss = () => apply((e) => ({ ...e, director: { ...e.director, dismissedAt: new Date().toISOString() } }))
 
-  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, screen: proxy ?? project.assets.screen, micClean, media, cutout }, events: project.events, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, inserts: shownInserts, transcript }),
-    [project, proxy, micClean, media, cutout, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, shownInserts, transcript])
+  const props: ScreencastProps = useMemo(() => ({ assets: { ...project.assets, screen: proxy ?? project.assets.screen, micClean, media, cutout }, events: project.events, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, inserts: shownInserts, transcript, pod: podTalk }),
+    [project, proxy, micClean, media, cutout, config, cuts, zooms, speeds, masks, texts, overlays, stickers, music, voiceovers, shownInserts, transcript, podTalk])
   const size = compositionSize(props)
   const kept = useMemo(() => keptRanges(project.events, cuts, speeds, shownInserts), [project.events, cuts, speeds, shownInserts])
   const pieces = useMemo(() => piecesOf(kept, splits), [kept, splits])
@@ -586,6 +594,7 @@ export function Editor({ project }: { project: Project }) {
   const pendingCount = analysisWithFillers && !asset
     ? analysisWithFillers.proposals.filter((p) => p.type !== 'ZOOM' && !director.accepted.includes(p.id) && !director.rejected.includes(p.id)).length : 0
   const panels: { id: Panel; label: string; Icon: typeof IconPhoto; show: boolean; badge?: number }[] = [
+    { id: 'scenes', label: 'Scenes', Icon: IconLayoutColumns, show: !!podTalk },
     { id: 'claude', label: 'Ask Claude', Icon: IconMessageChatbot, show: !asset && !!claude?.installed },
     { id: 'shorts', label: 'Shorts', Icon: IconTemplate, show: !asset },
     { id: 'script', label: 'Script', Icon: IconFileText, show: !!project.assets.mic },
@@ -1131,6 +1140,14 @@ export function Editor({ project }: { project: Project }) {
   const addPanel = () => {
     if (shownPanel === 'claude') return <AskClaudePanel status={claude} entries={shownLog} onAsk={(t) => void askClaude(t)} onCancel={() => void window.narrate.cancelAsk()}
       onSignIn={() => void signInClaude()} signingIn={signingIn} hasTranscript={!!transcript} canUndoLast={!!lastStep && edits === lastStep.after} onUndo={undo} />
+    if (shownPanel === 'scenes' && podTalk) {
+      const pc = config.podcast ?? defaultPodcast
+      const portrait = size.width < size.height
+      const shots = podShots(podTalk, pc, portrait, project.events.videoDuration)
+      return <PodScenesPanel talk={podTalk} pc={pc} shots={shots} now={shotAt(shots, playheadSrc)} playhead={playheadSrc} portrait={portrait} poster={poster}
+        onChange={(next: PodcastConfig) => set('podcast', next)}
+        onAspect={(a) => set('aspect', a)} onSeek={seekSrc} />
+    }
     if (shownPanel === 'shorts') return <>
       <h3 className="drawer-title">Shorts</h3>
       <div className="control"><div className="lbl"><span>Length</span></div>

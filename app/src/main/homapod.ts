@@ -10,11 +10,11 @@
  * camera in media/) plus homapod.json, the map the HomaPod edit pipeline reads. Phone 4K files are lined up later by
  * sound (`narrate.py align`); they are linked, never copied.
  */
-import { BrowserWindow, dialog, ipcMain, session, shell, type IpcMainEvent } from 'electron'
+import { BrowserWindow, dialog, ipcMain, screen, session, shell, type IpcMainEvent } from 'electron'
 import { createWriteStream, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, type WriteStream } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { spawn } from 'node:child_process'
-import type { HomapodFile, HomapodGuest, HomapodStatus, HomapodTrack, Project } from '../shared/types'
+import type { HomapodFile, HomapodGuest, HomapodStatus, HomapodTrack, PodTalk, Project } from '../shared/types'
 import type { Recorder } from './recorder'
 
 const VDO = 'https://vdo.ninja/'
@@ -42,6 +42,9 @@ export function registerHomapod(deps: {
   recorder: Recorder
   ffmpeg: () => string | null
   loadProject: (dir: string) => Project | null
+  /** load a renderer route (#hpbar) into a window */
+  load: (w: BrowserWindow, hash: string) => void
+  mainPreload: string
 }) {
   let recWin: BrowserWindow | null = null, callWin: BrowserWindow | null = null
   let room = '', mode: 'here' | 'chrome' = 'chrome', guestName = '', hostName = 'Tassy'
@@ -51,12 +54,30 @@ export function registerHomapod(deps: {
   let tracks = new Map<string, Track>()
   let poll: NodeJS.Timeout | null = null
   let stopped: (() => void) | null = null
+  let saved: string | null = null
+  let bar: BrowserWindow | null = null
   const test = !!process.env.NARRATE_TEST_HOMAPOD
 
-  const status = (): HomapodStatus => ({ phase, room, mode, guests, since: startedAt || null, dir, message,
+  const status = (): HomapodStatus => ({ phase, room, mode, guests, since: startedAt || null, dir, message, saved,
     guestLink: room ? guestLink(room, guestName) : '', hostLink: room ? hostLink(room, hostName) : '',
     tracks: [...tracks.values()].map((t) => ({ key: t.key, kind: t.kind, label: t.sid ? labels[t.sid] ?? t.sid : t.kind === 'host-mic' ? 'Your mic' : 'Your camera', bytes: t.bytes })) })
-  const send = () => deps.main()?.webContents.send('homapod:status', status())
+  const send = () => { const st = status(); deps.main()?.webContents.send('homapod:status', st); if (bar && !bar.isDestroyed()) bar.webContents.send('homapod:status', st) }
+
+  /** The floating Record / Stop bar: stays on top of Chrome or the call window, never takes focus when it appears. */
+  function showBar() {
+    if (test && process.env.NARRATE_TEST_HOMAPOD !== 'shot') return
+    if (bar && !bar.isDestroyed()) { if (!test) bar.showInactive(); return }
+    const area = screen.getPrimaryDisplay().workArea
+    bar = new BrowserWindow({ width: 380, height: 56, x: area.x + Math.round((area.width - 380) / 2), y: area.y + area.height - 84,
+      frame: false, transparent: true, alwaysOnTop: true, resizable: false, movable: true, hasShadow: true, skipTaskbar: true,
+      focusable: true, fullscreenable: false, show: false, webPreferences: { preload: deps.mainPreload, sandbox: false } })
+    bar.setAlwaysOnTop(true, 'screen-saver'); bar.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+    bar.on('closed', () => { bar = null })
+    bar.once('ready-to-show', () => { if (!test) bar?.showInactive() })
+    deps.load(bar, '#hpbar')
+  }
+  const hideBar = () => { bar?.destroy(); bar = null }
+  ipcMain.handle('homapod:focusMain', () => { const w = deps.main(); if (w) { w.show(); w.focus() } })
 
   const ses = () => {
     const s = session.fromPartition(PARTITION)
@@ -89,6 +110,7 @@ export function registerHomapod(deps: {
   }
 
   function disconnect() {
+    hideBar()
     if (poll) clearInterval(poll); poll = null
     recWin?.destroy(); recWin = null
     callWin?.destroy(); callWin = null
@@ -101,8 +123,9 @@ export function registerHomapod(deps: {
     if (!nextRoom) throw new Error('Give the room a name (letters and numbers).')
     if (nextRoom !== room) disconnect()
     room = nextRoom; guestName = o.guest; hostName = o.host || 'Tassy'; mode = o.mode
-    phase = 'ready'; message = null
+    phase = 'ready'; message = null; saved = null
     await connect()
+    showBar()
     if (mode === 'here') openCall()
     else { callWin?.destroy(); callWin = null }
     send(); return status()
@@ -115,11 +138,12 @@ export function registerHomapod(deps: {
       webPreferences: { partition: PARTITION, sandbox: true, backgroundThrottling: false } })
     callWin.webContents.setWindowOpenHandler(({ url }) => { if (/^https:\/\//.test(url)) void shell.openExternal(url); return { action: 'deny' } })
     callWin.on('closed', () => { callWin = null })
-    void callWin.loadURL(hostLink(room, hostName))
+    void callWin.loadURL(hostLink(room, hostName) + (test ? '&autostart' : ''))
   }
   ipcMain.handle('homapod:openCall', () => { openCall(); return status() })
   ipcMain.handle('homapod:openChrome', () => shell.openExternal(hostLink(room, hostName)))
   ipcMain.handle('homapod:status', () => status())
+
 
   ipcMain.handle('homapod:record', async (_e, o: { micLabel: string | null; camLabel: string | null; headphones: boolean }) => {
     if (phase === 'recording') return status()
@@ -127,7 +151,7 @@ export function registerHomapod(deps: {
     const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16)
     dir = join(deps.recordings, `homapod-${room}-${stamp}`)
     mkdirSync(join(dir, 'homapod', 'raw'), { recursive: true })
-    tracks = new Map(); startedAt = Date.now(); phase = 'recording'; message = null
+    tracks = new Map(); startedAt = Date.now(); phase = 'recording'; message = null; saved = null
     writeFileSync(join(dir, 'homapod', 'session.json'), JSON.stringify({ room, mode, guestName, startedAt }, null, 1))
     recWin!.webContents.send('homapod:start', { hostSid: HOST_SID, ...o })
     send(); return status()
@@ -158,7 +182,7 @@ export function registerHomapod(deps: {
     await Promise.all([...tracks.values()].map((t) => new Promise<void>((res) => t.out.end(res))))
     try {
       const p = await finalize(dir)
-      phase = 'ready'; message = null; startedAt = 0; send()
+      phase = 'ready'; message = null; startedAt = 0; saved = p.dir; send()
       return p
     } catch (err) {
       phase = 'ready'; message = `The recording is saved as raw files in ${dir}, but making the project failed: ${(err as Error).message}`; startedAt = 0; send()
@@ -185,7 +209,7 @@ export function registerHomapod(deps: {
     const safe = (s: string) => s.replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 30) || 'guest'
     const made: (HomapodTrack & { _t0: number })[] = []
     for (const t of list) {
-      const label = t.sid ? labels[t.sid] || 'Guest' : t.kind === 'host-mic' ? hostName : `${hostName} camera`
+      const label = t.sid ? labels[t.sid] || 'Guest' : t.kind === 'host-mic' || t.hasAudio ? hostName : `${hostName} camera`
       say(`Saving ${label}…`)
       const base = t.kind === 'guest' ? `guest-${safe(label)}${t.key.match(/-\d+$/)?.[0] ?? ''}` : t.kind
       let video: string | null = null, wav: string | null = null
@@ -225,7 +249,7 @@ export function registerHomapod(deps: {
     else rmSync(mainVideo, { force: true })
 
     // the sound of the whole conversation, every voice in place on the main picture's clock
-    const voices = made.filter((m) => m.wav && (m.kind === 'host-mic' || m.kind === 'guest'))
+    const voices = made.filter((m) => m.wav)
     if (voices.length) {
       say('Mixing everyone’s voices…')
       const ins = voices.flatMap((v) => ['-i', join(out, v.wav!)])
@@ -246,11 +270,20 @@ export function registerHomapod(deps: {
     const file: HomapodFile = { version: 1, room, mode, startedAt: new Date(t0).toISOString(), main: mainT?.key ?? null,
       tracks: made.map(({ _t0, ...m }) => m), phones: [] }
     writeFileSync(join(out, 'homapod.json'), JSON.stringify(file, null, 1))
+    say('Finding who talks when…')
+    try { await deps.recorder.talk(out) } catch (e) { console.log('[homapod] talk:', (e as Error).message) }
     const p = deps.loadProject(out); if (!p) throw new Error('The project could not be opened.')
     return p
   }
 
   // ---- phone 4K files, lined up by sound ------------------------------------------------------------------------------
+  /** Who is talking when (talk.json), measured once per project and again after the tracks change. */
+  ipcMain.handle('homapod:talk', async (_e, d: string): Promise<PodTalk | null> => {
+    const hp = join(d, 'homapod.json'), tk = join(d, 'talk.json')
+    if (!existsSync(hp)) return null
+    if (!existsSync(tk) || statSync(tk).mtimeMs < statSync(hp).mtimeMs) await deps.recorder.talk(d)
+    try { return JSON.parse(readFileSync(tk, 'utf8')) } catch { return null }
+  })
   ipcMain.handle('homapod:read', (_e, d: string): HomapodFile | null => {
     const f = join(d, 'homapod.json'); if (!existsSync(f)) return null
     try { return JSON.parse(readFileSync(f, 'utf8')) } catch { return null }
@@ -281,4 +314,9 @@ export function registerHomapod(deps: {
     send()
     return file
   })
+  return {
+    /** tests only: swap a guest's tracks the way VDO.Ninja does on a quality change, to prove the recorder follows it */
+    testSwap: (): Promise<boolean> => recWin ? recWin.webContents.executeJavaScript(
+      `(() => { const v = document.querySelector('video[data-sid]'); if (!v || !v.srcObject) return false; v.srcObject = new MediaStream(v.srcObject.getTracks().map(t => t.clone())); return true })()`) : Promise.resolve(false),
+  }
 }

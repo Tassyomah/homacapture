@@ -139,3 +139,10 @@ Tassy: "the script editor is not detailed enough… it has to be granular… I n
 - Stop → a normal project: main picture = her camera (else the guest seen longest) as screen.mp4, mic.wav = every voice mixed on that clock, other cameras moved into media/, per-voice wavs in homapod/, homapod.json maps every track with its start.
 - "Add phone videos": `narrate.py align` against the session's wavs; the 4K original is symlinked into media/, never copied; start time + confidence saved in homapod.json.
 - Tested hidden on a real VDO.Ninja room with a fake-camera guest (1080p received), through the real buttons; a 4K phone clip lined up at +4.000 s.
+
+## 2026-11-20 · HomaPod fixes from Tassy's first real test + podcast scenes
+- Her test came out vertical (1080×1920) and the mic file was 4 s short of the video. Now: the camera is asked for 16:9 up to 4K (a warning shows if it still sends upright), and camera + mic record into ONE file so voice can't drift from lips.
+- Guest stopped recording after 8 s: VDO.Ninja swaps a guest's tracks on quality changes. The recorder now follows the live track set per guest and starts the next part when it changes (tested with a forced swap).
+- Floating Record/Stop bar (on top of Chrome or the call window, never takes focus when it appears).
+- Scenes (Riverside-style, all four she picked): Auto mix and match (solo on the talker, side by side/stacked when both talk; turns under 2 s don't cut), Side by side, Speaker big + others small, Stacked for shorts (switches to 9:16). Hand changes from the playhead win over the layout. Space, corners, name labels. Who-talks-when = `narrate.py talk` → talk.json from each person's own voice track.
+- Riverside dropped (sign-up needs a card). Tested both modes with two guests: everyone sees/hears the host, every party saved with its own video and voice.

@@ -226,6 +226,27 @@ export const ASPECTS: { id: Aspect; label: string; ratio: number | null }[] = [
   { id: 'source', label: 'Screen', ratio: null }, { id: '16:9', label: '16:9', ratio: 16 / 9 },
   { id: '9:16', label: '9:16', ratio: 9 / 16 }, { id: '1:1', label: '1:1', ratio: 1 }, { id: '4:5', label: '4:5', ratio: 4 / 5 },
 ]
+/** Podcast scenes (HomaPod / Riverside tracks): who is on screen and how, on the main picture's clock. */
+export interface PodPerson { id: string; label: string; kind: 'host' | 'guest'; videos: { file: string; start: number; end: number | null }[] }
+/** talk.json: one character per `hop` seconds per person, '1' = talking. */
+export interface PodTalk { hop: number; duration: number; people: PodPerson[]; active: Record<string, string> }
+/** side = everyone side by side · speaker = the talker big, the others small · solo = one person full frame · stack = top and bottom (9:16) */
+export type PodShotKind = 'side' | 'speaker' | 'solo' | 'stack'
+export interface PodShot { t: number; end: number; shot: PodShotKind; focus: string | null }
+export interface PodcastConfig {
+  on: boolean
+  /** auto = solo on whoever talks, side by side (stacked in 9:16) when both talk */
+  layout: 'auto' | PodShotKind
+  /** hand-picked shots that win over the layout for their stretch (source seconds) */
+  overrides: PodShot[]
+  /** gap between tiles and around them, as a fraction of the short side; 0 = edge to edge */
+  gap: number
+  /** tile corner radius, fraction of the short side */
+  corner: number
+  names: boolean
+}
+export const defaultPodcast: PodcastConfig = { on: true, layout: 'auto', overrides: [], gap: 0.02, corner: 0.02, names: true }
+
 export interface RenderConfig {
   aspect: Aspect
   zoom: number          // 1 = off, 2 = Screen-Studio-like
@@ -254,6 +275,8 @@ export interface RenderConfig {
   look: Look
   /** How strong the look is: 0 = unchanged, 1 = full; 0.6 by default so looks stay subtle. */
   lookAmount?: number
+  /** Podcast scenes, for projects with several people's tracks (HomaPod, Riverside). */
+  podcast?: PodcastConfig
   brightness: number; contrast: number; saturation: number
   /** Transition at each cut: 'big' = only where more than 2 s was removed (pause trims stay clean jump cuts). */
   transition: Transition
@@ -313,7 +336,7 @@ export const defaultConfig: RenderConfig = {
 
 export type ScreencastProps = { assets: ProjectAssets; events: RecordingEvents; config: RenderConfig; cuts?: Cut[]; zooms?: ManualZoom[]; speeds?: SpeedRange[]; masks?: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[]; transcript?: Transcript | null; [k: string]: unknown }
 /** Master-level instructions every derivative inherits. */
-export interface MasterExtras { zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[] }
+export interface MasterExtras { pod?: PodTalk | null; zooms: ManualZoom[]; speeds: SpeedRange[]; masks: Mask[]; texts?: TextPop[]; overlays?: Overlay[]; stickers?: Sticker[]; music?: MusicTrack | null; voiceovers?: Voiceover[]; inserts?: InsertClip[] }
 
 export type MicPermission = 'authorized' | 'denied' | 'restricted' | 'notDetermined' | 'unknown'
 export interface Permissions { screen: boolean; mic: MicPermission }
@@ -367,6 +390,8 @@ export interface HomapodStatus {
   phase: 'off' | 'ready' | 'recording' | 'saving'
   room: string; mode: 'here' | 'chrome'; guestLink: string; hostLink: string
   guests: HomapodGuest[]; since: number | null; dir: string | null; message: string | null
+  /** the project folder of the last HomaPod saved in this room (shown as 'Saved' until the next Record) */
+  saved: string | null
   tracks: { key: string; kind: HomapodTrack['kind']; label: string; bytes: number }[]
 }
 export interface HomapodTrack {
@@ -472,6 +497,9 @@ export interface NarrateApi {
   homapodRead(dir: string): Promise<HomapodFile | null>
   homapodAddPhone(dir: string, paths?: string[]): Promise<HomapodFile>
   onHomapodStatus(cb: (s: HomapodStatus) => void): () => void
+  homapodFocusMain(): Promise<void>
+  /** talk.json for a podcast project (measured on first ask); null for a normal recording */
+  podTalk(dir: string): Promise<PodTalk | null>
   /** Developer screenshots only (NARRATE_OPEN): open a recording folder in the editor on launch. */
   onDevOpen(cb: (dir: string) => void): () => void
 }

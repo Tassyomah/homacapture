@@ -1,7 +1,7 @@
 import { bundle } from '@remotion/bundler'
 import { renderMedia, renderStill, selectComposition } from '@remotion/renderer'
 import { join } from 'node:path'
-import { existsSync, readdirSync, unlinkSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync, unlinkSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { cpus, homedir } from 'node:os'
 import { createRequire } from 'node:module'
@@ -64,11 +64,16 @@ function getBundle(appRoot: string, prebuilt?: string) {
  * Thumbnail candidates (add-on §13): still frames of the polished master at the given output seconds, 1280 px wide,
  * written to <dir>/thumbs/thumb-<n>.png. Returns the file paths in order.
  */
+/** talk.json of a podcast project (HomaPod / imported tracks): who is on screen when. */
+function readTalk(dir: string) {
+  try { return JSON.parse(readFileSync(join(dir, 'talk.json'), 'utf8')) } catch { return null }
+}
+
 export async function renderThumbnails(appRoot: string, project: Project, config: RenderConfig, cuts: Cut[], timesOut: number[], prebuilt?: string, extra?: MasterExtras): Promise<string[]> {
   const serveUrl = await getBundle(appRoot, prebuilt)
   const inputProps: ScreencastProps = { assets: project.assets, events: project.events, config, cuts, transcript: project.transcript,
     zooms: extra?.zooms ?? project.file?.zooms ?? [], speeds: extra?.speeds ?? project.file?.speeds ?? [], masks: extra?.masks ?? project.file?.masks ?? [], texts: extra?.texts ?? project.file?.texts ?? [],
-    overlays: extra?.overlays ?? project.file?.overlays ?? [], stickers: extra?.stickers ?? project.file?.stickers ?? [], music: extra?.music !== undefined ? extra.music : project.file?.music ?? null, voiceovers: extra?.voiceovers ?? project.file?.voiceovers ?? [], inserts: extra?.inserts ?? project.file?.inserts ?? [] }
+    overlays: extra?.overlays ?? project.file?.overlays ?? [], stickers: extra?.stickers ?? project.file?.stickers ?? [], music: extra?.music !== undefined ? extra.music : project.file?.music ?? null, voiceovers: extra?.voiceovers ?? project.file?.voiceovers ?? [], inserts: extra?.inserts ?? project.file?.inserts ?? [], pod: extra?.pod !== undefined ? extra.pod : readTalk(project.dir) }
   const binaries = binariesDirectory()
   const design = await selectComposition({ serveUrl, id: 'Screencast', inputProps, binariesDirectory: binaries })
   const scale = 1280 / design.width
@@ -93,7 +98,7 @@ export async function exportProject(appRoot: string, project: Project, config: R
     const serveUrl = await getBundle(appRoot, prebuilt)
     const inputProps: ScreencastProps = { assets: project.assets, events: project.events, config, cuts, transcript: project.transcript,
       zooms: extra?.zooms ?? project.file?.zooms ?? [], speeds: extra?.speeds ?? project.file?.speeds ?? [], masks: extra?.masks ?? project.file?.masks ?? [], texts: extra?.texts ?? project.file?.texts ?? [],
-    overlays: extra?.overlays ?? project.file?.overlays ?? [], stickers: extra?.stickers ?? project.file?.stickers ?? [], music: extra?.music !== undefined ? extra.music : project.file?.music ?? null, voiceovers: extra?.voiceovers ?? project.file?.voiceovers ?? [], inserts: extra?.inserts ?? project.file?.inserts ?? [] }
+    overlays: extra?.overlays ?? project.file?.overlays ?? [], stickers: extra?.stickers ?? project.file?.stickers ?? [], music: extra?.music !== undefined ? extra.music : project.file?.music ?? null, voiceovers: extra?.voiceovers ?? project.file?.voiceovers ?? [], inserts: extra?.inserts ?? project.file?.inserts ?? [], pod: extra?.pod !== undefined ? extra.pod : readTalk(project.dir) }
     const binaries = binariesDirectory()
     const design = await selectComposition({ serveUrl, id: 'Screencast', inputProps, binariesDirectory: binaries })
     // Render at an even integer size; the composition scales its design layout to whatever size it is given.
