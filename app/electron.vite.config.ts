@@ -4,7 +4,7 @@ import { resolve } from 'node:path'
 
 export default defineConfig({
   main: { plugins: [externalizeDepsPlugin()], build: { lib: { entry: 'src/main/index.ts' } } },
-  preload: { plugins: [externalizeDepsPlugin()], build: { lib: { entry: 'src/preload/index.ts' } } },
+  preload: { plugins: [externalizeDepsPlugin()], build: { lib: { entry: { index: 'src/preload/index.ts', vdo: 'src/preload/vdo.ts' } } } },
   renderer: {
     root: 'src/renderer',
     plugins: [react()],

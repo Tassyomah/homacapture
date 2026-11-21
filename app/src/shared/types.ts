@@ -361,6 +361,23 @@ export interface ExportProgress { progress: number; stage: 'bundling' | 'renderi
 export type Platform = 'darwin' | 'win32' | 'linux'
 
 /** The API exposed to the renderer by preload. */
+/** HomaPod (remote podcast recording over VDO.Ninja). Times are seconds on the main picture's clock (screen.mp4). */
+export interface HomapodGuest { sid: string; label: string; width: number; height: number; audio: boolean }
+export interface HomapodStatus {
+  phase: 'off' | 'ready' | 'recording' | 'saving'
+  room: string; mode: 'here' | 'chrome'; guestLink: string; hostLink: string
+  guests: HomapodGuest[]; since: number | null; dir: string | null; message: string | null
+  tracks: { key: string; kind: HomapodTrack['kind']; label: string; bytes: number }[]
+}
+export interface HomapodTrack {
+  key: string; kind: 'guest' | 'host-camera' | 'host-mic'; sid: string | null; label: string
+  /** project-relative files; video is 'screen.mp4' for the main picture, media/… for the others */
+  video: string | null; wav: string | null
+  start: number; end: number | null; width: number | null; height: number | null
+}
+export interface HomapodPhone { file: string; media: string; start: number; matchedTo: string; score: number; confident: boolean; size: number }
+export interface HomapodFile { version: 1; room: string; mode: 'here' | 'chrome'; startedAt: string; main: string | null; tracks: HomapodTrack[]; phones: HomapodPhone[] }
+
 export interface NarrateApi {
   platform: Platform
   listDevices(): Promise<Devices>
@@ -444,6 +461,17 @@ export interface NarrateApi {
   pickBrandLogo(): Promise<string | null>
   /** Copies the saved logo into a project's media/. */
   addMediaPath(dir: string, path: string): Promise<MediaFile>
+  /** HomaPod remote recording (VDO.Ninja). */
+  homapodPrepare(o: { room: string; guest: string; host: string; mode: 'here' | 'chrome' }): Promise<HomapodStatus>
+  homapodStatus(): Promise<HomapodStatus>
+  homapodOpenCall(): Promise<HomapodStatus>
+  homapodOpenChrome(): Promise<void>
+  homapodRecord(o: { micLabel: string | null; camLabel: string | null; headphones: boolean }): Promise<HomapodStatus>
+  homapodStop(): Promise<Project | null>
+  homapodLeave(): Promise<HomapodStatus>
+  homapodRead(dir: string): Promise<HomapodFile | null>
+  homapodAddPhone(dir: string, paths?: string[]): Promise<HomapodFile>
+  onHomapodStatus(cb: (s: HomapodStatus) => void): () => void
   /** Developer screenshots only (NARRATE_OPEN): open a recording folder in the editor on launch. */
   onDevOpen(cb: (dir: string) => void): () => void
 }

@@ -153,6 +153,23 @@ export class Recorder extends EventEmitter {
     })
   }
 
+  /** HomaPod: where a phone file sits against the call's tracks, by sound. `align --src phone --ref a.wav --ref b.wav`. */
+  align(src: string, refs: string[]): Promise<{ ref: number; offset: number; score: number; confident: boolean }> {
+    return new Promise((res, rej) => {
+      const p = spawn(PYTHON, [this.script, 'align', '--src', src, ...refs.flatMap((r) => ['--ref', r])], SPAWN)
+      let out = '', err = ''
+      p.stdout.on('data', (d) => { out += d })
+      p.stderr.on('data', (d) => { err += d })
+      p.on('error', (e) => rej(new Error(friendlySpawnError(e))))
+      p.on('close', (code) => {
+        const lines = out.split('\n').filter((l) => l.startsWith('{')).map((l) => JSON.parse(l) as RawEvent)
+        const hit = lines.find((l) => l.event === 'aligned'), bad = lines.find((l) => l.event === 'error')
+        if (hit) res(hit as unknown as { ref: number; offset: number; score: number; confident: boolean })
+        else rej(new Error(bad ? String(bad.message) : friendlyExit(err, code)))
+      })
+    })
+  }
+
   /** Microphone level meter: emits 'level' (0..1) ~10×/s until stopMeter(). Only one runs at a time. */
   private meterProc: ChildProcess | null = null
   startMeter(mic: number) {

@@ -915,3 +915,53 @@ body.resizing-v iframe, body.resizing-h iframe, body.resizing-v video, body.resi
 .transport .verbs button { white-space: nowrap; }
 .transport .hint { min-width: 0; }
 @media (max-width: 1500px) { .transport .verbs kbd { display: none; } .transport .verbs button { padding-left: 8px; padding-right: 8px; } }
+
+/* HomaPod (2026-11-20): remote guest recording over VDO.Ninja */
+.hp { max-width: 980px; margin: 0 auto; }
+.hp-head h1 { font-size: 28px; letter-spacing: -0.02em; margin: 6px 0 4px; }
+.hp-head p { color: var(--ink-60); margin: 0 0 14px; max-width: 640px; }
+.hp-card { background: var(--bg, #fff); box-shadow: inset 0 0 0 1px var(--line, rgba(20,20,15,.1)); border-radius: 14px; padding: 16px 18px; margin-top: 12px; display: flex; flex-direction: column; gap: 12px; }
+.hp-card.rec { box-shadow: inset 0 0 0 2px var(--coral); }
+.hp-step { display: flex; align-items: center; gap: 10px; }
+.hp-step span { width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--paper, #EFEEE8); display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.hp-step b { font-size: 15px; }
+.hp-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.hp-fields label { display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--ink-60); min-width: 0; }
+.hp-fields label > span { display: flex; align-items: center; gap: 5px; }
+.hp-fields input, .hp-fields select { font: inherit; font-size: 14px; color: var(--ink); padding: 8px 10px; border-radius: 8px; border: 1px solid var(--line, rgba(20,20,15,.14)); background: var(--well, #F6F5F0); min-width: 0; }
+.hp-room { display: flex; gap: 6px; } .hp-room input { flex: 1; }
+.hp-link { display: flex; align-items: center; gap: 10px; background: var(--well, #F6F5F0); border-radius: 10px; padding: 8px 8px 8px 12px; }
+.hp-link code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono, ui-monospace, monospace); font-size: 12.5px; }
+.hp-link button { flex: none; white-space: nowrap; }
+.hp-link.small > span { font-size: 12px; color: var(--ink-60); flex: none; }
+.hp-modes { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.hp-mode { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; padding: 14px; border-radius: 12px; background: var(--well, #F6F5F0); box-shadow: inset 0 0 0 1px transparent; height: auto; }
+.hp-mode b { font-size: 14px; margin-top: 4px; } .hp-mode span { font-size: 12.5px; color: var(--ink-60); font-weight: 400; line-height: 1.4; }
+.hp-mode.on { box-shadow: inset 0 0 0 2px var(--coral); background: rgba(251,139,115,.1); }
+.hp-guests { display: flex; flex-wrap: wrap; gap: 8px; min-height: 28px; align-items: center; }
+.hp-guest { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 99px; background: var(--well, #F6F5F0); font-size: 13px; font-weight: 600; }
+.hp-guest em, .hp-tracks em { font-style: normal; color: var(--ink-60); font-weight: 400; font-size: 12px; }
+.hp-dot { width: 8px; height: 8px; border-radius: 50%; background: #2FB36B; }
+.hp-wait { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--coral); margin-right: 6px; animation: hpPulse 1.4s ease-in-out infinite; }
+@keyframes hpPulse { 50% { opacity: .3 } }
+@media (prefers-reduced-motion: reduce) { .hp-wait { animation: none; } }
+.hp-tracks { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; }
+.hp-tracks span { display: inline-flex; gap: 6px; }
+.hp-rec-row { display: flex; align-items: center; gap: 14px; }
+.hp-rec-row .vrec-big { width: auto; min-width: 180px; padding: 13px 26px; font-size: 15px; }
+.hp-time { display: inline-flex; align-items: center; gap: 8px; font-family: var(--mono, ui-monospace, monospace); font-size: 18px; font-variant-numeric: tabular-nums; }
+.hp-done { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: rgba(47,179,107,.1); border-radius: 10px; padding: 10px 12px; }
+.hp-done span { flex: 1; color: var(--ink-60); font-size: 13px; min-width: 200px; }
+.hp-pods { display: flex; flex-direction: column; gap: 8px; margin-bottom: 30px; }
+.hp-pod { display: flex; align-items: center; gap: 10px; background: var(--bg, #fff); box-shadow: inset 0 0 0 1px var(--line, rgba(20,20,15,.1)); border-radius: 12px; padding: 12px 14px; }
+.hp-pod button { flex: none; white-space: nowrap; }
+.hp-pod-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.hp-pod-main > span { font-size: 12.5px; color: var(--ink-60); }
+.hp-phone { display: flex; align-items: center; gap: 5px; color: var(--ink) !important; }
+.hp-phone em { font-style: normal; color: var(--ink-60); }
+.hp-phone.unsure em { color: #C2410C; }
+@media (max-width: 760px) { .hp-fields, .hp-modes { grid-template-columns: 1fr; } }
+.hp-note { font-size: 12.5px; color: var(--ink-60); margin: 0; }
+.hp-card { gap: 10px; padding: 14px 18px; }
+.hp-mode { padding: 12px 14px; }
+.hp-head h1 { font-size: 26px; margin-top: 0; }

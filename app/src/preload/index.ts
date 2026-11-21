@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { NarrateApi, ExportProgress, RecorderEvent } from '../shared/types'
+import type { NarrateApi, ExportProgress, HomapodStatus, RecorderEvent } from '../shared/types'
 
 const listen = <T,>(channel: string) => (cb: (p: T) => void) => {
   const h = (_: unknown, p: T) => cb(p)
@@ -65,5 +65,15 @@ const api: NarrateApi = {
   setBrand: (b) => ipcRenderer.invoke('brand:set', b),
   pickBrandLogo: () => ipcRenderer.invoke('brand:logo'),
   addMediaPath: (dir, path) => ipcRenderer.invoke('project:mediaPath', dir, path),
+  homapodPrepare: (o) => ipcRenderer.invoke('homapod:prepare', o),
+  homapodStatus: () => ipcRenderer.invoke('homapod:status'),
+  homapodOpenCall: () => ipcRenderer.invoke('homapod:openCall'),
+  homapodOpenChrome: () => ipcRenderer.invoke('homapod:openChrome'),
+  homapodRecord: (o) => ipcRenderer.invoke('homapod:record', o),
+  homapodStop: () => ipcRenderer.invoke('homapod:stop'),
+  homapodLeave: () => ipcRenderer.invoke('homapod:leave'),
+  homapodRead: (dir) => ipcRenderer.invoke('homapod:read', dir),
+  homapodAddPhone: (dir, paths) => ipcRenderer.invoke('homapod:addPhone', dir, paths),
+  onHomapodStatus: listen<HomapodStatus>('homapod:status'),
 }
 contextBridge.exposeInMainWorld('narrate', api)

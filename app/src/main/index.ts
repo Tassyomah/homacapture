@@ -10,6 +10,8 @@ import { AssetServer } from './assetServer'
 import { exportProject, findFfmpeg, renderThumbnails } from './exporter'
 import { getShareSettings, saveShareSettings, shareFile } from './share'
 import { askClaude, cancelAsk, claudeSignIn, claudeStatus } from './claude'
+import { registerHomapod } from './homapod'
+import { homapodSelfTest, homapodShots } from './homapodTest'
 
 const IS_WIN = process.platform === 'win32'
 const APP_ROOT = resolve(app.getAppPath())
@@ -46,7 +48,7 @@ function load(w: BrowserWindow, hash = process.env.NARRATE_SCREENSHOT ? process.
 function createWindow() {
   win = new BrowserWindow({
     width: 1280, height: 820, minWidth: 980, minHeight: 640,
-    show: !process.env.NARRATE_SCREENSHOT,   // dev screenshots run hidden, no window or focus steal
+    show: !process.env.NARRATE_SCREENSHOT && !process.env.NARRATE_TEST_HOMAPOD,   // dev screenshots run hidden, no window or focus steal
     title: 'HomaCapture', backgroundColor: '#EFEEE8',
     ...(IS_WIN
       ? { titleBarStyle: 'hidden' as const, titleBarOverlay: { color: '#EFEEE8', symbolColor: '#14140F', height: 52 } }
@@ -195,7 +197,8 @@ recorder.on('event', (raw: RecorderEvent) => {
 })
 
 // Tests only: a fake microphone (a tone) so the voiceover recorder can be exercised without a real mic or a prompt.
-if (process.env.NARRATE_FAKE_MIC) { app.commandLine.appendSwitch('use-fake-device-for-media-stream'); app.commandLine.appendSwitch('use-fake-ui-for-media-stream') }
+if (process.env.NARRATE_FAKE_MIC) { app.commandLine.appendSwitch('use-fake-device-for-media-stream'); app.commandLine.appendSwitch('use-fake-ui-for-media-stream')
+  if (process.env.NARRATE_FAKE_AUDIO_FILE) app.commandLine.appendSwitch('use-file-for-fake-audio-capture', process.env.NARRATE_FAKE_AUDIO_FILE) }
 app.whenReady().then(async () => {
   if (process.env.NARRATE_SCREENSHOT) app.dock?.hide()
   await mkdir(RECORDINGS, { recursive: true })
@@ -616,7 +619,9 @@ app.whenReady().then(async () => {
     return p
   })
 
+  registerHomapod({ main: () => win, recordings: RECORDINGS, preload: join(__dirname, '../preload/vdo.mjs'), recorder, ffmpeg: findFfmpeg, loadProject })
   createWindow()
+  if (process.env.NARRATE_TEST_HOMAPOD && win) { app.dock?.hide(); void (process.env.NARRATE_TEST_HOMAPOD === 'shot' ? homapodShots(win) : homapodSelfTest(win, findFfmpeg() ?? 'ffmpeg')) }
   app.on('activate', () => { if (!win) createWindow(); else win.show() })
 })
 app.on('window-all-closed', () => { /* keep running while the control bar is up */ if (recorder.state === 'idle') app.quit() })

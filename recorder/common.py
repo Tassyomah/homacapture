@@ -612,3 +612,49 @@ def meter_loop(cmd):
         db = 20 * math.log10(max(rms, 1e-6))
         emit(event="level", level=round(max(0.0, min(1.0, (db + 60) / 60)), 3))   # -60 dBFS -> 0, 0 dBFS -> 1
     kill(p)
+
+
+# ---------------------------------------------------------------- HomaPod: line a phone video up with the call by sound
+def align(args):
+    """narrate.py align --src <phone video> --ref <track.wav> [--ref <track2.wav> ...]
+    Finds where the phone file sits against each reference recording (the call's host mic, the guest's call voice) by
+    cross-correlating loudness envelopes, then refining on the raw audio. Prints {"event":"aligned", "ref": i,
+    "offset": s, "score": z}: offset = seconds to ADD to a phone timestamp to get session time (ref time). Picks the ref
+    that matches best (a phone on the guest's side matches the guest's voice, Tassy's phone matches her mic)."""
+    import numpy as np
+    need_ffmpeg()
+    sr = 8000
+    def pcm(path, limit=None):
+        cmd = [FFMPEG, "-v", "error", "-nostdin", "-i", path] + (["-t", str(limit)] if limit else []) + ["-vn", "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"]
+        r = subprocess.run(cmd, capture_output=True, timeout=1800)
+        if r.returncode != 0: raise RuntimeError("could not read " + os.path.basename(path))
+        return np.frombuffer(r.stdout, dtype=np.float32)
+    def env(a, hop=80):          # 10 ms loudness envelope, mean removed, scaled
+        n = len(a) // hop
+        e = np.sqrt((a[:n * hop].reshape(n, hop) ** 2).mean(1) + 1e-9)
+        e = np.log(e); e -= e.mean(); s = e.std() or 1; return e / s
+    def xcorr(a, b):             # lag of b against a (positive = b starts later in a's timeline)
+        n = 1 << int(np.ceil(np.log2(len(a) + len(b))))
+        c = np.fft.irfft(np.fft.rfft(a, n) * np.conj(np.fft.rfft(b, n)), n)
+        c = np.concatenate([c[-(len(b) - 1):], c[:len(a)]]) if len(b) > 1 else c[:len(a)]
+        k = int(np.argmax(c)); lag = k - (len(b) - 1)
+        z = (c[k] - c.mean()) / (c.std() or 1)
+        return lag, float(z)
+    clip = pcm(args.src, 1800)
+    if len(clip) < sr * 3: emit(event="error", code="align_short", message="That video has almost no sound to match."); sys.exit(3)
+    best = None
+    for i, ref in enumerate(args.ref or []):
+        r = pcm(ref)
+        if len(r) < sr * 3: continue
+        lag, z = xcorr(env(r), env(clip))                      # coarse, 10 ms steps
+        off = lag * 0.01
+        # refine on raw audio around the coarse answer (±0.25 s), to the sample
+        a0 = int(max(0, (off - 0.25) * sr)); seg = r[a0:a0 + int(60 * sr)]
+        c0 = int(max(0, -off * sr)); piece = clip[c0:c0 + int(30 * sr)]
+        if len(seg) > len(piece) > sr:
+            fl, fz = xcorr(seg, piece)
+            off2 = (a0 + fl - c0) / sr
+            if abs(off2 - off) < 0.3: off = off2
+        if best is None or z > best[2]: best = (i, off, z)
+    if best is None: emit(event="error", code="align_none", message="Nothing to match the video against."); sys.exit(3)
+    emit(event="aligned", ref=best[0], offset=round(best[1], 4), score=round(best[2], 2), confident=best[2] > 8)

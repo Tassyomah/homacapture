@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import type { CaptureArea, Devices, Permissions, Project, UnfinishedRecording } from '../../shared/types'
-import { IconCamera, IconClock, IconCrop, IconDeviceDesktop, IconMicrophone, IconPlayerPlay, IconTrash, IconUpload, IconVolume, IconWand } from '@tabler/icons-react'
+import { IconCamera, IconClock, IconCrop, IconDeviceDesktop, IconMicrophone, IconPlayerPlay, IconTrash, IconUpload, IconUsers, IconVolume, IconWand } from '@tabler/icons-react'
 import { isWin, keys, machine } from '../platform'
 
 type Phase = { kind: 'idle' } | { kind: 'countdown'; n: number } | { kind: 'starting' }
 
-export function Home({ projects, onOpen, onChanged, lastError }: {
-  projects: Project[]; onOpen: (p: Project) => void; onChanged: () => void; lastError: string | null
+export function Home({ projects, onOpen, onChanged, lastError, onHomapod }: {
+  projects: Project[]; onOpen: (p: Project) => void; onChanged: () => void; lastError: string | null; onHomapod: () => void
 }) {
   const [devices, setDevices] = useState<Devices | null>(null)
   const [perms, setPerms] = useState<Permissions | null>(null)
@@ -222,6 +222,12 @@ export function Home({ projects, onOpen, onChanged, lastError }: {
         <div className="up-text"><b>Already have a video? Upload it and edit it here.</b>
           <span>Press Smart edit for a first cut in one go: pauses and filler words out, punch-ins on you, key words on screen, captions. Or edit it all yourself.</span></div>
         <button className="primary" disabled={!!importing} onClick={() => upload()}><IconUpload size={16} />{importing ?? 'Upload a video'}</button>
+      </section>
+      <section className="up-card hp-entry">
+        <span className="up-icon" aria-hidden="true"><IconUsers size={22} stroke={1.6} /></span>
+        <div className="up-text"><b>HomaPod: record a guest from anywhere.</b>
+          <span>Send one link, they join from any browser, and you each get your own file on one clock. Add your phone videos after and they line up by sound.</span></div>
+        <button className="primary" onClick={onHomapod}><IconUsers size={16} />Start a HomaPod</button>
       </section>
       {dragging && <div className="drop-hint" aria-hidden="true"><IconUpload size={28} stroke={1.6} /><b>Drop to upload</b><span>It opens in the editor, ready for you or Smart edit.</span></div>}
 

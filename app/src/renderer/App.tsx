@@ -3,13 +3,14 @@ import type { Project, RecorderEvent } from '../shared/types'
 import { Home, niceName } from './screens/Home'
 import { Recording } from './screens/Recording'
 import { Editor } from './screens/Editor'
+import { HomaPod } from './screens/HomaPod'
 import { ControlBar } from './screens/ControlBar'
 import { AreaFrame, AreaPicker } from './screens/AreaPicker'
 import { IconChevronLeft } from '@tabler/icons-react'
 import { isWin } from './platform'
 import mark from './mark.svg?url'
 
-type Screen = { name: 'home' } | { name: 'recording' } | { name: 'editor'; project: Project }
+type Screen = { name: 'home' } | { name: 'homapod' } | { name: 'recording' } | { name: 'editor'; project: Project }
 
 document.body.classList.add(isWin ? 'win' : 'mac')
 
@@ -46,7 +47,10 @@ function MainWindow() {
   return (
     <div className="shell">
       <div className="titlebar drag">
-        {screen.name === 'editor'
+        {screen.name === 'homapod'
+          ? <><button className="back no-drag" onClick={() => { refresh(); setScreen({ name: 'home' }) }}><IconChevronLeft size={16} />Home</button>
+              <span className="crumb">HomaPod</span></>
+          : screen.name === 'editor'
           ? <><button className="back no-drag" onClick={() => { refresh(); setScreen({ name: 'home' }) }}><IconChevronLeft size={16} />All recordings</button>
               <span className="crumb">{niceName(screen.project.name)}</span></>
           : <span className="brand"><img src={mark} alt="" />HomaCapture</span>}
@@ -54,7 +58,9 @@ function MainWindow() {
       </div>
       <div className="content">
         {screen.name === 'home' && <Home projects={projects} onOpen={(p) => setScreen({ name: 'editor', project: p })} onChanged={refresh}
+                                         onHomapod={() => setScreen({ name: 'homapod' })}
                                          lastError={lastEvent?.event === 'error' ? lastEvent.message : null} />}
+        {screen.name === 'homapod' && <HomaPod projects={projects} onOpen={(p) => setScreen({ name: 'editor', project: p })} onChanged={refresh} />}
         {screen.name === 'recording' && <Recording lastEvent={lastEvent} session={session} />}
         {screen.name === 'editor' && <Editor project={screen.project} />}
       </div>
